@@ -260,6 +260,9 @@ function restoreRoomConnection() {
     console.log("Room joined successfully, token:", connectionToken);
     updateConnectionStatus(true);
     log(`Restored previous room: ${savedRoomId}`);
+
+    // Optionally, retrieve messages for the room
+    setTimeout(retrieveMessages, 500, savedRoomId);
   } catch (error) {
     console.warn("Could not join saved room:", error);
     log(`Could not rejoin room: ${error.message}`);
@@ -395,7 +398,9 @@ function sendMessage() {
 function retrieveMessages(roomId) {
   try {
     // Get messages from the WASM module
+    console.log("Retrieving messages for room:", roomId);
     const messagesResult = window.safeWasm.get_messages(roomId);
+    console.log("Retrieved messages:", messagesResult);
     
     // Parse the JSON string
     if (typeof messagesResult === 'string') {
