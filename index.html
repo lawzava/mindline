@@ -20,24 +20,24 @@
                     },
                     colors: {
                         primary: {
-                            DEFAULT: '#ff5a5a',
-                            dark: '#ff7070',
+                            DEFAULT: '#5E81AC', // Nord9 (light blue)
+                            dark: '#81A1C1',    // Nord10 (lighter blue for dark mode)
                         },
                         secondary: {
-                            DEFAULT: '#3638cf',
-                            dark: '#5e60e7',
+                            DEFAULT: '#4C566A', // Nord3 (dark slate)
+                            dark: '#ECEFF4',    // Nord6 (light slate for dark mode)
                         },
                         accent: {
-                            DEFAULT: '#facd49',
-                            dark: '#ffd76b',
+                            DEFAULT: '#EBCB8B', // Nord13 (yellow)
+                            dark: '#D08770',    // Nord12 (orange for dark mode)
                         },
                         success: {
-                            DEFAULT: '#a3ffb3',
-                            dark: '#4caf50',
+                            DEFAULT: '#A3BE8C', // Nord14 (green)
+                            dark: '#8FBCBB',    // Nord7 (cyan-green for dark mode)
                         },
                         error: {
-                            DEFAULT: '#ffb3b3',
-                            dark: '#f44336',
+                            DEFAULT: '#BF616A', // Nord11 (red)
+                            dark: '#B48EAD',    // Nord15 (purple-red for dark mode)
                         }
                     }
                 }
@@ -47,24 +47,24 @@
     <style>
         /* Neobrutalist styles using plain CSS */
         :root {
-            --bg-light: white;
-            --bg-dark: #1e1e1e;
-            --border-light: black;
-            --border-dark: white;
-            --shadow-light: rgba(0, 0, 0, 0.8);
-            --shadow-dark: rgba(0, 0, 0, 0.9);
-            --accent-light: #facd49;
-            --accent-dark: #ffd76b;
-            --primary-light: #ff5a5a;
-            --primary-dark: #ff7070;
-            --secondary-light: #3638cf;
-            --secondary-dark: #5e60e7;
-            --success-light: #a3ffb3;
-            --success-dark: #4caf50;
-            --error-light: #ffb3b3;
-            --error-dark: #f44336;
-            --text-light: black;
-            --text-dark: white;
+            --bg-light: #eceff4;
+            --bg-dark: #2e3440;
+            --border-light: #4c566a;
+            --border-dark: #eceff4;
+            --shadow-light: #3b4252;
+            --shadow-dark: #3b4252;
+            --accent-light: #EBCB8B;
+            --accent-dark: #3b4252;
+            --primary-light: #bf616a;
+            --primary-dark: #b48ead;
+            --secondary-light: #5e81ac;
+            --secondary-dark: #81a1c1;
+            --success-light: #a3be8c;
+            --success-dark: #a3be8c;
+            --error-light: #bf616a;
+            --error-dark: #bf616a;
+            --text-light: #2e3440;
+            --text-dark: #eceff4;
         }
         
         body {
@@ -95,7 +95,7 @@
             --text-color: var(--text-dark);
             --input-text: var(--text-dark);
             --input-bg: var(--bg-dark);
-            background-color: #121212;
+            background-color: var(--bg-dark);
             color: var(--text-color);
         }
         
@@ -202,12 +202,34 @@
         /* Status indicators */
         .status-connected {
             background-color: var(--success-color);
-            color: black;
+            color: var(--text-color);
+            border-color: var(--border-color);
+            padding: 0.5rem 1rem;
+            border: 3px solid var(--border-color);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
         
         .status-disconnected {
             background-color: var(--error-color);
             color: black;
+            border-color: var(--border-color);
+            padding: 0.5rem 1rem;
+            border: 3px solid var(--border-color);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
         
         /* Other elements that need theme colors */
@@ -222,6 +244,10 @@
         #typingIndicator {
             background-color: var(--bg-color);
             border-color: var(--border-color);
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--text-color);
         }
     </style>
 </head>
