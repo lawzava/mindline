@@ -34,6 +34,7 @@
             padding: 1rem;
             margin-bottom: 1rem;
             border-radius: 8px;
+            position: relative; /* For positioning the typing indicator */
         }
         
         .message {
@@ -56,11 +57,30 @@
         .typing-indicator {
             font-style: italic;
             color: #888;
+            padding: 0.3rem;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
         }
         
         input, button {
             padding: 0.5rem;
             font-size: 1rem;
+            border-radius: 4px;
+        }
+        
+        button {
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background-color: #0055aa;
         }
         
         .message-input {
@@ -70,6 +90,7 @@
         
         .message-input input {
             flex-grow: 1;
+            border: 1px solid #ddd;
         }
         
         .controls {
@@ -78,11 +99,42 @@
             margin-bottom: 1rem;
         }
         
+        .room-info {
+            margin-top: 0.5rem;
+            font-weight: bold;
+        }
+        
+        .room-id {
+            font-family: monospace;
+            padding: 0.2rem 0.4rem;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+        }
+        
         pre {
             background-color: #f5f5f5;
             padding: 0.5rem;
             border-radius: 4px;
             overflow-x: auto;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .status {
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            display: inline-block;
+        }
+        
+        .status-connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
         }
     </style>
 </head>
@@ -106,7 +158,10 @@
                 <input type="text" id="roomIdInput" placeholder="Room ID">
                 <button id="joinRoomBtn">Join Room</button>
             </div>
-            <div>Current Room: <span id="currentRoom">None</span></div>
+            <div class="room-info">
+                Current Room: <span id="currentRoom" class="room-id">None</span>
+                <span id="connectionStatus" class="status status-disconnected">Disconnected</span>
+            </div>
         </div>
         
         <div class="card">

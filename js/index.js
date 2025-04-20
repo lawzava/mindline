@@ -12,7 +12,11 @@ async function loadWasmModule() {
         
         document.getElementById('debugOutput').textContent = 'WASM module loaded successfully!';
         console.log('WASM module loaded successfully!');
-        setupEventHandlers();
+        // Setup event handlers after module is fully loaded
+        setTimeout(() => {
+            setupEventHandlers();
+            log('Event handlers initialized');
+        }, 100);
         return true;
     } catch (err) {
         document.getElementById('debugOutput').textContent = `Error loading WASM module: ${err}`;
@@ -23,12 +27,40 @@ async function loadWasmModule() {
 
 // Function to restore state from localStorage
 function restoreState() {
+    // Check if WASM module is loaded
+    if (!wasmModule) {
+        console.warn("WASM module not loaded yet, cannot restore state");
+        return;
+    }
+    
+    // Initialize with default username if not yet initialized
+    if (document.getElementById('userId').textContent === 'Not initialized') {
+        try {
+            const userName = document.getElementById('userName').value || 'Anonymous';
+            const userId = wasmModule.initialize(userName);
+            document.getElementById('userId').textContent = userId;
+            log(`Auto-initialized user: ${userName} with ID: ${userId}`);
+        } catch (error) {
+            console.warn("Could not auto-initialize user:", error);
+        }
+    }
+    
     // Restore room ID if available
     const savedRoomId = localStorage.getItem('currentRoomId');
-    if (savedRoomId) {
+    if (savedRoomId && isValidUUID(savedRoomId)) {
         document.getElementById('currentRoom').textContent = savedRoomId;
         document.getElementById('roomIdInput').value = savedRoomId;
-        log(`Restored previous room ID: ${savedRoomId}`);
+        
+        // Try to join the room automatically
+        try {
+            wasmModule.join_room(savedRoomId, '{}');
+            updateConnectionStatus(true);
+            log(`Restored and rejoined previous room: ${savedRoomId}`);
+        } catch (error) {
+            console.warn("Could not auto-join saved room:", error);
+            log(`Restored previous room ID: ${savedRoomId} (not connected)`);
+            updateConnectionStatus(false);
+        }
     }
 }
 
@@ -36,10 +68,53 @@ function restoreState() {
 loadWasmModule().then(() => {
     // After module is loaded, restore any saved state
     restoreState();
+    
+    // Make sure connection status is updated based on current room
+    const roomId = getCurrentRoomId();
+    if (roomId) {
+        updateConnectionStatus(true);
+    } else {
+        updateConnectionStatus(false);
+    }
 });
+
+// Helper function to validate UUID format
+function isValidUUID(uuid) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(uuid);
+}
+
+// Helper function to safely get the current room ID
+function getCurrentRoomId() {
+    // First try localStorage
+    let roomId = localStorage.getItem('currentRoomId');
+    
+    // If not in localStorage, try the UI element
+    if (!roomId) {
+        roomId = document.getElementById('currentRoom').textContent;
+        if (roomId === 'None') {
+            return null;
+        }
+    }
+    
+    // Validate the room ID format
+    if (!isValidUUID(roomId)) {
+        log(`Warning: Invalid room ID format: ${roomId}`);
+        return null;
+    }
+    
+    return roomId;
+}
 
 // Set up UI event handlers
 function setupEventHandlers() {
+    // Check if WASM module is available
+    if (!wasmModule) {
+        console.error("WASM module not loaded yet, cannot setup event handlers");
+        log("Error: WASM module not loaded yet. Please refresh the page.");
+        return;
+    }
+    
     // Initialize user
     document.getElementById('initializeBtn').addEventListener('click', () => {
         const userName = document.getElementById('userName').value || 'Anonymous';
@@ -52,37 +127,22 @@ function setupEventHandlers() {
         }
     });
     
-    // Create room
     document.getElementById('createRoomBtn').addEventListener('click', () => {
         try {
             const roomId = wasmModule.create_room();
+            
+            // Update UI and localStorage
             document.getElementById('currentRoom').textContent = roomId;
             document.getElementById('roomIdInput').value = roomId;
-            // Save the room ID to localStorage for persistence
             localStorage.setItem('currentRoomId', roomId);
+            
+            // Update connection status
+            updateConnectionStatus(true);
+            
             log(`Created and joined room: ${roomId}`);
         } catch (error) {
             log(`Error creating room: ${error}`);
-        }
-    });
-    
-    // Join room
-    document.getElementById('joinRoomBtn').addEventListener('click', () => {
-        const roomId = document.getElementById('roomIdInput').value;
-        if (!roomId) {
-            log('Please enter a room ID to join');
-            return;
-        }
-        
-        try {
-            // In a real implementation, we would have signal data
-            const connectionToken = wasmModule.join_room(roomId, '{}');
-            document.getElementById('currentRoom').textContent = roomId;
-            // Save the room ID to localStorage for persistence
-            localStorage.setItem('currentRoomId', roomId);
-            log(`Joined room: ${roomId} with connection token: ${connectionToken}`);
-        } catch (error) {
-            log(`Error joining room: ${error}`);
+            updateConnectionStatus(false);
         }
     });
     
@@ -101,46 +161,55 @@ function setupEventHandlers() {
     // Typing indicator
     let typingTimeout;
     document.getElementById('messageInput').addEventListener('input', () => {
-        const roomId = document.getElementById('currentRoom').textContent;
-        if (roomId && roomId !== 'None') {
-            try {
-                // Try to ensure room exists first
+        const roomId = getCurrentRoomId();
+        if (!roomId) {
+            log('Please create or join a room first');
+            return;
+        }
+        
+        try {
+            wasmModule.send_typing_indicator(roomId, true);
+            
+            // Show typing indicator in UI (in a real app, this would come from WebRTC)
+            showTypingIndicator(true);
+            
+            // Clear existing timeout and set a new one
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
                 try {
-                    wasmModule.join_room(roomId, '{}');
-                } catch (e) {
-                    // Ignore errors here, we're just making sure the room exists
-                    console.log("Ensuring room exists", e);
+                    wasmModule.send_typing_indicator(roomId, false);
+                    showTypingIndicator(false);
+                } catch (error) {
+                    console.error("Error stopping typing indicator:", error);
                 }
-                
-                wasmModule.send_typing_indicator(roomId, true);
-                
-                // Clear existing timeout and set a new one
-                clearTimeout(typingTimeout);
-                typingTimeout = setTimeout(() => {
-                    try {
-                        wasmModule.send_typing_indicator(roomId, false);
-                    } catch (error) {
-                        console.log("Error stopping typing indicator:", error);
-                    }
-                }, 2000);
-            } catch (error) {
-                console.log(`Error sending typing indicator: ${error}`);
-                log(`Note: Typing indicators may not work until you create or join a room`);
-            }
+            }, 2000);
+        } catch (error) {
+            console.error(`Error sending typing indicator:`, error);
+            // Don't spam the user with this message on every keystroke
         }
     });
 }
 
+// Update connection status when room changes
+function updateConnectionStatus(isConnected) {
+    const statusElement = document.getElementById('connectionStatus');
+    if (isConnected) {
+        statusElement.textContent = 'Connected';
+        statusElement.className = 'status status-connected';
+    } else {
+        statusElement.textContent = 'Disconnected';
+        statusElement.className = 'status status-disconnected';
+    }
+}
 
 function sendMessage() {
     const messageInput = document.getElementById('messageInput');
     const message = messageInput.value;
     if (!message) return;
     
-    // Get room ID from state storage first, element second
-    let roomId = localStorage.getItem('currentRoomId') || document.getElementById('currentRoom').textContent;
-    
-    if (!roomId || roomId === 'None') {
+    // Get the current room ID safely
+    const roomId = getCurrentRoomId();
+    if (!roomId) {
         log('Please create or join a room first');
         return;
     }
@@ -149,25 +218,28 @@ function sendMessage() {
         // Make sure UI is synchronized
         document.getElementById('currentRoom').textContent = roomId;
         
-        // Send the message - our updated Rust code will handle room creation if needed
+        // Send the message
         const messageId = wasmModule.send_message(roomId, message);
         log(`Sent message with ID: ${messageId} to room: ${roomId}`);
         messageInput.value = '';
         
-        // Display the message
-        const chatArea = document.getElementById('chatArea');
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message', 'my-message');
-        messageElement.textContent = message;
-        chatArea.appendChild(messageElement);
-        chatArea.scrollTop = chatArea.scrollHeight;
+        // Display the message in chat
+        displayMessage(message, true);
         
-        // In a real app, we would receive messages through WebRTC
-        // For this test harness, we'll simulate retrieving our own messages
+        // Retrieve messages from the room
         setTimeout(() => {
             try {
                 const messagesJson = wasmModule.get_messages(roomId);
-                log(`Retrieved ${JSON.parse(messagesJson).length} messages from room ${roomId}`);
+                // Parse JSON safely
+                try {
+                    const messages = JSON.parse(messagesJson);
+                    log(`Retrieved ${messages.length} messages from room ${roomId}`);
+                    
+                    // In a real app, we would update the UI with all messages
+                    // For now, we're just logging the count
+                } catch (jsonError) {
+                    log(`Error parsing messages JSON: ${jsonError}`);
+                }
             } catch (error) {
                 log(`Error retrieving messages: ${error}`);
             }
@@ -177,7 +249,28 @@ function sendMessage() {
     }
 }
 
+// Helper function to display messages in the chat area
+function displayMessage(message, isMe = true) {
+    const chatArea = document.getElementById('chatArea');
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('message', isMe ? 'my-message' : 'their-message');
+    messageElement.textContent = message;
+    chatArea.appendChild(messageElement);
+    chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+// Show or hide the typing indicator
+function showTypingIndicator(isTyping) {
+    const indicator = document.getElementById('typingIndicator');
+    if (isTyping) {
+        indicator.style.display = 'block';
+    } else {
+        indicator.style.display = 'none';
+    }
+}
+
 function log(message) {
+    console.log(message); // Also log to console for debugging
     const debugOutput = document.getElementById('debugOutput');
     debugOutput.textContent = `${new Date().toLocaleTimeString()} - ${message}\n${debugOutput.textContent}`;
 }
