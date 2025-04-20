@@ -1,0 +1,204 @@
+/* Neobrutalist styles using plain CSS */
+:root {
+    --bg-light: #eceff4;
+    --bg-dark: #2e3440;
+    --border-light: #4c566a;
+    --border-dark: #eceff4;
+    --shadow-light: #3b4252;
+    --shadow-dark: #3b4252;
+    --accent-light: #EBCB8B;
+    --accent-dark: #3b4252;
+    --primary-light: #bf616a;
+    --primary-dark: #b48ead;
+    --secondary-light: #5e81ac;
+    --secondary-dark: #81a1c1;
+    --success-light: #a3be8c;
+    --success-dark: #a3be8c;
+    --error-light: #bf616a;
+    --error-dark: #bf616a;
+    --text-light: #2e3440;
+    --text-dark: #eceff4;
+}
+
+body {
+    --bg-color: var(--bg-light);
+    --border-color: var(--border-light);
+    --shadow-color: var(--shadow-light);
+    --accent-color: var(--accent-light);
+    --primary-color: var(--primary-light);
+    --secondary-color: var(--secondary-light);
+    --success-color: var(--success-light);
+    --error-color: var(--error-light);
+    --text-color: var(--text-light);
+    --input-text: var(--text-light);
+    --input-bg: var(--bg-light);
+    background-color: #f7f7f7;
+    color: var(--text-color);
+}
+
+body.dark {
+    --bg-color: var(--bg-dark);
+    --border-color: var(--border-dark);
+    --shadow-color: var(--shadow-dark);
+    --accent-color: var(--accent-dark);
+    --primary-color: var(--primary-dark);
+    --secondary-color: var(--secondary-dark);
+    --success-color: var(--success-dark);
+    --error-color: var(--error-dark);
+    --text-color: var(--text-dark);
+    --input-text: var(--text-dark);
+    --input-bg: var(--bg-dark);
+    background-color: var(--bg-dark);
+    color: var(--text-color);
+}
+
+.neo-card {
+    background-color: var(--bg-color);
+    border: 3px solid var(--border-color);
+    box-shadow: 5px 5px 0 0 var(--shadow-color);
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+
+.neo-card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 7px 7px 0 0 var(--shadow-color);
+}
+
+.neo-header {
+    background-color: var(--accent-color);
+    border-bottom: 3px solid var(--border-color);
+    padding: 1rem;
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: black; /* Header text always black for contrast with yellow background */
+}
+
+.neo-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 3px solid var(--border-color);
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    font-family: 'Inter', sans-serif;
+}
+
+.neo-input:focus {
+    outline: none;
+    box-shadow: 4px 4px 0 0 var(--shadow-color);
+}
+
+.neo-btn {
+    padding: 0.5rem 1rem;
+    border: 3px solid var(--border-color);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 3px 3px 0 0 var(--shadow-color);
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+.neo-btn:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 5px 0 0 var(--shadow-color);
+}
+
+.neo-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 0 var(--shadow-color);
+}
+
+.neo-btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.neo-btn-secondary {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+/* Typing animation */
+.typing-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-color);
+    margin-right: 3px;
+    animation: bounce 1.3s linear infinite;
+}
+
+.typing-dot:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.typing-dot:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+@keyframes bounce {
+    0%, 60%, 100% {
+        transform: translateY(0);
+    }
+    30% {
+        transform: translateY(-4px);
+    }
+}
+
+/* Status indicators */
+.status-connected {
+    background-color: var(--success-color);
+    color: var(--text-color);
+    border-color: var(--border-color);
+    padding: 0.5rem 1rem;
+    border: 3px solid var(--border-color);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 3px 3px 0 0 var(--shadow-color);
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.status-disconnected {
+    background-color: var(--error-color);
+    color: black;
+    border-color: var(--border-color);
+    padding: 0.5rem 1rem;
+    border: 3px solid var(--border-color);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 3px 3px 0 0 var(--shadow-color);
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Other elements that need theme colors */
+#chatArea {
+    border-color: var(--border-color);
+}
+
+#debugOutput, #userId, #currentRoom {
+    border-color: var(--border-color);
+}
+
+#typingIndicator {
+    background-color: var(--bg-color);
+    border-color: var(--border-color);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-color);
+}

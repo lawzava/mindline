@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mindline - Secure P2P Real Time Chat</title>
-    <!-- Import Inter font -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Include Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Mindline - Secure P2P Real Time Chat</title>
+        <!-- Import Inter font -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+            rel="stylesheet">
+        <!-- Include Tailwind CSS -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
@@ -44,325 +46,190 @@
             }
         };
     </script>
-    <style>
-        /* Neobrutalist styles using plain CSS */
-        :root {
-            --bg-light: #eceff4;
-            --bg-dark: #2e3440;
-            --border-light: #4c566a;
-            --border-dark: #eceff4;
-            --shadow-light: #3b4252;
-            --shadow-dark: #3b4252;
-            --accent-light: #EBCB8B;
-            --accent-dark: #3b4252;
-            --primary-light: #bf616a;
-            --primary-dark: #b48ead;
-            --secondary-light: #5e81ac;
-            --secondary-dark: #81a1c1;
-            --success-light: #a3be8c;
-            --success-dark: #a3be8c;
-            --error-light: #bf616a;
-            --error-dark: #bf616a;
-            --text-light: #2e3440;
-            --text-dark: #eceff4;
-        }
-        
-        body {
-            --bg-color: var(--bg-light);
-            --border-color: var(--border-light);
-            --shadow-color: var(--shadow-light);
-            --accent-color: var(--accent-light);
-            --primary-color: var(--primary-light);
-            --secondary-color: var(--secondary-light);
-            --success-color: var(--success-light);
-            --error-color: var(--error-light);
-            --text-color: var(--text-light);
-            --input-text: var(--text-light);
-            --input-bg: var(--bg-light);
-            background-color: #f7f7f7;
-            color: var(--text-color);
-        }
-        
-        body.dark {
-            --bg-color: var(--bg-dark);
-            --border-color: var(--border-dark);
-            --shadow-color: var(--shadow-dark);
-            --accent-color: var(--accent-dark);
-            --primary-color: var(--primary-dark);
-            --secondary-color: var(--secondary-dark);
-            --success-color: var(--success-dark);
-            --error-color: var(--error-dark);
-            --text-color: var(--text-dark);
-            --input-text: var(--text-dark);
-            --input-bg: var(--bg-dark);
-            background-color: var(--bg-dark);
-            color: var(--text-color);
-        }
-        
-        .neo-card {
-            background-color: var(--bg-color);
-            border: 3px solid var(--border-color);
-            box-shadow: 5px 5px 0 0 var(--shadow-color);
-            transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
-        }
-        
-        .neo-card:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 7px 7px 0 0 var(--shadow-color);
-        }
-        
-        .neo-header {
-            background-color: var(--accent-color);
-            border-bottom: 3px solid var(--border-color);
-            padding: 1rem;
-            font-weight: bold;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: black; /* Header text always black for contrast with yellow background */
-        }
-        
-        .neo-input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 3px solid var(--border-color);
-            background-color: var(--input-bg);
-            color: var(--input-text);
-            font-family: 'Inter', sans-serif;
-        }
-        
-        .neo-input:focus {
-            outline: none;
-            box-shadow: 4px 4px 0 0 var(--shadow-color);
-        }
-        
-        .neo-btn {
-            padding: 0.5rem 1rem;
-            border: 3px solid var(--border-color);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            box-shadow: 3px 3px 0 0 var(--shadow-color);
-            transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-        }
-        
-        .neo-btn:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 5px 5px 0 0 var(--shadow-color);
-        }
-        
-        .neo-btn:active {
-            transform: translate(2px, 2px);
-            box-shadow: 1px 1px 0 0 var(--shadow-color);
-        }
-        
-        .neo-btn-primary {
-            background-color: var(--primary-color);
-            color: white;
-        }
-        
-        .neo-btn-secondary {
-            background-color: var(--secondary-color);
-            color: white;
-        }
-        
-        /* Typing animation */
-        .typing-dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: var(--text-color);
-            margin-right: 3px;
-            animation: bounce 1.3s linear infinite;
-        }
-        
-        .typing-dot:nth-child(2) {
-            animation-delay: 0.15s;
-        }
-        
-        .typing-dot:nth-child(3) {
-            animation-delay: 0.3s;
-        }
-        
-        @keyframes bounce {
-            0%, 60%, 100% {
-                transform: translateY(0);
-            }
-            30% {
-                transform: translateY(-4px);
-            }
-        }
-        
-        /* Status indicators */
-        .status-connected {
-            background-color: var(--success-color);
-            color: var(--text-color);
-            border-color: var(--border-color);
-            padding: 0.5rem 1rem;
-            border: 3px solid var(--border-color);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            box-shadow: 3px 3px 0 0 var(--shadow-color);
-            transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .status-disconnected {
-            background-color: var(--error-color);
-            color: black;
-            border-color: var(--border-color);
-            padding: 0.5rem 1rem;
-            border: 3px solid var(--border-color);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            box-shadow: 3px 3px 0 0 var(--shadow-color);
-            transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        /* Other elements that need theme colors */
-        #chatArea {
-            border-color: var(--border-color);
-        }
-        
-        #debugOutput, #userId, #currentRoom {
-            border-color: var(--border-color);
-        }
-        
-        #typingIndicator {
-            background-color: var(--bg-color);
-            border-color: var(--border-color);
-        }
+    </head>
+    <body
+        class="bg-gray-100 dark:bg-gray-900 text-black dark:text-white min-h-screen">
+        <div class="max-w-6xl mx-auto px-4 py-6">
+            <!-- Header -->
+            <header class="neo-card mb-6">
+                <div class="neo-header">
+                    <div class="flex flex-col">
+                        <h1
+                            class="text-3xl font-bold tracking-tight">MINDLINE</h1>
+                        <p
+                            class="text-sm text-secondary dark:text-secondary-dark font-medium">Secure
+                            P2P Real Time Chat</p>
+                    </div>
+                    <button id="themeToggleBtn"
+                        class="p-2 focus:outline-none cursor-pointer z-10 relative"
+                        aria-label="Toggle dark mode"
+                        style="position: relative; z-index: 100;">
+                        <!-- Sun icon for dark mode -->
+                        <svg id="sunIcon" class="w-6 h-6 hidden"
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"><circle cx="12" cy="12"
+                                r="5"></circle><line x1="12" y1="1" x2="12"
+                                y2="3"></line><line x1="12" y1="21" x2="12"
+                                y2="23"></line><line x1="4.22" y1="4.22"
+                                x2="5.64" y2="5.64"></line><line x1="18.36"
+                                y1="18.36" x2="19.78" y2="19.78"></line><line
+                                x1="1" y1="12" x2="3" y2="12"></line><line
+                                x1="21" y1="12" x2="23" y2="12"></line><line
+                                x1="4.22" y1="19.78" x2="5.64"
+                                y2="18.36"></line><line x1="18.36" y1="5.64"
+                                x2="19.78" y2="4.22"></line></svg>
+                        <!-- Moon icon for light mode -->
+                        <svg id="moonIcon" class="w-6 h-6"
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round"><path
+                                d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                    </button>
+                </div>
+            </header>
 
-        h1, h2, h3, h4, h5, h6 {
-            color: var(--text-color);
-        }
-    </style>
-</head>
-<body class="bg-gray-100 dark:bg-gray-900 text-black dark:text-white min-h-screen">
-    <div class="max-w-6xl mx-auto px-4 py-6">
-        <!-- Header -->
-        <header class="neo-card mb-6">
-            <div class="neo-header">
-                <div class="flex flex-col">
-                    <h1 class="text-3xl font-bold tracking-tight">MINDLINE</h1>
-                    <p class="text-sm text-secondary dark:text-secondary-dark font-medium">Secure P2P Real Time Chat</p>
-                </div>
-                <button id="themeToggleBtn" class="p-2 focus:outline-none cursor-pointer z-10 relative" aria-label="Toggle dark mode" style="position: relative; z-index: 100;">
-                    <!-- Sun icon for dark mode -->
-                    <svg id="sunIcon" class="w-6 h-6 hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-                    <!-- Moon icon for light mode -->
-                    <svg id="moonIcon" class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-                </button>
-            </div>
-        </header>
-        
-        <!-- Main content -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <!-- Sidebar -->
-            <div class="lg:col-span-4 flex flex-col gap-6">
-                <!-- User Setup Card -->
-                <div class="neo-card">
-                    <div class="neo-header">
-                        <h2 class="text-xl uppercase tracking-wider">USER SETUP</h2>
-                    </div>
-                    <div class="p-4">
-                        <div class="mb-4">
-                            <label for="userName" class="block font-semibold mb-2">Your Name</label>
-                            <input type="text" id="userName" placeholder="Enter your name" value="Test User" class="neo-input">
+            <!-- Main content -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Sidebar -->
+                <div class="lg:col-span-4 flex flex-col gap-6">
+                    <!-- User Setup Card -->
+                    <div class="neo-card">
+                        <div class="neo-header">
+                            <h2 class="text-xl uppercase tracking-wider">USER
+                                SETUP</h2>
                         </div>
-                        <button id="initializeBtn" class="neo-btn neo-btn-primary">Initialize</button>
-                        <div class="mt-4 flex flex-wrap items-center gap-2">
-                            <span class="font-semibold">User ID:</span>
-                            <span id="userId" class="inline-block py-1 px-2 bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white font-mono text-sm overflow-hidden text-ellipsis max-w-full">Not initialized</span>
+                        <div class="p-4">
+                            <div class="mb-4">
+                                <label for="userName"
+                                    class="block font-semibold mb-2">Your
+                                    Name</label>
+                                <input type="text" id="userName"
+                                    placeholder="Enter your name"
+                                    value="Test User" class="neo-input">
+                            </div>
+                            <button id="initializeBtn"
+                                class="neo-btn neo-btn-primary">Initialize</button>
+                            <div class="mt-4 flex flex-wrap items-center gap-2">
+                                <span class="font-semibold">User ID:</span>
+                                <span id="userId"
+                                    class="inline-block py-1 px-2 bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white font-mono text-sm overflow-hidden text-ellipsis max-w-full">Not
+                                    initialized</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-                
-                <!-- Room Management Card -->
-                <div class="neo-card">
-                    <div class="neo-header">
-                        <h2 class="text-xl uppercase tracking-wider">ROOM</h2>
-                    </div>
-                    <div class="p-4">
-                        <div class="mb-4">
-                            <label for="roomIdInput" class="block font-semibold mb-2">Room ID</label>
-                            <input type="text" id="roomIdInput" placeholder="Enter room ID (min 8 chars)" class="neo-input">
-                            <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">Alphanumeric with dashes/underscores (min 8 chars)</p>
+
+                    <!-- Room Management Card -->
+                    <div class="neo-card">
+                        <div class="neo-header">
+                            <h2
+                                class="text-xl uppercase tracking-wider">ROOM</h2>
                         </div>
-                        <div class="flex flex-col sm:flex-row gap-2 mb-4">
-                            <button id="createRoomBtn" class="neo-btn neo-btn-primary">Create Room</button>
-                            <button id="joinRoomBtn" class="neo-btn neo-btn-secondary">Join Room</button>
-                        </div>
-                        <div class="pt-4 border-t-2 border-gray-200 dark:border-gray-700">
-                            <div class="flex flex-col gap-2">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <span class="font-semibold">Current:</span>
-                                    <span id="currentRoom" class="inline-block py-1 px-2 bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white font-mono text-sm overflow-hidden text-ellipsis max-w-full">None</span>
+                        <div class="p-4">
+                            <div class="mb-4">
+                                <label for="roomIdInput"
+                                    class="block font-semibold mb-2">Room
+                                    ID</label>
+                                <input type="text" id="roomIdInput"
+                                    placeholder="Enter room ID (min 8 chars)"
+                                    class="neo-input">
+                                <p
+                                    class="text-xs text-gray-600 dark:text-gray-400 mt-1">Alphanumeric
+                                    with dashes/underscores (min 8 chars)</p>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-2 mb-4">
+                                <button id="createRoomBtn"
+                                    class="neo-btn neo-btn-primary">Create
+                                    Room</button>
+                                <button id="joinRoomBtn"
+                                    class="neo-btn neo-btn-secondary">Join
+                                    Room</button>
+                            </div>
+                            <div
+                                class="pt-4 border-t-2 border-gray-200 dark:border-gray-700">
+                                <div class="flex flex-col gap-2">
+                                    <div
+                                        class="flex flex-wrap items-center gap-2">
+                                        <span
+                                            class="font-semibold">Current:</span>
+                                        <span id="currentRoom"
+                                            class="inline-block py-1 px-2 bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white font-mono text-sm overflow-hidden text-ellipsis max-w-full">None</span>
+                                    </div>
+                                    <div id="connectionStatus"
+                                        class="inline-block px-3 py-1 text-xs font-bold uppercase border-2 border-black dark:border-white tracking-wider status-disconnected">Disconnected</div>
                                 </div>
-                                <div id="connectionStatus" class="inline-block px-3 py-1 text-xs font-bold uppercase border-2 border-black dark:border-white tracking-wider status-disconnected">Disconnected</div>
                             </div>
                         </div>
                     </div>
-                </div>
-                
-                <!-- Debug Card -->
-                <div class="neo-card">
-                    <div class="neo-header">
-                        <h2 class="text-xl uppercase tracking-wider">DEBUG</h2>
-                        <button id="clearLogBtn" class="py-1 px-2 text-sm border-2 border-black dark:border-white dark:text-white bg-white dark:bg-gray-800 hover:bg-gray-100">Clear</button>
-                    </div>
-                    <div class="p-4">
-                        <pre id="debugOutput" class="bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white p-3 h-[150px] overflow-y-auto font-mono text-sm">Waiting for WASM module to load...</pre>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Chat Section -->
-            <div class="lg:col-span-8">
-                <div class="neo-card h-[calc(100vh-150px)] min-h-[500px] flex flex-col">
-                    <div class="neo-header">
-                        <h2 class="text-xl uppercase tracking-wider">CHAT</h2>
-                    </div>
-                    <div class="flex-1 p-4 flex flex-col">
-                        <div id="chatArea" class="flex-1 bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white p-4 overflow-y-auto mb-4 relative">
-                            <!-- Welcome message -->
-                            <div class="text-center py-8 text-gray-500 dark:text-gray-400 italic">
-                                Join or create a room to start chatting
-                            </div>
-                            
-                            <!-- Typing indicator -->
-                            <div id="typingIndicator" class="absolute bottom-4 left-4 bg-white dark:bg-gray-800 border-2 border-black dark:border-white p-2 shadow-md hidden">
-                                <span class="typing-dot"></span>
-                                <span class="typing-dot"></span>
-                                <span class="typing-dot"></span>
-                            </div>
+
+                    <!-- Debug Card -->
+                    <div class="neo-card">
+                        <div class="neo-header">
+                            <h2
+                                class="text-xl uppercase tracking-wider">DEBUG</h2>
+                            <button id="clearLogBtn"
+                                class="py-1 px-2 text-sm border-2 border-black dark:border-white dark:text-white bg-white dark:bg-gray-800 hover:bg-gray-100">Clear</button>
                         </div>
-                        <div class="flex gap-2">
-                            <input type="text" id="messageInput" placeholder="Type your message..." class="neo-input flex-1">
-                            <button id="sendBtn" class="neo-btn neo-btn-primary" aria-label="Send message">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                            </button>
+                        <div class="p-4">
+                            <pre id="debugOutput"
+                                class="bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white p-3 h-[150px] overflow-y-auto font-mono text-sm">Waiting for WASM module to load...</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Section -->
+                <div class="lg:col-span-8">
+                    <div
+                        class="neo-card h-[calc(100vh-150px)] min-h-[500px] flex flex-col">
+                        <div class="neo-header">
+                            <h2
+                                class="text-xl uppercase tracking-wider">CHAT</h2>
+                        </div>
+                        <div class="flex-1 p-4 flex flex-col">
+                            <div id="chatArea"
+                                class="flex-1 bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white p-4 overflow-y-auto mb-4 relative">
+                                <!-- Welcome message -->
+                                <div
+                                    class="text-center py-8 text-gray-500 dark:text-gray-400 italic">
+                                    Join or create a room to start chatting
+                                </div>
+
+                                <!-- Typing indicator -->
+                                <div id="typingIndicator"
+                                    class="absolute bottom-4 left-4 bg-white dark:bg-gray-800 border-2 border-black dark:border-white p-2 shadow-md hidden">
+                                    <span class="typing-dot"></span>
+                                    <span class="typing-dot"></span>
+                                    <span class="typing-dot"></span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="text" id="messageInput"
+                                    placeholder="Type your message..."
+                                    class="neo-input flex-1">
+                                <button id="sendBtn"
+                                    class="neo-btn neo-btn-primary"
+                                    aria-label="Send message">
+                                    <svg xmlns="http://www.w3.org/2000/svg"
+                                        width="20" height="20"
+                                        viewBox="0 0 24 24" fill="none"
+                                        stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"><line x1="22"
+                                            y1="2" x2="11"
+                                            y2="13"></line><polygon
+                                            points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-    
-    <script>
+
+        <script>
         // Theme toggle functionality
         document.getElementById('themeToggleBtn').addEventListener('click', () => {
             document.body.classList.toggle('dark');
@@ -447,73 +314,69 @@
             
             // Connect script to your existing index.js in a real implementation
             document.getElementById('debugOutput').textContent = 'Application initialized successfully\nReady to connect';
-        });
 
-        // Add this directly in a script tag at the end of the body, before the closing </body> tag
+            // Get toggle button element
+            const themeToggleBtn = document.getElementById('themeToggleBtn');
+            
+            // Add event listener with debugging
+            themeToggleBtn.addEventListener('click', function(event) {
+                console.log('Theme toggle clicked');
+                
+                // Toggle dark class
+                document.body.classList.toggle('dark');
+                
+                // Update icons based on current state
+                if (document.body.classList.contains('dark')) {
+                    document.getElementById('moonIcon').classList.add('hidden');
+                    document.getElementById('sunIcon').classList.remove('hidden');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.getElementById('sunIcon').classList.add('hidden');
+                    document.getElementById('moonIcon').classList.remove('hidden');
+                    localStorage.setItem('theme', 'light');
+                }
+            });
+            
+            // Explicitly make the button clickable by giving it a larger hit area
+            themeToggleBtn.style.cursor = 'pointer';
+            
+            // Initialize theme based on preference
+            initTheme();
+            
+            // For testing - add a fallback click handler on the parent
+            const headerElement = document.querySelector('.neo-header');
+            headerElement.addEventListener('click', function(event) {
+                if (event.target === headerElement) {
+                    return; // Only handle clicks on the header itself, not children
+                }
+                
+                // Check if the click is near the toggle button
+                const toggleRect = themeToggleBtn.getBoundingClientRect();
+                if (
+                    event.clientX >= toggleRect.left - 10 && 
+                    event.clientX <= toggleRect.right + 10 &&
+                    event.clientY >= toggleRect.top - 10 && 
+                    event.clientY <= toggleRect.bottom + 10
+                ) {
+                    console.log('Nearby click detected, triggering theme toggle');
+                    themeToggleBtn.click();
+                }
+            });
+    }); 
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Get toggle button element
-    const themeToggleBtn = document.getElementById('themeToggleBtn');
-    
-    // Add event listener with debugging
-    themeToggleBtn.addEventListener('click', function(event) {
-        console.log('Theme toggle clicked');
+    function initTheme() {
+        const savedTheme = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         
-        // Toggle dark class
-        document.body.classList.toggle('dark');
-        
-        // Update icons based on current state
-        if (document.body.classList.contains('dark')) {
+        if (savedTheme === 'dark' || (savedTheme === null && prefersDark)) {
+            document.body.classList.add('dark');
             document.getElementById('moonIcon').classList.add('hidden');
             document.getElementById('sunIcon').classList.remove('hidden');
-            localStorage.setItem('theme', 'dark');
         } else {
             document.getElementById('sunIcon').classList.add('hidden');
             document.getElementById('moonIcon').classList.remove('hidden');
-            localStorage.setItem('theme', 'light');
         }
-    });
-    
-    // Explicitly make the button clickable by giving it a larger hit area
-    themeToggleBtn.style.cursor = 'pointer';
-    
-    // Initialize theme based on preference
-    initTheme();
-    
-    // For testing - add a fallback click handler on the parent
-    const headerElement = document.querySelector('.neo-header');
-    headerElement.addEventListener('click', function(event) {
-        if (event.target === headerElement) {
-            return; // Only handle clicks on the header itself, not children
-        }
-        
-        // Check if the click is near the toggle button
-        const toggleRect = themeToggleBtn.getBoundingClientRect();
-        if (
-            event.clientX >= toggleRect.left - 10 && 
-            event.clientX <= toggleRect.right + 10 &&
-            event.clientY >= toggleRect.top - 10 && 
-            event.clientY <= toggleRect.bottom + 10
-        ) {
-            console.log('Nearby click detected, triggering theme toggle');
-            themeToggleBtn.click();
-        }
-    });
-});
-
-function initTheme() {
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    if (savedTheme === 'dark' || (savedTheme === null && prefersDark)) {
-        document.body.classList.add('dark');
-        document.getElementById('moonIcon').classList.add('hidden');
-        document.getElementById('sunIcon').classList.remove('hidden');
-    } else {
-        document.getElementById('sunIcon').classList.add('hidden');
-        document.getElementById('moonIcon').classList.remove('hidden');
-    }
 }
     </script>
-</body>
+    </body>
 </html>
