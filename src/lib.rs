@@ -18,8 +18,8 @@ macro_rules! console_log {
 }
 
 // Message types for our chat application
-#[derive(Serialize, Deserialize, Debug, Clone)]
-enum MessageType {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum MessageType {
     Text,
     Typing,
     StoppedTyping,
@@ -30,7 +30,7 @@ enum MessageType {
 
 // Message structure
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct Message {
+pub struct Message {
     id: String,
     sender_id: String,
     sender_name: String,
@@ -41,6 +41,7 @@ struct Message {
 }
 
 // Room structure
+#[derive(Clone)]
 #[allow(dead_code)]
 struct Room {
     id: String,
@@ -49,6 +50,7 @@ struct Room {
 }
 
 // User structure
+#[derive(Clone)]
 struct User {
     id: String,
     name: String,
@@ -63,25 +65,52 @@ struct ChatManager {
 
 // Our chat manager singleton
 thread_local! {
-    static CHAT_MANAGER: Arc<Mutex<ChatManager>> = Arc::new(Mutex::new(ChatManager {
-        user: User {
-            id: "default-user-id".to_string(), // Will be set by initialize
-            name: "Anonymous".to_string(),
-            current_room_id: None,
-        },
-        rooms: HashMap::new(),
-    }));
+    static CHAT_MANAGER: Arc<Mutex<ChatManager>> = Arc::new(Mutex::new(ChatManager::new()));
+}
+
+impl ChatManager {
+    fn new() -> Self {
+        Self {
+            user: User {
+                id: "default-user-id".to_string(),
+                name: "Anonymous".to_string(),
+                current_room_id: None,
+            },
+            rooms: HashMap::new(),
+        }
+    }
+
+    fn get_or_create_room(&mut self, room_id: &str) -> Result<&mut Room, JsValue> {
+        if !self.rooms.contains_key(room_id) {
+            let encryption_key = generate_encryption_key()?;
+            
+            self.rooms.insert(
+                room_id.to_string(),
+                Room {
+                    id: room_id.to_string(),
+                    messages: Vec::new(),
+                    encryption_key,
+                },
+            );
+            
+            // Set as current room
+            self.user.current_room_id = Some(room_id.to_string());
+            console_log!("Created new room: '{}'", room_id);
+        }
+        
+        Ok(self.rooms.get_mut(room_id).unwrap())
+    }
 }
 
 // Generate a random encryption key
 fn generate_encryption_key() -> Result<Vec<u8>, JsValue> {
     let mut key = vec![0u8; 32]; // 256 bits
     getrandom(&mut key)
-        .map_err(|_| JsValue::from_str("Failed to generate random encryption key"))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to generate random encryption key: {:?}", e)))?;
     Ok(key)
 }
 
-// Initialize our chat application with a client-provided user ID
+// Initialize our chat application with a client-provided user ID and name
 #[wasm_bindgen]
 pub fn initialize(user_name: &str, user_id: &str) -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
@@ -90,10 +119,17 @@ pub fn initialize(user_name: &str, user_id: &str) -> Result<(), JsValue> {
         return Err(JsValue::from_str("User ID cannot be empty"));
     }
 
+    if user_name.is_empty() {
+        return Err(JsValue::from_str("User name cannot be empty"));
+    }
+
     CHAT_MANAGER.with(|cm| {
-        let mut manager = cm.lock().unwrap();
+        let mut manager = cm.lock().map_err(|_| 
+            JsValue::from_str("Failed to lock chat manager"))?;
+            
         manager.user.name = user_name.to_string();
         manager.user.id = user_id.to_string();
+        
         console_log!(
             "User initialized with name: {} and ID: {}",
             user_name,
@@ -103,32 +139,26 @@ pub fn initialize(user_name: &str, user_id: &str) -> Result<(), JsValue> {
     })
 }
 
+// Validates a string parameter from JS
+fn validate_js_string_param(param: &JsValue, param_name: &str) -> Result<String, JsValue> {
+    let value = param.as_string().ok_or_else(|| {
+        console_log!("Failed to convert {} to string", param_name);
+        JsValue::from_str(&format!("Invalid {}", param_name))
+    })?;
+
+    if value.is_empty() {
+        return Err(JsValue::from_str(&format!("{} cannot be empty", param_name)));
+    }
+
+    Ok(value)
+}
+
 // Send a message to the current room
 #[wasm_bindgen]
 pub fn send_message(room_id: &JsValue, content: &JsValue, message_id: &JsValue) -> Result<(), JsValue> {
-    let room_id = room_id.as_string().ok_or_else(|| {
-        console_log!("Failed to convert room_id to string");
-        JsValue::from_str("Invalid room ID")
-    })?;
-
-    let content = content.as_string().ok_or_else(|| {
-        console_log!("Failed to convert content to string");
-        JsValue::from_str("Invalid message content")
-    })?;
-
-    let message_id = message_id.as_string().ok_or_else(|| {
-        console_log!("Failed to convert message_id to string");
-        JsValue::from_str("Invalid message ID")
-    })?;
-
-    // Safety check - make sure room_id is valid
-    if room_id.is_empty() {
-        return Err(JsValue::from_str("Room ID cannot be empty"));
-    }
-
-    if message_id.is_empty() {
-        return Err(JsValue::from_str("Message ID cannot be empty"));
-    }
+    let room_id = validate_js_string_param(room_id, "room ID")?;
+    let content = validate_js_string_param(content, "message content")?;
+    let message_id = validate_js_string_param(message_id, "message ID")?;
 
     console_log!(
         "Sending message to room: {} with content: {} and message ID: {}",
@@ -138,119 +168,56 @@ pub fn send_message(room_id: &JsValue, content: &JsValue, message_id: &JsValue) 
     );
 
     CHAT_MANAGER.with(|cm| {
-        let mut manager = cm.lock().unwrap();
+        let mut manager = cm.lock().map_err(|_| 
+            JsValue::from_str("Failed to lock chat manager"))?;
 
-        // If room doesn't exist, create it
-        if !manager.rooms.contains_key(&room_id) {
-            console_log!(
-                "Room {} not found for sending message, creating it",
-                room_id
-            );
-
-            // Generate encryption key
-            let encryption_key = generate_encryption_key()?;
-
-            // Create the room
-            manager.rooms.insert(
-                room_id.to_string(),
-                Room {
-                    id: room_id.to_string(),
-                    messages: Vec::new(),
-                    encryption_key,
-                },
-            );
-
-            // Also set as current room
-            manager.user.current_room_id = Some(room_id.to_string());
-        }
+        // Get or create the room
+        let user_id = manager.user.id.clone();
+        let user_name = manager.user.name.clone();
+        let room = manager.get_or_create_room(&room_id)?;
 
         // Create message
         let message = Message {
-            id: message_id.to_string(),
-            sender_id: manager.user.id.clone(),
-            sender_name: manager.user.name.clone(),
+            id: message_id,
+            sender_id: user_id,
+            sender_name: user_name,
             message_type: MessageType::Text,
-            content: content.to_string(),
+            content,
             timestamp: js_sys::Date::now() as u64,
-            room_id: room_id.to_string(),
+            room_id: room_id.clone(),
         };
 
-        // Serialize the message for logging
-        let message_json = serde_json::to_string(&message)
-            .map_err(|_| JsValue::from_str("Failed to serialize message"))?;
-
-        console_log!("Message to send: {}", message_json);
-
         // Store in local history
-        if let Some(room) = manager.rooms.get_mut(&room_id) {
-            room.messages.push(message.clone());
-        }
-
+        room.messages.push(message);
         Ok(())
     })
 }
 
-// Fixed version of send_typing_indicator that handles missing rooms
+// Send typing indicator for real-time typing display
 #[wasm_bindgen]
 pub fn send_typing_indicator(room_id: &JsValue, is_typing: JsValue) -> Result<(), JsValue> {
-    let room_id = room_id.as_string().ok_or_else(|| {
-        console_log!("Failed to convert room_id to string");
-        JsValue::from_str("Invalid room ID")
-    })?;
-
+    let room_id = validate_js_string_param(room_id, "room ID")?;
+    
     let is_typing = is_typing.as_bool().ok_or_else(|| {
         console_log!("Failed to convert is_typing to boolean");
         JsValue::from_str("Invalid typing indicator")
     })?;
+    
     console_log!(
         "send_typing_indicator called with room_id: '{}' and is_typing: {}",
         room_id,
         is_typing
     );
 
-    // Safety check - make sure room_id is valid
-    if room_id.is_empty() {
-        console_log!("Empty room ID provided for typing indicator");
-        return Err(JsValue::from_str("Room ID cannot be empty"));
-    }
-
     CHAT_MANAGER.with(|cm| {
-        let mut manager = match cm.lock() {
-            Ok(manager) => manager,
-            Err(_) => {
-                console_log!("Failed to lock chat manager mutex");
-                return Err(JsValue::from_str("Internal error: failed to lock chat manager"));
-            }
-        };
+        let mut manager = cm.lock().map_err(|_| 
+            JsValue::from_str("Failed to lock chat manager"))?;
         
-        // If room doesn't exist, create it instead of returning an error
-        if !manager.rooms.contains_key(&room_id) {
-            console_log!("Room {} not found for typing indicator, creating it", room_id);
-            
-            // Generate encryption key - handle potential errors
-            let encryption_key = match generate_encryption_key() {
-                Ok(key) => key,
-                Err(e) => {
-                    console_log!("Failed to generate encryption key: {:?}", e);
-                    return Err(JsValue::from_str("Failed to generate encryption key"));
-                }
-            };
-            
-            // Create the room
-            manager.rooms.insert(
-                room_id.to_string(),
-                Room {
-                    id: room_id.to_string(),
-                    messages: Vec::new(),
-                    encryption_key,
-                },
-            );
-            
-            // Also set as current room
-            manager.user.current_room_id = Some(room_id.to_string());
-        }
+        // Get or create the room
+        let _room = manager.get_or_create_room(&room_id)?;
 
-        // Log the typing state
+        // In a real implementation, this would broadcast to other users
+        // Log the typing state for debugging
         let typing_state = if is_typing { "typing" } else { "stopped typing" };
         console_log!("User is {} in room {}", typing_state, room_id);
 
@@ -258,89 +225,46 @@ pub fn send_typing_indicator(room_id: &JsValue, is_typing: JsValue) -> Result<()
     })
 }
 
+// Get messages from a room
 #[wasm_bindgen]
-pub fn get_messages(room_id: &JsValue) -> String {
+pub fn get_messages(room_id: &JsValue) -> Result<String, JsValue> {
     let room_id = match room_id.as_string() {
-        Some(id) => id,
-        None => {
-            console_log!("Failed to convert room_id to string");
-            return "[]".to_string(); // Return empty array instead of error
+        Some(id) if !id.is_empty() => id,
+        _ => {
+            console_log!("Invalid room ID provided for get_messages");
+            return Ok("[]".to_string()); // Return empty array for invalid input
         }
     };
 
-    // Safety check - make sure room_id is valid
-    if room_id.is_empty() {
-        console_log!("Empty room ID provided for get_messages");
-        return "[]".to_string(); // Return empty array instead of error
-    }
-
     CHAT_MANAGER.with(|cm| {
-        let manager = match cm.lock() {
-            Ok(manager) => manager,
-            Err(_) => {
-                console_log!("Failed to lock chat manager mutex");
-                return "[]".to_string(); // Return empty array on error
+        let manager = cm.lock().map_err(|_| 
+            JsValue::from_str("Failed to lock chat manager"))?;
+
+        // If room doesn't exist, return empty array
+        let messages = match manager.rooms.get(&room_id) {
+            Some(room) => &room.messages,
+            None => {
+                console_log!(
+                    "Room {} not found for getting messages, returning empty array",
+                    room_id
+                );
+                return Ok("[]".to_string());
             }
         };
 
-        // If room doesn't exist, return empty array
-        if !manager.rooms.contains_key(&room_id) {
-            console_log!(
-                "Room {} not found for getting messages, returning empty array",
-                room_id
-            );
-            return "[]".to_string();
-        }
-
-        // Get messages with proper error handling
-        match manager.rooms.get(&room_id) {
-            Some(room) => {
-                // Serialize with proper error handling
-                match serde_json::to_string(&room.messages) {
-                    Ok(messages_json) => {
-                        console_log!("Successfully serialized {} messages from room {}", 
-                                     room.messages.len(), room_id);
-                        
-                        // Debug: Log the JSON
-                        console_log!("JSON output: {}", messages_json);
-                        
-                        // Return the string directly
-                        messages_json
-                    },
-                    Err(e) => {
-                        console_log!("Failed to serialize messages: {}", e);
-                        // Return empty array instead of error
-                        "[]".to_string()
-                    }
-                }
-            },
-            None => {
-                console_log!("Room not found after check, this shouldn't happen");
-                "[]".to_string()
-            }
-        }
+        // Serialize with proper error handling
+        serde_json::to_string(messages).map_err(|e| {
+            console_log!("Failed to serialize messages: {}", e);
+            JsValue::from_str(&format!("Failed to serialize messages: {}", e))
+        })
     })
 }
 
+// Join an existing room or create it if it doesn't exist
 #[wasm_bindgen]
 pub fn join_room(room_id: &JsValue, signal_data: &str) -> Result<String, JsValue> {
-    let room_id = room_id.as_string().ok_or_else(|| {
-        console_log!("Failed to convert room_id to string");
-        JsValue::from_str("Invalid room ID")
-    })?;
+    let room_id = validate_js_string_param(room_id, "room ID")?;
 
-    // Enhanced debugging for parameters
-    console_log!("join_room called with room_id: '{}'", room_id);
-    console_log!("join_room room_id length: {}", room_id.len());
-    console_log!("join_room signal_data: '{}'", signal_data);
-    
-    // Safety check - make sure room_id is valid
-    if room_id.is_empty() {
-        console_log!("Empty room ID provided for join_room");
-        return Err(JsValue::from_str("Room ID cannot be empty"));
-    }
-
-    // Additional logging
     console_log!(
         "Joining room: '{}' with signal data: '{}'",
         room_id,
@@ -348,38 +272,12 @@ pub fn join_room(room_id: &JsValue, signal_data: &str) -> Result<String, JsValue
     );
 
     CHAT_MANAGER.with(|cm| {
-        let mut manager = match cm.lock() {
-            Ok(manager) => manager,
-            Err(_) => {
-                console_log!("Failed to lock chat manager mutex");
-                return Err(JsValue::from_str("Internal error: failed to lock chat manager"));
-            }
-        };
+        let mut manager = cm.lock().map_err(|_| 
+            JsValue::from_str("Failed to lock chat manager"))?;
 
-        // Create the room if it doesn't exist yet
-        if !manager.rooms.contains_key(&room_id) {
-            console_log!("Room doesn't exist yet, creating it: '{}'", room_id);
-
-            // Generate encryption key with better error handling
-            let encryption_key = match generate_encryption_key() {
-                Ok(key) => key,
-                Err(e) => {
-                    console_log!("Failed to generate encryption key: {:?}", e);
-                    return Err(JsValue::from_str("Failed to generate encryption key"));
-                }
-            };
-
-            // Create the room
-            manager.rooms.insert(
-                room_id.to_string(),
-                Room {
-                    id: room_id.to_string(),
-                    messages: Vec::new(),
-                    encryption_key,
-                },
-            );
-        }
-
+        // Get or create the room
+        let _room = manager.get_or_create_room(&room_id)?;
+        
         // Set as current room
         manager.user.current_room_id = Some(room_id.to_string());
         console_log!("Successfully joined room: '{}'", room_id);
@@ -389,50 +287,19 @@ pub fn join_room(room_id: &JsValue, signal_data: &str) -> Result<String, JsValue
     })
 }
 
-// Similarly enhanced create_room_with_id function
+// Create a new room with a specific ID
 #[wasm_bindgen]
 pub fn create_room_with_id(room_id: &JsValue) -> Result<(), JsValue> {
-    let room_id = room_id.as_string().ok_or_else(|| {
-        console_log!("Failed to convert room_id to string");
-        JsValue::from_str("Invalid room ID")
-    })?;
+    let room_id = validate_js_string_param(room_id, "room ID")?;
 
-    // Enhanced debugging for parameters
-    console_log!("create_room_with_id called with room_id: '{}'", room_id);
-    console_log!("create_room_with_id room_id length: {}", room_id.len());
-    
-    if room_id.is_empty() {
-        console_log!("Empty room ID provided for create_room_with_id");
-        return Err(JsValue::from_str("Room ID cannot be empty"));
-    }
+    console_log!("Creating room with ID: '{}'", room_id);
 
     CHAT_MANAGER.with(|cm| {
-        let mut manager = cm.lock().unwrap();
+        let mut manager = cm.lock().map_err(|_| 
+            JsValue::from_str("Failed to lock chat manager"))?;
 
-        // Check if room already exists
-        if manager.rooms.contains_key(&room_id) {
-            console_log!("Room with ID '{}' already exists", room_id);
-            manager.user.current_room_id = Some(room_id.to_string());
-            return Ok(());
-        }
-
-        // Generate encryption key
-        let encryption_key = generate_encryption_key()?;
-
-        // Create the room
-        manager.rooms.insert(
-            room_id.to_string(),
-            Room {
-                id: room_id.to_string(),
-                messages: Vec::new(),
-                encryption_key,
-            },
-        );
-
-        // Set as current room
-        manager.user.current_room_id = Some(room_id.to_string());
-
-        console_log!("Created room with ID: '{}'", room_id);
+        // Get or create the room
+        let _room = manager.get_or_create_room(&room_id)?;
         Ok(())
     })
 }
