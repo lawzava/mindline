@@ -1,5 +1,5 @@
 {
-  "name": "secure-p2p-chat",
+  "name": "mindline",
   "version": "0.1.0",
   "description": "A secure P2P chat application with real-time typing indicators",
   "main": "index.js",
@@ -20,7 +20,9 @@
   "license": "MIT",
   "devDependencies": {
     "@wasm-tool/wasm-pack-plugin": "^1.6.0",
+    "css-loader": "^7.1.2",
     "html-webpack-plugin": "^5.5.0",
+    "style-loader": "^4.0.0",
     "webpack": "^5.75.0",
     "webpack-cli": "^5.0.0",
     "webpack-dev-server": "^4.11.1"
