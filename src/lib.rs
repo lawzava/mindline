@@ -1,6 +1,7 @@
 // src/lib.rs
 use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::convert::FromWasmAbi;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
@@ -227,18 +228,20 @@ pub fn send_typing_indicator(room_id: &JsValue, is_typing: JsValue) -> Result<()
 
 // Get messages from a room
 #[wasm_bindgen]
-pub fn get_messages(room_id: &JsValue) -> Result<String, JsValue> {
+pub fn get_messages(room_id: &JsValue) -> JsValue {
     let room_id = match room_id.as_string() {
         Some(id) if !id.is_empty() => id,
         _ => {
             console_log!("Invalid room ID provided for get_messages");
-            return Ok("[]".to_string()); // Return empty array for invalid input
+            return JsValue::from_str(&"[]".to_string()); // Return empty array for invalid input
         }
     };
 
+    log(format!("Getting messages for room: {}", room_id).as_str());
+
     CHAT_MANAGER.with(|cm| {
         let manager = cm.lock().map_err(|_| 
-            JsValue::from_str("Failed to lock chat manager"))?;
+            JsValue::from_str("Failed to lock chat manager")).unwrap();
 
         // If room doesn't exist, return empty array
         let messages = match manager.rooms.get(&room_id) {
@@ -248,15 +251,27 @@ pub fn get_messages(room_id: &JsValue) -> Result<String, JsValue> {
                     "Room {} not found for getting messages, returning empty array",
                     room_id
                 );
-                return Ok("[]".to_string());
+                return JsValue::from_str(&"[]".to_string());
             }
         };
 
-        // Serialize with proper error handling
-        serde_json::to_string(messages).map_err(|e| {
-            console_log!("Failed to serialize messages: {}", e);
-            JsValue::from_str(&format!("Failed to serialize messages: {}", e))
-        })
+        // Convert messages to stringified json
+        let messages: String = messages
+            .iter()
+            .map(|msg| {
+                serde_json::to_string(msg).unwrap_or_else(|_| {
+                    console_log!("Failed to serialize message: {:?}", msg);
+                    String::new()
+                })
+            })
+            .filter(|msg| !msg.is_empty())
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        let messages = format!("[{}]", messages);
+
+        log(format!("Messages for room {}: {}", room_id, messages).as_str());
+        JsValue::from_str(&messages)
     })
 }
 
