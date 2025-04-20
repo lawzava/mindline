@@ -1,3 +1,5 @@
+import '../css/styles.css';
+
 // We'll use a dynamic import to load the WASM module after it's been built
 let wasmModule;
 
@@ -25,6 +27,45 @@ async function loadWasmModule() {
     }
 }
 
+// Helper function to generate a UUID in JavaScript
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+// Helper function to validate alphanumeric ID format (min 8 chars)
+function isValidRoomId(id) {
+    if (!id || typeof id !== 'string') return false;
+    // Allow alphanumeric plus dashes and underscores, minimum 8 characters
+    const idRegex = /^[a-zA-Z0-9_-]{8,}$/;
+    return idRegex.test(id);
+}
+
+// Helper function to safely get the current room ID
+function getCurrentRoomId() {
+    // First try localStorage
+    let roomId = localStorage.getItem('currentRoomId');
+    
+    // If not in localStorage, try the UI element
+    if (!roomId) {
+        roomId = document.getElementById('currentRoom').textContent;
+        if (roomId === 'None') {
+            return null;
+        }
+    }
+    
+    // Validate the room ID format
+    if (!isValidRoomId(roomId)) {
+        log(`Warning: Invalid room ID format: ${roomId}`);
+        return null;
+    }
+    
+    return roomId;
+}
+
 // Function to restore state from localStorage
 function restoreState() {
     // Check if WASM module is loaded
@@ -37,8 +78,19 @@ function restoreState() {
     if (document.getElementById('userId').textContent === 'Not initialized') {
         try {
             const userName = document.getElementById('userName').value || 'Anonymous';
-            const userId = wasmModule.initialize(userName);
+            // Generate user ID client-side
+            const userId = generateUUID();
+            
+            // Initialize user in WASM module
+            wasmModule.initialize(userName, userId);
+            
+            // Update UI
             document.getElementById('userId').textContent = userId;
+            
+            // Store in localStorage
+            localStorage.setItem('userId', userId);
+            localStorage.setItem('userName', userName);
+            
             log(`Auto-initialized user: ${userName} with ID: ${userId}`);
         } catch (error) {
             console.warn("Could not auto-initialize user:", error);
@@ -47,13 +99,15 @@ function restoreState() {
     
     // Restore room ID if available
     const savedRoomId = localStorage.getItem('currentRoomId');
-    if (savedRoomId && isValidUUID(savedRoomId)) {
+    
+    // Check if it's a valid room ID
+    if (savedRoomId && isValidRoomId(savedRoomId)) {
         document.getElementById('currentRoom').textContent = savedRoomId;
         document.getElementById('roomIdInput').value = savedRoomId;
         
         // Try to join the room automatically
         try {
-            wasmModule.join_room(savedRoomId, '{}');
+            const connectionToken = wasmModule.join_room(savedRoomId, '{}');
             updateConnectionStatus(true);
             log(`Restored and rejoined previous room: ${savedRoomId}`);
         } catch (error) {
@@ -78,32 +132,74 @@ loadWasmModule().then(() => {
     }
 });
 
-// Helper function to validate UUID format
-function isValidUUID(uuid) {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return uuidRegex.test(uuid);
-}
-
-// Helper function to safely get the current room ID
-function getCurrentRoomId() {
-    // First try localStorage
-    let roomId = localStorage.getItem('currentRoomId');
-    
-    // If not in localStorage, try the UI element
-    if (!roomId) {
-        roomId = document.getElementById('currentRoom').textContent;
-        if (roomId === 'None') {
+// Create room function (client-side ID generation)
+function createRoom() {
+    try {
+        // Get the user-provided room ID if available
+        let roomId = document.getElementById('roomIdInput').value;
+        
+        // If no room ID is provided, generate a UUID
+        if (!roomId) {
+            roomId = generateUUID();
+        }
+        
+        // Validate the room ID format
+        if (!isValidRoomId(roomId)) {
+            log("Room ID must be at least 8 alphanumeric characters (can include dashes and underscores)");
             return null;
         }
+        
+        // Create the room in the WASM module
+        wasmModule.create_room_with_id(roomId);
+        
+        // Update UI and localStorage
+        document.getElementById('currentRoom').textContent = roomId;
+        document.getElementById('roomIdInput').value = roomId;
+        localStorage.setItem('currentRoomId', roomId);
+        
+        // Update connection status
+        updateConnectionStatus(true);
+        
+        log(`Created and joined room: ${roomId}`);
+        return roomId;
+    } catch (error) {
+        log(`Error creating room: ${error}`);
+        updateConnectionStatus(false);
+        return null;
     }
-    
-    // Validate the room ID format
-    if (!isValidUUID(roomId)) {
-        log(`Warning: Invalid room ID format: ${roomId}`);
+}
+
+// Join room function (client-side validation)
+function joinRoom(roomId) {
+    if (!roomId) {
+        log('Please enter a room ID to join');
         return null;
     }
     
-    return roomId;
+    // Basic ID validation
+    if (!isValidRoomId(roomId)) {
+        log("Room ID must be at least 8 alphanumeric characters (can include dashes and underscores)");
+        return null;
+    }
+    
+    try {
+        // Join the room
+        const connectionToken = wasmModule.join_room(roomId, '{}');
+        
+        // Update UI and localStorage
+        document.getElementById('currentRoom').textContent = roomId;
+        localStorage.setItem('currentRoomId', roomId);
+        
+        // Update connection status
+        updateConnectionStatus(true);
+        
+        log(`Joined room: ${roomId}`);
+        return roomId;
+    } catch (error) {
+        log(`Error joining room: ${error}`);
+        updateConnectionStatus(false);
+        return null;
+    }
 }
 
 // Set up UI event handlers
@@ -119,31 +215,34 @@ function setupEventHandlers() {
     document.getElementById('initializeBtn').addEventListener('click', () => {
         const userName = document.getElementById('userName').value || 'Anonymous';
         try {
-            const userId = wasmModule.initialize(userName);
+            // Generate user ID client-side
+            const userId = generateUUID();
+            
+            // Initialize user in WASM module
+            wasmModule.initialize(userName, userId);
+            
+            // Update UI
             document.getElementById('userId').textContent = userId;
+            
+            // Store in localStorage
+            localStorage.setItem('userId', userId);
+            localStorage.setItem('userName', userName);
+            
             log(`Initialized user: ${userName} with ID: ${userId}`);
         } catch (error) {
             log(`Error initializing user: ${error}`);
         }
     });
     
+    // Create room
     document.getElementById('createRoomBtn').addEventListener('click', () => {
-        try {
-            const roomId = wasmModule.create_room();
-            
-            // Update UI and localStorage
-            document.getElementById('currentRoom').textContent = roomId;
-            document.getElementById('roomIdInput').value = roomId;
-            localStorage.setItem('currentRoomId', roomId);
-            
-            // Update connection status
-            updateConnectionStatus(true);
-            
-            log(`Created and joined room: ${roomId}`);
-        } catch (error) {
-            log(`Error creating room: ${error}`);
-            updateConnectionStatus(false);
-        }
+        createRoom();
+    });
+    
+    // Join room
+    document.getElementById('joinRoomBtn').addEventListener('click', () => {
+        const roomId = document.getElementById('roomIdInput').value;
+        joinRoom(roomId);
     });
     
     // Send message
@@ -156,6 +255,12 @@ function setupEventHandlers() {
         if (event.key === 'Enter') {
             sendMessage();
         }
+    });
+    
+    // Clear debug log
+    document.getElementById('clearLogBtn').addEventListener('click', () => {
+        document.getElementById('debugOutput').textContent = '';
+        log('Debug log cleared');
     });
     
     // Typing indicator
@@ -218,9 +323,12 @@ function sendMessage() {
         // Make sure UI is synchronized
         document.getElementById('currentRoom').textContent = roomId;
         
+        // Generate message ID on client side
+        const messageId = generateUUID();
+        
         // Send the message
-        const messageId = wasmModule.send_message(roomId, message);
-        log(`Sent message with ID: ${messageId} to room: ${roomId}`);
+        wasmModule.send_message(roomId, message, messageId);
+        log(`Sent message to room: ${roomId}`);
         messageInput.value = '';
         
         // Display the message in chat

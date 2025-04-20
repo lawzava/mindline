@@ -3,185 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure P2P Chat - Test Harness</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 1rem;
-        }
-        
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-        
-        .card {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 1rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .chat-area {
-            height: 300px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            border-radius: 8px;
-            position: relative; /* For positioning the typing indicator */
-        }
-        
-        .message {
-            margin-bottom: 0.5rem;
-            padding: 0.5rem;
-            border-radius: 8px;
-        }
-        
-        .my-message {
-            background-color: #d1e7ff;
-            text-align: right;
-            margin-left: 20%;
-        }
-        
-        .their-message {
-            background-color: #f1f1f1;
-            margin-right: 20%;
-        }
-        
-        .typing-indicator {
-            font-style: italic;
-            color: #888;
-            padding: 0.3rem;
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background-color: rgba(255, 255, 255, 0.8);
-        }
-        
-        input, button {
-            padding: 0.5rem;
-            font-size: 1rem;
-            border-radius: 4px;
-        }
-        
-        button {
-            background-color: #0066cc;
-            color: white;
-            border: none;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        
-        button:hover {
-            background-color: #0055aa;
-        }
-        
-        .message-input {
-            display: flex;
-            gap: 0.5rem;
-        }
-        
-        .message-input input {
-            flex-grow: 1;
-            border: 1px solid #ddd;
-        }
-        
-        .controls {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-        }
-        
-        .room-info {
-            margin-top: 0.5rem;
-            font-weight: bold;
-        }
-        
-        .room-id {
-            font-family: monospace;
-            padding: 0.2rem 0.4rem;
-            background-color: #f5f5f5;
-            border-radius: 4px;
-        }
-        
-        pre {
-            background-color: #f5f5f5;
-            padding: 0.5rem;
-            border-radius: 4px;
-            overflow-x: auto;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        
-        .status {
-            padding: 0.3rem 0.6rem;
-            border-radius: 4px;
-            font-size: 0.9rem;
-            display: inline-block;
-        }
-        
-        .status-connected {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        
-        .status-disconnected {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-    </style>
+    <title>Mindline - Secure P2P Real Time Chat</title>
+    <link rel="stylesheet" href="./styles.css">
+    <!-- Import Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
-        <h1>Secure P2P Chat - Test Harness</h1>
-        
-        <div class="card">
-            <h2>User Setup</h2>
-            <div class="controls">
-                <input type="text" id="userName" placeholder="Your Name" value="Test User">
-                <button id="initializeBtn">Initialize</button>
-            </div>
-            <div>User ID: <span id="userId">Not initialized</span></div>
+        <div class="header">
+            <h1>MINDLINE</h1>
+            <p class="subtitle">Secure Peer-to-Peer Real Time Chat</p>
         </div>
         
-        <div class="card">
-            <h2>Room Management</h2>
-            <div class="controls">
-                <button id="createRoomBtn">Create Room</button>
-                <input type="text" id="roomIdInput" placeholder="Room ID">
-                <button id="joinRoomBtn">Join Room</button>
+        <div class="card user-setup">
+            <div class="card-header">
+                <h2>USER SETUP</h2>
             </div>
-            <div class="room-info">
-                Current Room: <span id="currentRoom" class="room-id">None</span>
-                <span id="connectionStatus" class="status status-disconnected">Disconnected</span>
-            </div>
-        </div>
-        
-        <div class="card">
-            <h2>Chat</h2>
-            <div class="chat-area" id="chatArea">
-                <!-- Messages will be inserted here -->
-                <div class="typing-indicator" id="typingIndicator" style="display: none;">
-                    Someone is typing...
+            <div class="card-content">
+                <div class="input-group">
+                    <label for="userName">Your Name</label>
+                    <input type="text" id="userName" placeholder="Enter your name" value="Test User">
+                </div>
+                <button id="initializeBtn" class="btn btn-primary">Initialize</button>
+                <div class="user-info">
+                    <span class="label">User ID:</span>
+                    <span id="userId" class="value">Not initialized</span>
                 </div>
             </div>
-            
-            <div class="message-input">
-                <input type="text" id="messageInput" placeholder="Type your message...">
-                <button id="sendBtn">Send</button>
+        </div>
+        
+        <div class="card room-management">
+            <div class="card-header">
+                <h2>ROOM MANAGEMENT</h2>
+            </div>
+            <div class="card-content">
+                <div class="room-controls">
+                    <div class="input-group">
+                        <label for="roomIdInput">Room ID</label>
+                        <input type="text" id="roomIdInput" placeholder="Enter room ID (at least 8 chars)">
+                        <p class="input-hint">Room ID can be any alphanumeric string (with dashes/underscores) of at least 8 characters</p>
+                    </div>
+                    <div class="button-group">
+                        <button id="createRoomBtn" class="btn btn-primary">Create Room</button>
+                        <button id="joinRoomBtn" class="btn btn-secondary">Join Room</button>
+                    </div>
+                </div>
+                <div class="room-info">
+                    <div class="room-status">
+                        <span class="label">Current Room:</span>
+                        <span id="currentRoom" class="room-id">None</span>
+                    </div>
+                    <div id="connectionStatus" class="status status-disconnected">Disconnected</div>
+                </div>
             </div>
         </div>
         
-        <div class="card">
-            <h2>Debug</h2>
-            <pre id="debugOutput">Waiting for WASM module to load...</pre>
+        <div class="card chat">
+            <div class="card-header">
+                <h2>CHAT</h2>
+            </div>
+            <div class="card-content">
+                <div class="chat-area" id="chatArea">
+                    <!-- Messages will be inserted here -->
+                    <div class="typing-indicator" id="typingIndicator">
+                        <span class="dot"></span>
+                        <span class="dot"></span>
+                        <span class="dot"></span>
+                    </div>
+                </div>
+                
+                <div class="message-input">
+                    <input type="text" id="messageInput" placeholder="Type your message...">
+                    <button id="sendBtn" class="btn btn-primary">Send</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card debug">
+            <div class="card-header">
+                <h2>DEBUG</h2>
+                <button id="clearLogBtn" class="btn btn-small">Clear</button>
+            </div>
+            <pre id="debugOutput" class="debug-output">Waiting for WASM module to load...</pre>
         </div>
     </div>
     

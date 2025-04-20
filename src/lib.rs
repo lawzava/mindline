@@ -3,7 +3,6 @@ use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 
 // Configure the WASM crate
@@ -66,7 +65,7 @@ struct ChatManager {
 thread_local! {
     static CHAT_MANAGER: Arc<Mutex<ChatManager>> = Arc::new(Mutex::new(ChatManager {
         user: User {
-            id: Uuid::new_v4().to_string(),
+            id: "default-user-id".to_string(), // Will be set by initialize
             name: "Anonymous".to_string(),
             current_room_id: None,
         },
@@ -82,48 +81,63 @@ fn generate_encryption_key() -> Result<Vec<u8>, JsValue> {
     Ok(key)
 }
 
-// Initialize our chat application
+// Initialize our chat application with a client-provided user ID
 #[wasm_bindgen]
-pub fn initialize(user_name: &str) -> Result<String, JsValue> {
+pub fn initialize(user_name: &str, user_id: &str) -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
+
+    if user_id.is_empty() {
+        return Err(JsValue::from_str("User ID cannot be empty"));
+    }
 
     CHAT_MANAGER.with(|cm| {
         let mut manager = cm.lock().unwrap();
         manager.user.name = user_name.to_string();
+        manager.user.id = user_id.to_string();
         console_log!(
             "User initialized with name: {} and ID: {}",
             user_name,
             manager.user.id
         );
-        Ok(manager.user.id.clone())
+        Ok(())
     })
 }
 
-// Create a new chat room
+// Create a new chat room with a client-provided ID
 #[wasm_bindgen]
-pub fn create_room() -> Result<String, JsValue> {
+pub fn create_room_with_id(room_id: &str) -> Result<(), JsValue> {
+    if room_id.is_empty() {
+        return Err(JsValue::from_str("Room ID cannot be empty"));
+    }
+
     CHAT_MANAGER.with(|cm| {
         let mut manager = cm.lock().unwrap();
 
-        // Generate room ID and encryption key
-        let room_id = Uuid::new_v4().to_string();
+        // Check if room already exists
+        if manager.rooms.contains_key(room_id) {
+            console_log!("Room with ID {} already exists", room_id);
+            manager.user.current_room_id = Some(room_id.to_string());
+            return Ok(());
+        }
+
+        // Generate encryption key
         let encryption_key = generate_encryption_key()?;
 
         // Create the room
         manager.rooms.insert(
-            room_id.clone(),
+            room_id.to_string(),
             Room {
-                id: room_id.clone(),
+                id: room_id.to_string(),
                 messages: Vec::new(),
                 encryption_key,
             },
         );
 
         // Set as current room
-        manager.user.current_room_id = Some(room_id.clone());
+        manager.user.current_room_id = Some(room_id.to_string());
 
-        console_log!("Created room: {}", room_id);
-        Ok(room_id)
+        console_log!("Created room with ID: {}", room_id);
+        Ok(())
     })
 }
 
@@ -166,18 +180,21 @@ pub fn join_room(room_id: &str, signal_data: &str) -> Result<String, JsValue> {
         manager.user.current_room_id = Some(room_id.to_string());
 
         // Return a connection token (in a real implementation, this would be WebRTC connection info)
-        let token = Uuid::new_v4().to_string();
-        console_log!("Joined room with connection token: {}", token);
-        Ok(token)
+        // Generate a token on the JavaScript side instead
+        Ok("connected".to_string())
     })
 }
 
 // Send a message to the current room
 #[wasm_bindgen]
-pub fn send_message(room_id: &str, content: &str) -> Result<String, JsValue> {
+pub fn send_message(room_id: &str, content: &str, message_id: &str) -> Result<(), JsValue> {
     // Safety check - make sure room_id is valid
     if room_id.is_empty() {
         return Err(JsValue::from_str("Room ID cannot be empty"));
+    }
+
+    if message_id.is_empty() {
+        return Err(JsValue::from_str("Message ID cannot be empty"));
     }
 
     CHAT_MANAGER.with(|cm| {
@@ -209,7 +226,7 @@ pub fn send_message(room_id: &str, content: &str) -> Result<String, JsValue> {
 
         // Create message
         let message = Message {
-            id: Uuid::new_v4().to_string(),
+            id: message_id.to_string(),
             sender_id: manager.user.id.clone(),
             sender_name: manager.user.name.clone(),
             message_type: MessageType::Text,
@@ -229,7 +246,7 @@ pub fn send_message(room_id: &str, content: &str) -> Result<String, JsValue> {
             room.messages.push(message.clone());
         }
 
-        Ok(message.id)
+        Ok(())
     })
 }
 
@@ -291,6 +308,3 @@ pub fn get_messages(room_id: &str) -> Result<String, JsValue> {
         Ok("[]".to_string())
     })
 }
-
-// We'll add more WebRTC connection handling in later iterations
-// For now this gives us a basic structure to work with
