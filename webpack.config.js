@@ -1,11 +1,13 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
-module.exports = {
+module.exports = (env = {}) => ({
     entry: './js/index.js',
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: 'index.js',
+        filename: env.cloudflare ? '[name].[contenthash].js' : 'index.js',
+        clean: true,
+        publicPath: '/'
     },
     experiments: {
         asyncWebAssembly: true,
@@ -20,10 +22,16 @@ module.exports = {
     },
     plugins: [
         new HtmlWebpackPlugin({
-            template: './index.html'
+            template: './index.html',
+            minify: env.production || env.cloudflare
         })
     ],
-    mode: 'development',
+    mode: env.production || env.cloudflare ? 'production' : 'development',
+    optimization: {
+        splitChunks: env.cloudflare ? {
+            chunks: 'all'
+        } : false
+    },
     devServer: {
         static: {
             directory: path.join(__dirname, 'dist'),
@@ -31,4 +39,4 @@ module.exports = {
         compress: true,
         port: 8080,
     },
-};
+});
