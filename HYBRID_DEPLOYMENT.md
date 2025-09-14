@@ -284,7 +284,7 @@ module.exports = (env) => ({
 
 3. **Environment Variables** (in Cloudflare Pages settings):
    ```
-   NODE_VERSION: 18
+   NODE_VERSION: 22
    SIGNALING_SERVER: signal.yourdomain.com
    ```
 
