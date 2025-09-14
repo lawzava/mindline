@@ -185,6 +185,33 @@ body.dark {
     justify-content: center;
 }
 
+.status-reconnecting {
+    background-color: #f59e0b;
+    color: white;
+    border-color: var(--border-color);
+    padding: 0.5rem 1rem;
+    border: 3px solid var(--border-color);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 3px 3px 0 0 var(--shadow-color);
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    animation: reconnect-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes reconnect-pulse {
+    0%, 100% {
+        opacity: 0.8;
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.02);
+    }
+}
+
 /* Other elements that need theme colors */
 #chatArea {
     border-color: var(--border-color);

@@ -16,7 +16,11 @@ const AppState = {
   messageHistory: new Map(), // Store messages by ID to avoid duplicates
   draftMessages: new Map(), // Store draft messages by peer ID: peerId -> {content, senderName, lastUpdate}
   draftTimeouts: new Map(), // Track timeouts for clearing stale drafts
-  chatHistory: new Map() // Store chat history per room: roomId -> {messages: [], lastSync: timestamp}
+  chatHistory: new Map(), // Store chat history per room: roomId -> {messages: [], lastSync: timestamp}
+  reconnectAttempts: 0, // Track reconnection attempts
+  maxReconnectAttempts: 5, // Max reconnection attempts
+  reconnectInterval: null, // Store reconnection interval
+  isReconnecting: false // Track if currently reconnecting
 };
 
 // Constants
@@ -57,6 +61,11 @@ async function initializeApp() {
 
     const roomId = getCurrentRoomId();
     updateConnectionStatus(Boolean(roomId));
+
+    // Ensure chat is scrolled to bottom after full initialization
+    if (roomId) {
+      scrollChatToBottom('auto', 500);
+    }
 
     log('Application initialized successfully');
   } catch (error) {
@@ -286,11 +295,8 @@ function displayChatHistory(messages) {
       displayMessage(message.content, isMe, message.sender, false); // false = don't scroll yet
     });
 
-    // Scroll to bottom after all messages are displayed
-    chatArea.scrollTo({
-      top: chatArea.scrollHeight,
-      behavior: 'smooth'
-    });
+    // Scroll to bottom after all messages are displayed - use immediate scroll for page load
+    scrollChatToBottom('auto', 100);
   }
 
   // Ensure draft area is ready (it's now in HTML, not dynamically created)
@@ -632,6 +638,9 @@ async function createRoom() {
     // Update connection status
     updateConnectionStatus(true);
 
+    // Scroll to bottom after room creation
+    scrollChatToBottom('auto', 200);
+
     log(`Created and joined room: ${roomId}`);
     return roomId;
   } catch (error) {
@@ -676,12 +685,71 @@ async function joinRoom(roomId) {
     // Update connection status
     updateConnectionStatus(true);
 
+    // Scroll to bottom after joining room
+    scrollChatToBottom('auto', 200);
+
     log(`Joined room: ${roomId}`);
     return roomId;
   } catch (error) {
     log(`Error joining room: ${error.message}`);
     updateConnectionStatus(false);
     return null;
+  }
+}
+
+/**
+ * Attempt to reconnect P2P connection
+ */
+async function attemptReconnect() {
+  const roomId = getCurrentRoomId();
+  if (!roomId || AppState.isReconnecting) {
+    return;
+  }
+
+  AppState.isReconnecting = true;
+  AppState.reconnectAttempts++;
+
+  log(`Reconnection attempt ${AppState.reconnectAttempts}/${AppState.maxReconnectAttempts}...`);
+
+  // Update status to show reconnecting
+  const statusElement = document.getElementById('connectionStatus');
+  statusElement.textContent = `Reconnecting... (${AppState.reconnectAttempts}/${AppState.maxReconnectAttempts})`;
+  statusElement.className = 'status status-reconnecting';
+
+  try {
+    // Wait a bit before trying to reconnect
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Try to reinitialize P2P connection
+    await initializeP2P(roomId);
+
+    // If successful, reset reconnection state
+    AppState.reconnectAttempts = 0;
+    AppState.isReconnecting = false;
+    if (AppState.reconnectInterval) {
+      clearInterval(AppState.reconnectInterval);
+      AppState.reconnectInterval = null;
+    }
+
+    log('Reconnection successful!');
+  } catch (error) {
+    console.error('Reconnection failed:', error);
+    AppState.isReconnecting = false;
+
+    if (AppState.reconnectAttempts >= AppState.maxReconnectAttempts) {
+      // Give up after max attempts
+      log(`Reconnection failed after ${AppState.maxReconnectAttempts} attempts`);
+      statusElement.textContent = 'Connection failed';
+      statusElement.className = 'status status-disconnected';
+
+      if (AppState.reconnectInterval) {
+        clearInterval(AppState.reconnectInterval);
+        AppState.reconnectInterval = null;
+      }
+    } else {
+      // Schedule next attempt
+      log(`Reconnection attempt ${AppState.reconnectAttempts} failed, will retry...`);
+    }
   }
 }
 
@@ -718,18 +786,18 @@ async function initializeP2P(roomId) {
       requestMessageSync(roomId);
     }, 1000); // Small delay to ensure connection is stable
 
-    // Test draft message functionality when peer connects
+    // Send brief connection notification to peers
     setTimeout(() => {
-      console.log('Testing draft message broadcast to new peer...');
-      const testMessage = {
-        type: 'draft',
-        content: 'Connection test draft',
+      console.log('Sending connection notification to peers...');
+      const userName = document.getElementById('userName').value || 'Anonymous';
+      const connectMessage = {
+        type: 'user-connected',
         senderId: document.getElementById('userId').textContent,
-        senderName: document.getElementById('userName').value || 'Test User',
+        senderName: userName,
         timestamp: Date.now()
       };
-      AppState.p2pConnection.broadcast(testMessage);
-    }, 2000);
+      AppState.p2pConnection.broadcast(connectMessage);
+    }, 1000); // Shorter delay for better UX
   });
 
   AppState.p2pConnection.onPeerDisconnected((peerId) => {
@@ -745,6 +813,21 @@ async function initializeP2P(roomId) {
     // Update draft messages display
     updateDraftMessages();
     updatePeerCount();
+  });
+
+  AppState.p2pConnection.onConnectionLost((reason) => {
+    log(`Connection lost: ${reason}`);
+    console.log('Connection lost, starting reconnection attempts...');
+
+    // Update status immediately
+    updateConnectionStatus(false);
+
+    // Start reconnection if not already trying
+    if (!AppState.isReconnecting && AppState.reconnectAttempts < AppState.maxReconnectAttempts) {
+      // Start immediate first attempt, then schedule interval for subsequent attempts
+      setTimeout(attemptReconnect, 1000);
+      AppState.reconnectInterval = setInterval(attemptReconnect, 5000);
+    }
   });
 
   // Connect to signaling server
@@ -763,7 +846,12 @@ async function initializeP2P(roomId) {
     AppState.connectionLogger = connectionLogger;
   } catch (error) {
     console.error('Failed to connect to P2P network:', error);
-    log('Failed to connect to P2P network. Make sure signaling server is running.');
+    log('Failed to connect to P2P network. Starting reconnection...');
+
+    // Start reconnection attempts if not already reconnecting
+    if (!AppState.isReconnecting && AppState.reconnectAttempts < AppState.maxReconnectAttempts) {
+      AppState.reconnectInterval = setInterval(attemptReconnect, 5000); // Try every 5 seconds
+    }
   }
 }
 
@@ -817,6 +905,11 @@ function handleIncomingP2PMessage(message, peerId) {
     case 'sync-response':
       // Handle synchronization response from peer
       handleSyncResponse(message, peerId);
+      break;
+
+    case 'user-connected':
+      // Show brief connection notification
+      showUserConnectionNotification(message.senderName);
       break;
   }
 }
@@ -880,6 +973,9 @@ function sendMessage() {
 
     // Display the message in chat
     displayMessage(message, true, userName);
+
+    // Ensure chat stays scrolled to bottom after sending
+    scrollChatToBottom('smooth', 50);
 
     // Retrieve messages for debugging
     setTimeout(retrieveMessages, 500, roomId);
@@ -1059,6 +1155,60 @@ function handleDraftMessage() {
   } catch (error) {
     console.error("Error handling draft message:", error);
   }
+}
+
+/**
+ * Show user connection notification
+ * @param {string} userName - Name of user who connected
+ */
+function showUserConnectionNotification(userName) {
+  // Create temporary notification in draft area
+  const draftsArea = document.getElementById('draftsArea');
+  if (draftsArea) {
+    // Show draft area temporarily
+    draftsArea.style.display = 'block';
+
+    // Create connection notification
+    const notification = document.createElement('div');
+    notification.className = 'mb-2 p-2 bg-green-100 dark:bg-green-900/40 border border-green-400 dark:border-green-500 rounded opacity-90';
+
+    const contentElement = document.createElement('div');
+    contentElement.className = 'text-xs text-green-800 dark:text-green-200 italic text-center';
+    contentElement.textContent = `${userName} connected`;
+    notification.appendChild(contentElement);
+
+    draftsArea.appendChild(notification);
+
+    // Remove notification after 2 seconds
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+        // Hide draft area if no other drafts
+        if (draftsArea.children.length === 0) {
+          draftsArea.style.display = 'none';
+        }
+      }
+    }, 2000);
+  }
+
+  log(`${userName} connected`);
+}
+
+/**
+ * Scroll chat area to bottom
+ * @param {string} behavior - 'smooth' or 'auto'
+ * @param {number} delay - Delay in milliseconds
+ */
+function scrollChatToBottom(behavior = 'smooth', delay = 50) {
+  setTimeout(() => {
+    const chatArea = document.getElementById('chatArea');
+    if (chatArea) {
+      chatArea.scrollTo({
+        top: chatArea.scrollHeight,
+        behavior: behavior
+      });
+    }
+  }, delay);
 }
 
 /**
@@ -1244,6 +1394,9 @@ function displayMessage(message, isMe = true, senderName = null, shouldScroll = 
 // Display received message from P2P
 function displayReceivedMessage(messageObj) {
   displayMessage(messageObj.content, false, messageObj.sender);
+
+  // Ensure chat scrolls to show new message from peer
+  scrollChatToBottom('smooth', 50);
 }
 
 // Update peer count display
@@ -1379,6 +1532,16 @@ function updateDraftMessages() {
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
+  // Clear reconnection attempts
+  if (AppState.reconnectInterval) {
+    clearInterval(AppState.reconnectInterval);
+  }
+
+  // Clear connection logger
+  if (AppState.connectionLogger) {
+    clearInterval(AppState.connectionLogger);
+  }
+
   if (AppState.p2pConnection) {
     AppState.p2pConnection.disconnect();
   }
