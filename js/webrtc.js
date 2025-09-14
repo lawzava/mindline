@@ -87,7 +87,14 @@ export class P2PConnection {
 
       case 'peer-joined':
         console.log('Peer joined:', message.clientId);
-        // New peer joined, wait for their offer
+        // New peer joined, create connection and send offer
+        // Use string comparison to determine who should initiate to avoid duplicate connections
+        if (message.clientId !== this.clientId && this.clientId > message.clientId) {
+          console.log('Creating connection to new peer (I initiate):', message.clientId);
+          await this.createPeerConnection(message.clientId, true);
+        } else if (message.clientId !== this.clientId) {
+          console.log('New peer will initiate connection to me:', message.clientId);
+        }
         break;
 
       case 'offer':

@@ -14,14 +14,14 @@ const AppState = {
   darkMode: false,
   p2pConnection: null,
   messageHistory: new Map(), // Store messages by ID to avoid duplicates
-  typingPeers: new Set(), // Track who is typing
-  typingTimeouts: new Map(), // Track timeouts for each typing peer
+  draftMessages: new Map(), // Store draft messages by peer ID: peerId -> {content, senderName, lastUpdate}
+  draftTimeouts: new Map(), // Track timeouts for clearing stale drafts
   chatHistory: new Map() // Store chat history per room: roomId -> {messages: [], lastSync: timestamp}
 };
 
 // Constants
 const CONSTANTS = {
-  TIMEOUT_TYPING: 2000,
+  TIMEOUT_DRAFT_CLEAR: 3000, // Clear draft after 3 seconds of inactivity
   MIN_ROOM_ID_LENGTH: 8
 };
 
@@ -100,9 +100,6 @@ function createSafeWasmProxies() {
     join_room: safeWasmCall('join_room', ['roomId', 'signalData']),
     create_room_with_id: safeWasmCall('create_room_with_id', ['roomId']),
     send_message: safeWasmCall('send_message', ['roomId', 'content', 'messageId']),
-    send_typing_indicator: safeWasmCall('send_typing_indicator', ['roomId', 'isTyping'], {
-      isTyping: Boolean
-    }),
     get_messages: safeWasmCall('get_messages', ['roomId'])
   };
   
@@ -167,6 +164,249 @@ function generateUUID() {
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
+}
+
+/**
+ * Chat History Management
+ */
+
+/**
+ * Load chat history for a room from localStorage
+ * @param {string} roomId - Room ID to load history for
+ */
+function loadChatHistory(roomId) {
+  try {
+    const historyKey = `chatHistory_${roomId}`;
+    const savedHistory = localStorage.getItem(historyKey);
+
+    if (savedHistory) {
+      const parsed = JSON.parse(savedHistory);
+      AppState.chatHistory.set(roomId, {
+        messages: parsed.messages || [],
+        lastSync: parsed.lastSync || 0
+      });
+      console.log(`Loaded ${parsed.messages?.length || 0} messages for room ${roomId}`);
+      return parsed.messages || [];
+    } else {
+      AppState.chatHistory.set(roomId, {
+        messages: [],
+        lastSync: 0
+      });
+      return [];
+    }
+  } catch (error) {
+    console.error('Error loading chat history:', error);
+    AppState.chatHistory.set(roomId, {
+      messages: [],
+      lastSync: 0
+    });
+    return [];
+  }
+}
+
+/**
+ * Save chat history for a room to localStorage
+ * @param {string} roomId - Room ID to save history for
+ */
+function saveChatHistory(roomId) {
+  try {
+    const roomHistory = AppState.chatHistory.get(roomId);
+    if (!roomHistory) return;
+
+    const historyKey = `chatHistory_${roomId}`;
+    const historyData = {
+      messages: roomHistory.messages,
+      lastSync: Date.now()
+    };
+
+    localStorage.setItem(historyKey, JSON.stringify(historyData));
+    roomHistory.lastSync = historyData.lastSync;
+    console.log(`Saved ${roomHistory.messages.length} messages for room ${roomId}`);
+  } catch (error) {
+    console.error('Error saving chat history:', error);
+  }
+}
+
+/**
+ * Add message to chat history
+ * @param {string} roomId - Room ID
+ * @param {Object} message - Message object
+ */
+function addMessageToHistory(roomId, message) {
+  const roomHistory = AppState.chatHistory.get(roomId);
+  if (!roomHistory) {
+    AppState.chatHistory.set(roomId, {
+      messages: [message],
+      lastSync: 0
+    });
+  } else {
+    // Check if message already exists (avoid duplicates)
+    const exists = roomHistory.messages.some(msg => msg.id === message.id);
+    if (!exists) {
+      roomHistory.messages.push(message);
+      // Sort messages by timestamp
+      roomHistory.messages.sort((a, b) => a.timestamp - b.timestamp);
+    }
+  }
+
+  // Save to localStorage
+  saveChatHistory(roomId);
+}
+
+/**
+ * Get chat history for a room
+ * @param {string} roomId - Room ID
+ * @returns {Array} Array of messages
+ */
+function getChatHistory(roomId) {
+  const roomHistory = AppState.chatHistory.get(roomId);
+  return roomHistory ? roomHistory.messages : [];
+}
+
+/**
+ * Display chat history in the UI
+ * @param {Array} messages - Array of message objects
+ */
+function displayChatHistory(messages) {
+  const chatArea = document.getElementById('chatArea');
+  const welcomeMessage = document.getElementById('welcomeMessage');
+
+  // Clear current chat display
+  chatArea.innerHTML = '';
+
+  if (messages.length === 0) {
+    // Show welcome message if no history
+    if (welcomeMessage) {
+      chatArea.appendChild(welcomeMessage.cloneNode(true));
+    }
+  } else {
+    // Display all messages
+    messages.forEach(message => {
+      const isMe = message.senderId === document.getElementById('userId').textContent;
+      displayMessage(message.content, isMe, message.sender, false); // false = don't scroll yet
+    });
+
+    // Scroll to bottom after all messages are displayed
+    chatArea.scrollTo({
+      top: chatArea.scrollHeight,
+      behavior: 'smooth'
+    });
+  }
+
+  // Ensure draft area is ready (it's now in HTML, not dynamically created)
+  const draftsArea = document.getElementById('draftsArea');
+  if (draftsArea) {
+    draftsArea.style.display = 'none'; // Hidden by default
+  }
+}
+
+/**
+ * Message Synchronization Protocol
+ */
+
+/**
+ * Request message synchronization from peers
+ * @param {string} roomId - Room ID to sync
+ */
+function requestMessageSync(roomId) {
+  const roomHistory = AppState.chatHistory.get(roomId);
+  const lastSync = roomHistory ? roomHistory.lastSync : 0;
+  const messageCount = roomHistory ? roomHistory.messages.length : 0;
+
+  console.log(`Requesting message sync for room ${roomId}, lastSync: ${lastSync}, messageCount: ${messageCount}`);
+
+  const syncRequest = {
+    type: 'sync-request',
+    roomId: roomId,
+    lastSync: lastSync,
+    messageCount: messageCount,
+    requesterId: document.getElementById('userId').textContent,
+    timestamp: Date.now()
+  };
+
+  if (AppState.p2pConnection) {
+    AppState.p2pConnection.broadcast(syncRequest);
+  }
+}
+
+/**
+ * Handle sync request from peer
+ * @param {Object} message - Sync request message
+ * @param {string} peerId - Peer ID who sent the request
+ */
+function handleSyncRequest(message, peerId) {
+  const roomId = message.roomId;
+  const peerLastSync = message.lastSync;
+  const peerMessageCount = message.messageCount;
+
+  console.log(`Received sync request from ${peerId} for room ${roomId}`);
+
+  const roomHistory = AppState.chatHistory.get(roomId);
+  if (!roomHistory) {
+    console.log('No history for this room, ignoring sync request');
+    return;
+  }
+
+  // Find messages that peer might be missing (newer than their lastSync)
+  const missingMessages = roomHistory.messages.filter(msg =>
+    msg.timestamp > peerLastSync
+  );
+
+  console.log(`Found ${missingMessages.length} potentially missing messages for peer`);
+
+  if (missingMessages.length > 0) {
+    const syncResponse = {
+      type: 'sync-response',
+      roomId: roomId,
+      messages: missingMessages,
+      senderId: document.getElementById('userId').textContent,
+      timestamp: Date.now()
+    };
+
+    if (AppState.p2pConnection) {
+      AppState.p2pConnection.sendToPeer(peerId, syncResponse);
+    }
+  }
+}
+
+/**
+ * Handle sync response from peer
+ * @param {Object} message - Sync response message
+ * @param {string} peerId - Peer ID who sent the response
+ */
+function handleSyncResponse(message, peerId) {
+  const roomId = message.roomId;
+  const newMessages = message.messages || [];
+
+  console.log(`Received sync response from ${peerId} with ${newMessages.length} messages`);
+
+  if (newMessages.length === 0) {
+    return;
+  }
+
+  let addedMessages = 0;
+
+  // Add new messages to history and display
+  newMessages.forEach(msg => {
+    // Check if we already have this message
+    const roomHistory = AppState.chatHistory.get(roomId);
+    const exists = roomHistory && roomHistory.messages.some(existing => existing.id === msg.id);
+
+    if (!exists && !AppState.messageHistory.has(msg.id)) {
+      // Add to persistent history
+      addMessageToHistory(roomId, msg);
+
+      // Display the message
+      const isMe = msg.senderId === document.getElementById('userId').textContent;
+      displayMessage(msg.content, isMe, msg.sender);
+
+      addedMessages++;
+    }
+  });
+
+  if (addedMessages > 0) {
+    log(`Synchronized ${addedMessages} missing messages from ${peerId}`);
+  }
 }
 
 /**
@@ -315,6 +555,10 @@ async function restoreRoomConnection() {
       log("P2P connection failed, but room is available locally");
     }
 
+    // Load and display chat history
+    const messages = loadChatHistory(savedRoomId);
+    displayChatHistory(messages);
+
     updateConnectionStatus(true);
     log(`Restored previous room: ${savedRoomId}`);
 
@@ -335,6 +579,10 @@ async function restoreRoomConnection() {
         console.warn("P2P connection failed:", p2pError);
         log("P2P connection failed, but room is available locally");
       }
+
+      // Load and display chat history
+      const messages = loadChatHistory(savedRoomId);
+      displayChatHistory(messages);
 
       updateConnectionStatus(true);
       log(`Created room with previous ID: ${savedRoomId}`);
@@ -371,6 +619,10 @@ async function createRoom() {
 
     // Initialize P2P connection
     await initializeP2P(roomId);
+
+    // Load and display chat history
+    const messages = loadChatHistory(roomId);
+    displayChatHistory(messages);
 
     // Update UI and localStorage
     document.getElementById('currentRoom').textContent = roomId;
@@ -413,6 +665,10 @@ async function joinRoom(roomId) {
     // Initialize P2P connection
     await initializeP2P(roomId);
 
+    // Load and display chat history
+    const messages = loadChatHistory(roomId);
+    displayChatHistory(messages);
+
     // Update UI and localStorage
     document.getElementById('currentRoom').textContent = roomId;
     localStorage.setItem('currentRoomId', roomId);
@@ -454,21 +710,40 @@ async function initializeP2P(roomId) {
 
   AppState.p2pConnection.onPeerConnected((peerId) => {
     log(`Peer connected: ${peerId}`);
+    console.log('P2P connection established with peer:', peerId);
     updatePeerCount();
+
+    // Request message synchronization from new peer
+    setTimeout(() => {
+      requestMessageSync(roomId);
+    }, 1000); // Small delay to ensure connection is stable
+
+    // Test draft message functionality when peer connects
+    setTimeout(() => {
+      console.log('Testing draft message broadcast to new peer...');
+      const testMessage = {
+        type: 'draft',
+        content: 'Connection test draft',
+        senderId: document.getElementById('userId').textContent,
+        senderName: document.getElementById('userName').value || 'Test User',
+        timestamp: Date.now()
+      };
+      AppState.p2pConnection.broadcast(testMessage);
+    }, 2000);
   });
 
   AppState.p2pConnection.onPeerDisconnected((peerId) => {
     log(`Peer disconnected: ${peerId}`);
-    // Clear typing state for disconnected peer
-    AppState.typingPeers.delete(peerId);
+    // Clear draft message for disconnected peer
+    AppState.draftMessages.delete(peerId);
     // Clear timeout for disconnected peer
-    const existingTimeout = AppState.typingTimeouts.get(peerId);
+    const existingTimeout = AppState.draftTimeouts.get(peerId);
     if (existingTimeout) {
       clearTimeout(existingTimeout);
-      AppState.typingTimeouts.delete(peerId);
+      AppState.draftTimeouts.delete(peerId);
     }
-    // Update typing indicator
-    updateTypingIndicator();
+    // Update draft messages display
+    updateDraftMessages();
     updatePeerCount();
   });
 
@@ -476,6 +751,16 @@ async function initializeP2P(roomId) {
   try {
     await AppState.p2pConnection.connect();
     log('Connected to P2P network');
+    console.log('P2P connection initialized for room:', roomId);
+
+    // Log connection status every 5 seconds for debugging
+    const connectionLogger = setInterval(() => {
+      const connectedPeers = AppState.p2pConnection.getConnectedPeers();
+      console.log('Current connected peers:', connectedPeers.length, connectedPeers);
+    }, 5000);
+
+    // Store interval reference for cleanup
+    AppState.connectionLogger = connectionLogger;
   } catch (error) {
     console.error('Failed to connect to P2P network:', error);
     log('Failed to connect to P2P network. Make sure signaling server is running.');
@@ -486,12 +771,18 @@ async function initializeP2P(roomId) {
  * Handle incoming P2P messages
  */
 function handleIncomingP2PMessage(message, peerId) {
-  // Prevent duplicate messages
-  if (AppState.messageHistory.has(message.id)) {
+  console.log('handleIncomingP2PMessage received:', message.type, 'from peer:', peerId);
+
+  // For draft messages, we don't need to prevent duplicates since they should update in real-time
+  if (message.type !== 'draft' && message.type !== 'clear-draft' && AppState.messageHistory.has(message.id)) {
+    console.log('Ignoring duplicate message:', message.id);
     return;
   }
 
-  AppState.messageHistory.set(message.id, message);
+  // Only store chat messages in history, not draft messages
+  if (message.type === 'chat') {
+    AppState.messageHistory.set(message.id, message);
+  }
 
   switch (message.type) {
     case 'chat':
@@ -501,21 +792,31 @@ function handleIncomingP2PMessage(message, peerId) {
       try {
         const roomId = getCurrentRoomId();
         window.safeWasm.send_message(roomId, message.content, message.id);
+        // Add to persistent chat history
+        addMessageToHistory(roomId, message);
       } catch (error) {
         console.error('Error storing message in WASM:', error);
       }
       break;
 
-    case 'typing':
-      // Use sender name instead of peer ID for typing indicator
-      const senderName = message.senderName || message.senderId || peerId;
-      showPeerTyping(senderName, true);
+    case 'draft':
+      // Handle real-time draft message
+      handlePeerDraft(message, peerId);
       break;
 
-    case 'stopped-typing':
-      // Use sender name instead of peer ID for typing indicator
-      const stopSenderName = message.senderName || message.senderId || peerId;
-      showPeerTyping(stopSenderName, false);
+    case 'clear-draft':
+      // Clear peer's draft message
+      clearPeerDraft(peerId);
+      break;
+
+    case 'sync-request':
+      // Handle synchronization request from peer
+      handleSyncRequest(message, peerId);
+      break;
+
+    case 'sync-response':
+      // Handle synchronization response from peer
+      handleSyncResponse(message, peerId);
       break;
   }
 }
@@ -562,7 +863,20 @@ function sendMessage() {
     // Store in history to prevent duplicates
     AppState.messageHistory.set(messageId, messageObj);
 
+    // Add to persistent chat history
+    addMessageToHistory(roomId, messageObj);
+
+    // Clear input and send clear-draft message
     messageInput.value = '';
+
+    // Send clear draft message to peers
+    if (AppState.p2pConnection) {
+      AppState.p2pConnection.broadcast({
+        type: 'clear-draft',
+        senderId: document.getElementById('userId').textContent,
+        timestamp: Date.now()
+      });
+    }
 
     // Display the message in chat
     displayMessage(message, true, userName);
@@ -643,8 +957,8 @@ function setupEventHandlers() {
     }
   });
   
-  // Typing indicator
-  document.getElementById('messageInput').addEventListener('input', handleTypingIndicator);
+  // Real-time draft messages
+  document.getElementById('messageInput').addEventListener('input', handleDraftMessage);
   
   // Debug controls
   document.getElementById('clearLogBtn').addEventListener('click', () => {
@@ -688,50 +1002,62 @@ function handleInitializeUser() {
 }
 
 /**
- * Handle typing indicator updates
+ * Handle real-time draft message updates
  */
-function handleTypingIndicator() {
+function handleDraftMessage() {
   const roomId = getCurrentRoomId();
-  if (!roomId) return;
+  if (!roomId) {
+    console.log('No room ID, skipping draft message');
+    return;
+  }
 
-  // Skip typing indicator if not connected
+  // Skip if not connected
   const statusElement = document.getElementById('connectionStatus');
-  if (!statusElement.textContent.startsWith('Connected')) return;
+  if (!statusElement.textContent.startsWith('Connected')) {
+    console.log('Not connected, skipping draft message');
+    return;
+  }
+
+  const messageInput = document.getElementById('messageInput');
+  const content = messageInput.value;
+
+  console.log('handleDraftMessage called with content:', content);
 
   try {
-    // Send typing indicator via P2P
     if (AppState.p2pConnection) {
-      AppState.p2pConnection.broadcast({
-        type: 'typing',
-        senderId: document.getElementById('userId').textContent,
-        senderName: document.getElementById('userName').value || 'Anonymous',
-        timestamp: Date.now()
-      });
-    }
+      const connectedPeers = AppState.p2pConnection.getConnectedPeers();
+      console.log('Connected peers:', connectedPeers.length);
 
-    // Send typing indicator to WASM (for local tracking)
-    window.safeWasm.send_typing_indicator(roomId, true);
+      if (content.trim()) {
+        // Send draft content to peers
+        const draftMessage = {
+          type: 'draft',
+          content: content,
+          senderId: document.getElementById('userId').textContent,
+          senderName: document.getElementById('userName').value || 'Anonymous',
+          timestamp: Date.now()
+        };
 
-    // Clear existing timeout and set a new one
-    clearTimeout(AppState.typingTimeout);
-    AppState.typingTimeout = setTimeout(() => {
-      try {
-        // Send stopped typing via P2P
-        if (AppState.p2pConnection) {
-          AppState.p2pConnection.broadcast({
-            type: 'stopped-typing',
-            senderId: document.getElementById('userId').textContent,
-            senderName: document.getElementById('userName').value || 'Anonymous',
-            timestamp: Date.now()
-          });
-        }
-        window.safeWasm.send_typing_indicator(roomId, false);
-      } catch (error) {
-        console.error("Error stopping typing indicator:", error);
+        console.log('Sending draft message:', draftMessage);
+        const delivered = AppState.p2pConnection.broadcast(draftMessage);
+        const connectedPeersList = AppState.p2pConnection.getConnectedPeers();
+        console.log('Draft message delivered to', delivered, 'of', connectedPeersList.length, 'connected peers:', connectedPeersList);
+      } else {
+        // Send clear draft message when input is empty
+        const clearMessage = {
+          type: 'clear-draft',
+          senderId: document.getElementById('userId').textContent,
+          timestamp: Date.now()
+        };
+
+        console.log('Sending clear draft message:', clearMessage);
+        AppState.p2pConnection.broadcast(clearMessage);
       }
-    }, CONSTANTS.TIMEOUT_TYPING);
+    } else {
+      console.warn('No P2P connection available for draft messages');
+    }
   } catch (error) {
-    console.error("Error handling typing indicator:", error);
+    console.error("Error handling draft message:", error);
   }
 }
 
@@ -847,14 +1173,34 @@ function connectNewUIWithWasm() {
     handleInitializeUser();
   });
 
-  // Connect typing indicator
-  document.getElementById('messageInput').addEventListener('input', handleTypingIndicator);
+  // Connect real-time draft messages
+  document.getElementById('messageInput').addEventListener('input', handleDraftMessage);
 
   log('New UI successfully connected to WASM functionality');
+
+  // Add debug function to window for testing multi-user connections
+  window.debugConnections = () => {
+    if (AppState.p2pConnection) {
+      const connectedPeers = AppState.p2pConnection.getConnectedPeers();
+      console.log('=== CONNECTION DEBUG ===');
+      console.log('My client ID:', document.getElementById('userId').textContent);
+      console.log('Connected peers:', connectedPeers.length, connectedPeers);
+      console.log('Draft messages in state:', AppState.draftMessages.size);
+      AppState.draftMessages.forEach((draft, peerId) => {
+        console.log(`  - ${peerId}: "${draft.content}" (${draft.senderName})`);
+      });
+      console.log('=======================');
+      return {
+        myId: document.getElementById('userId').textContent,
+        connectedPeers,
+        draftCount: AppState.draftMessages.size
+      };
+    }
+  };
 }
 
 // Override display message function to work with the new UI
-function displayMessage(message, isMe = true, senderName = null) {
+function displayMessage(message, isMe = true, senderName = null, shouldScroll = true) {
   const chatArea = document.getElementById('chatArea');
   const welcomeMessage = document.getElementById('welcomeMessage');
 
@@ -886,11 +1232,13 @@ function displayMessage(message, isMe = true, senderName = null) {
 
   chatArea.appendChild(messageElement);
 
-  // Smooth scroll to bottom
-  chatArea.scrollTo({
-    top: chatArea.scrollHeight,
-    behavior: 'smooth'
-  });
+  // Smooth scroll to bottom if requested
+  if (shouldScroll) {
+    chatArea.scrollTo({
+      top: chatArea.scrollHeight,
+      behavior: 'smooth'
+    });
+  }
 }
 
 // Display received message from P2P
@@ -901,66 +1249,132 @@ function displayReceivedMessage(messageObj) {
 // Update peer count display
 function updatePeerCount() {
   if (AppState.p2pConnection) {
-    const peerCount = AppState.p2pConnection.getConnectedPeers().length;
+    const connectedPeers = AppState.p2pConnection.getConnectedPeers();
+    const peerCount = connectedPeers.length;
     const statusText = peerCount > 0 ? `Connected (${peerCount} peer${peerCount !== 1 ? 's' : ''})` : 'Connected';
     const statusElement = document.getElementById('connectionStatus');
     if (statusElement.textContent !== 'Disconnected') {
       statusElement.textContent = statusText;
     }
+
+    // Log for debugging multi-user issues
+    console.log('Peer count updated:', peerCount, 'peers:', connectedPeers);
   }
 }
 
-// Show peer typing indicator
-function showPeerTyping(peerId, isTyping) {
-  if (isTyping && peerId) {
-    AppState.typingPeers.add(peerId);
+// Handle peer draft message
+function handlePeerDraft(message, peerId) {
+  console.log('handlePeerDraft called with message:', message, 'from peer:', peerId);
 
-    // Clear any existing timeout for this peer
-    const existingTimeout = AppState.typingTimeouts.get(peerId);
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
+  const senderName = message.senderName || message.senderId || peerId;
+
+  // Store the draft message
+  AppState.draftMessages.set(peerId, {
+    content: message.content,
+    senderName: senderName,
+    lastUpdate: Date.now()
+  });
+
+  console.log('Stored draft message for peer:', peerId, 'content:', message.content);
+
+  // Clear any existing timeout for this peer
+  const existingTimeout = AppState.draftTimeouts.get(peerId);
+  if (existingTimeout) {
+    clearTimeout(existingTimeout);
+  }
+
+  // Set a timeout to automatically clear draft after inactivity
+  const timeout = setTimeout(() => {
+    console.log('Clearing draft message for peer:', peerId, 'due to timeout');
+    AppState.draftMessages.delete(peerId);
+    AppState.draftTimeouts.delete(peerId);
+    updateDraftMessages();
+  }, CONSTANTS.TIMEOUT_DRAFT_CLEAR);
+
+  AppState.draftTimeouts.set(peerId, timeout);
+
+  // Update the draft messages display
+  updateDraftMessages();
+}
+
+// Clear peer's draft message
+function clearPeerDraft(peerId) {
+  console.log('clearPeerDraft called for peer:', peerId);
+
+  AppState.draftMessages.delete(peerId);
+
+  // Clear timeout for this peer
+  const existingTimeout = AppState.draftTimeouts.get(peerId);
+  if (existingTimeout) {
+    clearTimeout(existingTimeout);
+    AppState.draftTimeouts.delete(peerId);
+  }
+
+  updateDraftMessages();
+}
+
+// Update draft messages display
+function updateDraftMessages() {
+  console.log('updateDraftMessages called, draft messages count:', AppState.draftMessages.size);
+
+  const draftsArea = document.getElementById('draftsArea');
+  if (!draftsArea) {
+    console.warn('Drafts area element not found');
+    return;
+  }
+
+  // Clear existing drafts
+  draftsArea.innerHTML = '';
+
+  // Check if we have any drafts to show
+  const activeDrafts = Array.from(AppState.draftMessages.values()).filter(draft => draft.content.trim());
+
+  if (activeDrafts.length === 0) {
+    // Hide draft area when no drafts
+    draftsArea.style.display = 'none';
+    console.log('No active drafts, hiding draft area');
+    return;
+  }
+
+  // Show draft area
+  draftsArea.style.display = 'block';
+  console.log('Showing draft area with', activeDrafts.length, 'drafts');
+
+  // Add header showing how many people are typing
+  if (activeDrafts.length > 1) {
+    const headerElement = document.createElement('div');
+    headerElement.className = 'text-xs font-bold text-yellow-700 dark:text-yellow-300 mb-1 px-1';
+    headerElement.textContent = `${activeDrafts.length} people are typing:`;
+    draftsArea.appendChild(headerElement);
+  }
+
+  // Display each peer's draft message
+  AppState.draftMessages.forEach((draft, peerId) => {
+    console.log('Processing draft for peer:', peerId, 'content:', draft.content);
+
+    if (draft.content.trim()) {
+      console.log('Creating draft element for peer:', peerId);
+
+      const draftElement = document.createElement('div');
+      draftElement.className = 'draft-message mb-2 p-2 bg-yellow-100 dark:bg-yellow-900/50 border border-yellow-400 dark:border-yellow-500 rounded opacity-90';
+
+      // Add sender name and content in one line for compact display
+      const contentElement = document.createElement('div');
+      contentElement.className = 'text-xs text-gray-800 dark:text-gray-200';
+      contentElement.innerHTML = `<span class="font-bold italic text-yellow-800 dark:text-yellow-200">${draft.senderName} is typing:</span> <span class="italic text-gray-700 dark:text-gray-300">"${draft.content}"</span>`;
+      draftElement.appendChild(contentElement);
+
+      draftsArea.appendChild(draftElement);
+      console.log('Draft element added to DOM');
+    } else {
+      console.log('Draft content is empty, skipping');
     }
+  });
 
-    // Set a timeout to automatically remove typing indicator after 5 seconds
-    const timeout = setTimeout(() => {
-      AppState.typingPeers.delete(peerId);
-      AppState.typingTimeouts.delete(peerId);
-      updateTypingIndicator();
-    }, 5000);
+  console.log('Finished updating draft messages, DOM children count:', draftsArea.children.length);
 
-    AppState.typingTimeouts.set(peerId, timeout);
-  } else if (peerId) {
-    AppState.typingPeers.delete(peerId);
-
-    // Clear timeout for this peer
-    const existingTimeout = AppState.typingTimeouts.get(peerId);
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      AppState.typingTimeouts.delete(peerId);
-    }
-  }
-
-  updateTypingIndicator();
-}
-
-// Update typing indicator display
-function updateTypingIndicator() {
-  const typingIndicator = document.getElementById('typingIndicator');
-  if (AppState.typingPeers.size > 0) {
-    const typingList = Array.from(AppState.typingPeers).slice(0, 3); // Show max 3 names
-    const text = typingList.length === 1
-      ? `${typingList[0]} is typing...`
-      : `${typingList.join(', ')} ${typingList.length > 1 ? 'are' : 'is'} typing...`;
-    typingIndicator.textContent = text;
-    typingIndicator.style.display = 'block';
-  } else {
-    typingIndicator.style.display = 'none';
-  }
-}
-
-// Override show typing indicator function
-function showTypingIndicator(isTyping) {
-  document.getElementById('typingIndicator').style.display = isTyping ? 'block' : 'none';
+  // Scroll draft area to bottom if it has overflow
+  draftsArea.scrollTop = draftsArea.scrollHeight;
 }
 
 // Cleanup on page unload
