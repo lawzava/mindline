@@ -1,4 +1,5 @@
 import '../css/styles.css';
+import { P2PConnection } from './webrtc.js';
 
 /**
  * Mindline Chat Application
@@ -10,7 +11,12 @@ const AppState = {
   wasmModule: null,
   typingTimeout: null,
   initialized: false,
-  darkMode: false
+  darkMode: false,
+  p2pConnection: null,
+  messageHistory: new Map(), // Store messages by ID to avoid duplicates
+  typingPeers: new Set(), // Track who is typing
+  typingTimeouts: new Map(), // Track timeouts for each typing peer
+  chatHistory: new Map() // Store chat history per room: roomId -> {messages: [], lastSync: timestamp}
 };
 
 // Constants
@@ -24,19 +30,34 @@ const CONSTANTS = {
  */
 async function initializeApp() {
   try {
+    console.log('=== APP START ===');
+    console.log('Starting application initialization...');
+    console.log('Initial localStorage check:');
+    console.log('- userName:', localStorage.getItem('userName'));
+    console.log('- userId:', localStorage.getItem('userId'));
+    console.log('- currentRoomId:', localStorage.getItem('currentRoomId'));
+
     // Initialize theme preference
     initializeTheme();
 
+    // Load WASM module first
     await loadWasmModule();
     createSafeWasmProxies();
-    restoreUserState();
-    
-    const roomId = getCurrentRoomId();
-    updateConnectionStatus(Boolean(roomId));
-    
+
+    console.log('WASM loaded, restoring user state...');
+
+    // Restore user state
+    await restoreUserState();
+
+    // Connect UI elements
+    connectNewUIWithWasm();
+
     // Initialize event handlers
     setupEventHandlers();
-    
+
+    const roomId = getCurrentRoomId();
+    updateConnectionStatus(Boolean(roomId));
+
     log('Application initialized successfully');
   } catch (error) {
     console.error('Failed to initialize application:', error);
@@ -190,74 +211,110 @@ function getCurrentRoomId() {
 /**
  * Restore user state from localStorage
  */
-function restoreUserState() {
+async function restoreUserState() {
+  console.log('=== restoreUserState called ===');
+
   if (!window.safeWasm) {
     console.warn("Safe WASM proxies not created yet, cannot restore state safely");
     return;
   }
-  
+
+  console.log('Safe WASM available, proceeding with user restoration...');
+
+  // Check what's in localStorage
+  console.log('Current localStorage contents:');
+  console.log('- userName:', localStorage.getItem('userName'));
+  console.log('- userId:', localStorage.getItem('userId'));
+  console.log('- currentRoomId:', localStorage.getItem('currentRoomId'));
+
   // Initialize user if needed
   restoreUserInfo();
-  
+
   // Restore room connection
-  restoreRoomConnection();
+  await restoreRoomConnection();
 }
 
 /**
  * Restore user information from localStorage
  */
 function restoreUserInfo() {
-  if (document.getElementById('userId').textContent === 'Not initialized') {
+  const userIdElement = document.getElementById('userId');
+  const userIdText = userIdElement.textContent.trim();
+
+  console.log('Current userId element text:', userIdText);
+
+  // Check if user needs initialization (handle HTML whitespace)
+  const needsInitialization = userIdText.includes('Not') && userIdText.includes('initialized');
+  console.log('needsInitialization:', needsInitialization);
+
+  if (needsInitialization) {
     try {
+      // Restore both username and user ID from localStorage
       const savedUserName = localStorage.getItem('userName');
       const savedUserId = localStorage.getItem('userId');
-      
-      // If we have both values, use them
-      if (savedUserId && savedUserName) {
+
+      console.log('Saved userName:', savedUserName);
+      console.log('Saved userId:', savedUserId);
+
+      if (savedUserName && savedUserId) {
+        // Restore saved user data
         window.safeWasm.initialize(savedUserName, savedUserId);
         document.getElementById('userId').textContent = savedUserId;
         document.getElementById('userName').value = savedUserName;
-        log(`Restored user: ${savedUserName}`);
+
+        log(`Restored user: ${savedUserName} with ID: ${savedUserId}`);
         return;
       }
-      
-      // Otherwise initialize with new values
+
+      // No saved data, initialize with current values or defaults
       const userName = document.getElementById('userName').value || 'Anonymous';
       const userId = generateUUID();
-      
+
       window.safeWasm.initialize(userName, userId);
       document.getElementById('userId').textContent = userId;
-      
-      localStorage.setItem('userId', userId);
+
+      // Store both username and user ID
       localStorage.setItem('userName', userName);
-      
-      log(`Initialized user: ${userName} with ID: ${userId}`);
+      localStorage.setItem('userId', userId);
+
+      log(`Initialized new user: ${userName} with ID: ${userId}`);
     } catch (error) {
       console.error("Could not initialize user:", error);
       log(`Error initializing user: ${error.message}`);
     }
+  } else {
+    console.log('User already initialized, skipping restoration');
   }
 }
 
 /**
  * Restore room connection from localStorage
  */
-function restoreRoomConnection() {
+async function restoreRoomConnection() {
   const savedRoomId = localStorage.getItem('currentRoomId');
   console.log("Restoring room ID from localStorage:", savedRoomId);
-  
+
   if (!savedRoomId || !isValidRoomId(savedRoomId)) {
     updateConnectionStatus(false);
     return;
   }
-  
+
   document.getElementById('currentRoom').textContent = savedRoomId;
   document.getElementById('roomIdInput').value = savedRoomId;
-  
+
   try {
-    // Try to join the room
+    // Try to join the room in WASM
     const connectionToken = window.safeWasm.join_room(savedRoomId, "{}");
     console.log("Room joined successfully, token:", connectionToken);
+
+    // Initialize P2P connection
+    try {
+      await initializeP2P(savedRoomId);
+    } catch (p2pError) {
+      console.warn("P2P connection failed:", p2pError);
+      log("P2P connection failed, but room is available locally");
+    }
+
     updateConnectionStatus(true);
     log(`Restored previous room: ${savedRoomId}`);
 
@@ -266,10 +323,19 @@ function restoreRoomConnection() {
   } catch (error) {
     console.warn("Could not join saved room:", error);
     log(`Could not rejoin room: ${error.message}`);
-    
+
     // Try creating the room instead
     try {
       window.safeWasm.create_room_with_id(savedRoomId);
+
+      // Initialize P2P connection
+      try {
+        await initializeP2P(savedRoomId);
+      } catch (p2pError) {
+        console.warn("P2P connection failed:", p2pError);
+        log("P2P connection failed, but room is available locally");
+      }
+
       updateConnectionStatus(true);
       log(`Created room with previous ID: ${savedRoomId}`);
     } catch (createError) {
@@ -284,33 +350,36 @@ function restoreRoomConnection() {
  * Create a new chat room
  * @returns {string|null} The room ID or null if failed
  */
-function createRoom() {
+async function createRoom() {
   try {
     // Get the user-provided room ID if available
     let roomId = document.getElementById('roomIdInput').value;
-    
+
     // If no room ID is provided, generate a UUID
     if (!roomId) {
       roomId = generateUUID();
     }
-    
+
     // Validate the room ID format
     if (!isValidRoomId(roomId)) {
       log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
       return null;
     }
-    
+
     // Create the room in the WASM module
     window.safeWasm.create_room_with_id(roomId);
-    
+
+    // Initialize P2P connection
+    await initializeP2P(roomId);
+
     // Update UI and localStorage
     document.getElementById('currentRoom').textContent = roomId;
     document.getElementById('roomIdInput').value = roomId;
     localStorage.setItem('currentRoomId', roomId);
-    
+
     // Update connection status
     updateConnectionStatus(true);
-    
+
     log(`Created and joined room: ${roomId}`);
     return roomId;
   } catch (error) {
@@ -325,29 +394,32 @@ function createRoom() {
  * @param {string} roomId - Room ID to join
  * @returns {string|null} The room ID or null if failed
  */
-function joinRoom(roomId) {
+async function joinRoom(roomId) {
   if (!roomId) {
     log('Please enter a room ID to join');
     return null;
   }
-  
+
   // Basic ID validation
   if (!isValidRoomId(roomId)) {
     log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
     return null;
   }
-  
+
   try {
     // Join the room
     const connectionToken = window.safeWasm.join_room(roomId, '{}');
-    
+
+    // Initialize P2P connection
+    await initializeP2P(roomId);
+
     // Update UI and localStorage
     document.getElementById('currentRoom').textContent = roomId;
     localStorage.setItem('currentRoomId', roomId);
-    
+
     // Update connection status
     updateConnectionStatus(true);
-    
+
     log(`Joined room: ${roomId}`);
     return roomId;
   } catch (error) {
@@ -358,32 +430,143 @@ function joinRoom(roomId) {
 }
 
 /**
+ * Initialize P2P connection for a room
+ */
+async function initializeP2P(roomId) {
+  // Disconnect existing connection if any
+  if (AppState.p2pConnection) {
+    AppState.p2pConnection.disconnect();
+  }
+
+  // Get user ID
+  const userId = document.getElementById('userId').textContent;
+  if (!userId || userId === 'Not initialized') {
+    throw new Error('User not initialized');
+  }
+
+  // Create new P2P connection
+  AppState.p2pConnection = new P2PConnection(userId, roomId, null);
+
+  // Set up message handlers
+  AppState.p2pConnection.onMessage((message, peerId) => {
+    handleIncomingP2PMessage(message, peerId);
+  });
+
+  AppState.p2pConnection.onPeerConnected((peerId) => {
+    log(`Peer connected: ${peerId}`);
+    updatePeerCount();
+  });
+
+  AppState.p2pConnection.onPeerDisconnected((peerId) => {
+    log(`Peer disconnected: ${peerId}`);
+    // Clear typing state for disconnected peer
+    AppState.typingPeers.delete(peerId);
+    // Clear timeout for disconnected peer
+    const existingTimeout = AppState.typingTimeouts.get(peerId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      AppState.typingTimeouts.delete(peerId);
+    }
+    // Update typing indicator
+    updateTypingIndicator();
+    updatePeerCount();
+  });
+
+  // Connect to signaling server
+  try {
+    await AppState.p2pConnection.connect();
+    log('Connected to P2P network');
+  } catch (error) {
+    console.error('Failed to connect to P2P network:', error);
+    log('Failed to connect to P2P network. Make sure signaling server is running.');
+  }
+}
+
+/**
+ * Handle incoming P2P messages
+ */
+function handleIncomingP2PMessage(message, peerId) {
+  // Prevent duplicate messages
+  if (AppState.messageHistory.has(message.id)) {
+    return;
+  }
+
+  AppState.messageHistory.set(message.id, message);
+
+  switch (message.type) {
+    case 'chat':
+      // Display chat message
+      displayReceivedMessage(message);
+      // Store in WASM for persistence
+      try {
+        const roomId = getCurrentRoomId();
+        window.safeWasm.send_message(roomId, message.content, message.id);
+      } catch (error) {
+        console.error('Error storing message in WASM:', error);
+      }
+      break;
+
+    case 'typing':
+      // Use sender name instead of peer ID for typing indicator
+      const senderName = message.senderName || message.senderId || peerId;
+      showPeerTyping(senderName, true);
+      break;
+
+    case 'stopped-typing':
+      // Use sender name instead of peer ID for typing indicator
+      const stopSenderName = message.senderName || message.senderId || peerId;
+      showPeerTyping(stopSenderName, false);
+      break;
+  }
+}
+
+/**
  * Send a message to the current room
  */
 function sendMessage() {
   const messageInput = document.getElementById('messageInput');
   const message = messageInput.value.trim();
-  
+
   if (!message) return;
-  
+
   // Get the current room ID safely
   const roomId = getCurrentRoomId();
   if (!roomId) {
     log('Please create or join a room first');
     return;
   }
-  
+
   try {
     // Generate message ID on client side
     const messageId = generateUUID();
-    
-    // Send the message
+    const userName = document.getElementById('userName').value || 'Anonymous';
+
+    // Create message object
+    const messageObj = {
+      id: messageId,
+      type: 'chat',
+      content: message,
+      sender: userName,
+      senderId: document.getElementById('userId').textContent,
+      timestamp: Date.now()
+    };
+
+    // Send via P2P if connected
+    if (AppState.p2pConnection) {
+      AppState.p2pConnection.broadcast(messageObj);
+    }
+
+    // Store locally in WASM
     window.safeWasm.send_message(roomId, message, messageId);
+
+    // Store in history to prevent duplicates
+    AppState.messageHistory.set(messageId, messageObj);
+
     messageInput.value = '';
-    
+
     // Display the message in chat
-    displayMessage(message, true);
-    
+    displayMessage(message, true, userName);
+
     // Retrieve messages for debugging
     setTimeout(retrieveMessages, 500, roomId);
   } catch (error) {
@@ -446,10 +629,10 @@ function setupEventHandlers() {
   document.getElementById('initializeBtn').addEventListener('click', handleInitializeUser);
   
   // Room management
-  document.getElementById('createRoomBtn').addEventListener('click', () => createRoom());
-  document.getElementById('joinRoomBtn').addEventListener('click', () => {
+  document.getElementById('createRoomBtn').addEventListener('click', async () => await createRoom());
+  document.getElementById('joinRoomBtn').addEventListener('click', async () => {
     const roomId = document.getElementById('roomIdInput').value;
-    joinRoom(roomId);
+    await joinRoom(roomId);
   });
   
   // Message sending
@@ -478,19 +661,28 @@ function handleInitializeUser() {
   try {
     // Generate user ID client-side
     const userId = generateUUID();
-    
+
+    console.log('=== handleInitializeUser ===');
+    console.log('userName:', userName);
+    console.log('generated userId:', userId);
+
     // Initialize user in WASM module
     window.safeWasm.initialize(userName, userId);
-    
+
     // Update UI
     document.getElementById('userId').textContent = userId;
-    
-    // Store in localStorage
-    localStorage.setItem('userId', userId);
+
+    // Store both username and user ID
     localStorage.setItem('userName', userName);
-    
+    localStorage.setItem('userId', userId);
+
+    console.log('Stored to localStorage:');
+    console.log('- userName:', localStorage.getItem('userName'));
+    console.log('- userId:', localStorage.getItem('userId'));
+
     log(`Initialized user: ${userName} with ID: ${userId}`);
   } catch (error) {
+    console.error('Error in handleInitializeUser:', error);
     log(`Error initializing user: ${error.message}`);
   }
 }
@@ -501,24 +693,39 @@ function handleInitializeUser() {
 function handleTypingIndicator() {
   const roomId = getCurrentRoomId();
   if (!roomId) return;
-  
+
   // Skip typing indicator if not connected
   const statusElement = document.getElementById('connectionStatus');
-  if (statusElement.textContent !== 'Connected') return;
-  
+  if (!statusElement.textContent.startsWith('Connected')) return;
+
   try {
-    // Send typing indicator
+    // Send typing indicator via P2P
+    if (AppState.p2pConnection) {
+      AppState.p2pConnection.broadcast({
+        type: 'typing',
+        senderId: document.getElementById('userId').textContent,
+        senderName: document.getElementById('userName').value || 'Anonymous',
+        timestamp: Date.now()
+      });
+    }
+
+    // Send typing indicator to WASM (for local tracking)
     window.safeWasm.send_typing_indicator(roomId, true);
-    
-    // Show typing indicator in UI
-    showTypingIndicator(true);
-    
+
     // Clear existing timeout and set a new one
     clearTimeout(AppState.typingTimeout);
     AppState.typingTimeout = setTimeout(() => {
       try {
+        // Send stopped typing via P2P
+        if (AppState.p2pConnection) {
+          AppState.p2pConnection.broadcast({
+            type: 'stopped-typing',
+            senderId: document.getElementById('userId').textContent,
+            senderName: document.getElementById('userName').value || 'Anonymous',
+            timestamp: Date.now()
+          });
+        }
         window.safeWasm.send_typing_indicator(roomId, false);
-        showTypingIndicator(false);
       } catch (error) {
         console.error("Error stopping typing indicator:", error);
       }
@@ -581,11 +788,6 @@ function initializeTheme() {
   }
 }
 
-// Initialize the application
-document.addEventListener('DOMContentLoaded', initializeApp);
-
-// Add this to the end of your existing index.js file
-
 /**
  * Connect the new UI elements with WASM functionality
  */
@@ -602,69 +804,158 @@ function connectNewUIWithWasm() {
     const isDark = document.body.classList.contains('dark');
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
   });
-  
+
   // Initialize theme based on preference
   const savedTheme = localStorage.getItem('theme');
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  
+
   if (savedTheme === 'dark' || (savedTheme === null && prefersDark)) {
     document.body.classList.add('dark');
   }
 
   // Connect Create Room button
-  document.getElementById('createRoomBtn').addEventListener('click', () => {
-    createRoom();
+  document.getElementById('createRoomBtn').addEventListener('click', async () => {
+    await createRoom();
   });
-  
+
   // Connect Join Room button
-  document.getElementById('joinRoomBtn').addEventListener('click', () => {
+  document.getElementById('joinRoomBtn').addEventListener('click', async () => {
     const roomId = document.getElementById('roomIdInput').value;
-    joinRoom(roomId);
+    await joinRoom(roomId);
   });
-  
+
   // Connect Send Message button
   document.getElementById('sendBtn').addEventListener('click', () => {
     sendMessage();
   });
-  
+
   // Connect Enter key on message input
   document.getElementById('messageInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       sendMessage();
     }
   });
-  
+
   // Connect clear debug log button
   document.getElementById('clearLogBtn').addEventListener('click', () => {
     document.getElementById('debugOutput').textContent = '';
     log('Debug log cleared');
   });
-  
+
   // Connect initialize user button
   document.getElementById('initializeBtn').addEventListener('click', () => {
     handleInitializeUser();
   });
-  
+
   // Connect typing indicator
   document.getElementById('messageInput').addEventListener('input', handleTypingIndicator);
-  
+
   log('New UI successfully connected to WASM functionality');
 }
 
 // Override display message function to work with the new UI
-function displayMessage(message, isMe = true) {
+function displayMessage(message, isMe = true, senderName = null) {
   const chatArea = document.getElementById('chatArea');
-  const messageElement = document.createElement('div');
-  
-  if (isMe) {
-    messageElement.className = 'ml-auto max-w-[75%] mb-4 p-3 bg-primary/20 dark:bg-primary-dark/30 border-2 border-black dark:border-white shadow-md';
-  } else {
-    messageElement.className = 'mr-auto max-w-[75%] mb-4 p-3 bg-gray-200 dark:bg-gray-700 border-2 border-black dark:border-white shadow-md';
+  const welcomeMessage = document.getElementById('welcomeMessage');
+
+  // Hide welcome message when first message is displayed
+  if (welcomeMessage) {
+    welcomeMessage.style.display = 'none';
   }
-  
-  messageElement.textContent = message;
+
+  const messageElement = document.createElement('div');
+
+  if (isMe) {
+    messageElement.className = 'ml-auto max-w-[75%] mb-4 p-3 bg-primary/20 dark:bg-primary-dark/30 border-2 border-black dark:border-white shadow-md rounded-lg';
+  } else {
+    messageElement.className = 'mr-auto max-w-[75%] mb-4 p-3 bg-gray-200 dark:bg-gray-700 border-2 border-black dark:border-white shadow-md rounded-lg';
+  }
+
+  // Add sender name if provided
+  if (senderName) {
+    const nameElement = document.createElement('div');
+    nameElement.className = 'font-bold text-sm mb-1 text-primary dark:text-primary-dark';
+    nameElement.textContent = senderName;
+    messageElement.appendChild(nameElement);
+  }
+
+  const contentElement = document.createElement('div');
+  contentElement.textContent = message;
+  contentElement.className = 'break-words';
+  messageElement.appendChild(contentElement);
+
   chatArea.appendChild(messageElement);
-  chatArea.scrollTop = chatArea.scrollHeight;
+
+  // Smooth scroll to bottom
+  chatArea.scrollTo({
+    top: chatArea.scrollHeight,
+    behavior: 'smooth'
+  });
+}
+
+// Display received message from P2P
+function displayReceivedMessage(messageObj) {
+  displayMessage(messageObj.content, false, messageObj.sender);
+}
+
+// Update peer count display
+function updatePeerCount() {
+  if (AppState.p2pConnection) {
+    const peerCount = AppState.p2pConnection.getConnectedPeers().length;
+    const statusText = peerCount > 0 ? `Connected (${peerCount} peer${peerCount !== 1 ? 's' : ''})` : 'Connected';
+    const statusElement = document.getElementById('connectionStatus');
+    if (statusElement.textContent !== 'Disconnected') {
+      statusElement.textContent = statusText;
+    }
+  }
+}
+
+// Show peer typing indicator
+function showPeerTyping(peerId, isTyping) {
+  if (isTyping && peerId) {
+    AppState.typingPeers.add(peerId);
+
+    // Clear any existing timeout for this peer
+    const existingTimeout = AppState.typingTimeouts.get(peerId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+    }
+
+    // Set a timeout to automatically remove typing indicator after 5 seconds
+    const timeout = setTimeout(() => {
+      AppState.typingPeers.delete(peerId);
+      AppState.typingTimeouts.delete(peerId);
+      updateTypingIndicator();
+    }, 5000);
+
+    AppState.typingTimeouts.set(peerId, timeout);
+  } else if (peerId) {
+    AppState.typingPeers.delete(peerId);
+
+    // Clear timeout for this peer
+    const existingTimeout = AppState.typingTimeouts.get(peerId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      AppState.typingTimeouts.delete(peerId);
+    }
+  }
+
+  updateTypingIndicator();
+}
+
+// Update typing indicator display
+function updateTypingIndicator() {
+  const typingIndicator = document.getElementById('typingIndicator');
+  if (AppState.typingPeers.size > 0) {
+    const typingList = Array.from(AppState.typingPeers).slice(0, 3); // Show max 3 names
+    const text = typingList.length === 1
+      ? `${typingList[0]} is typing...`
+      : `${typingList.join(', ')} ${typingList.length > 1 ? 'are' : 'is'} typing...`;
+    typingIndicator.textContent = text;
+    typingIndicator.style.display = 'block';
+  } else {
+    typingIndicator.style.display = 'none';
+  }
 }
 
 // Override show typing indicator function
@@ -672,20 +963,12 @@ function showTypingIndicator(isTyping) {
   document.getElementById('typingIndicator').style.display = isTyping ? 'block' : 'none';
 }
 
-// Add this to your initialization code
-document.addEventListener('DOMContentLoaded', () => {
-  // First load WASM module as usual
-  loadWasmModule().then(() => {
-    createSafeWasmProxies();
-    restoreUserState();
-    
-    // Then connect the UI elements
-    connectNewUIWithWasm();
-    
-    const roomId = getCurrentRoomId();
-    updateConnectionStatus(Boolean(roomId));
-  }).catch(error => {
-    console.error('Failed to initialize application:', error);
-    updateDebugOutput(`Error initializing application: ${error.message}`);
-  });
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  if (AppState.p2pConnection) {
+    AppState.p2pConnection.disconnect();
+  }
 });
+
+// Initialize the application when DOM is loaded
+document.addEventListener('DOMContentLoaded', initializeApp);
