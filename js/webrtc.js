@@ -34,10 +34,18 @@ export class P2PConnection {
   async connect() {
     return new Promise((resolve, reject) => {
       try {
-        // Determine WebSocket URL based on current location
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.hostname;
-        const wsUrl = `${protocol}//${host}:3000`;
+        // Use configuration-based WebSocket URL
+        const config = window.MINDLINE_CONFIG || {
+          SIGNALING_SERVER: 'localhost:3000',
+          USE_SSL: false,
+          WEBSOCKET_PATH: '/ws'
+        };
+
+        const protocol = config.USE_SSL ? 'wss:' : 'ws:';
+        const host = config.SIGNALING_SERVER;
+        const path = config.WEBSOCKET_PATH;
+
+        const wsUrl = `${protocol}//${host}${path}`;
 
         console.log(`Connecting to signaling server at ${wsUrl}`);
         this.ws = new WebSocket(wsUrl);

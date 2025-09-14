@@ -6,8 +6,14 @@
   "scripts": {
     "build-wasm": "wasm-pack build --target web",
     "build": "npm run build-wasm && webpack",
+    "build:production": "npm run build-wasm && webpack --mode production",
+    "build:cloudflare": "npm run build-wasm && webpack --mode production --env cloudflare=true",
     "start": "webpack serve",
+    "serve": "http-server dist -p 8080 -c-1",
     "signaling": "node signaling-server.js",
+    "start:production": "concurrently \"npm run serve\" \"npm run signaling\"",
+    "deploy": "npm run build:production",
+    "deploy:cloudflare": "npm run build:cloudflare",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -20,7 +26,9 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "ws": "^8.14.2"
+    "ws": "^8.14.2",
+    "http-server": "^14.1.1",
+    "concurrently": "^7.6.0"
   },
   "devDependencies": {
     "@wasm-tool/wasm-pack-plugin": "^1.6.0",
