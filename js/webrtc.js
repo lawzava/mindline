@@ -13,13 +13,18 @@ export class P2PConnection {
     this.onPeerConnectedCallback = null;
     this.onPeerDisconnectedCallback = null;
     this.onConnectionLostCallback = null;
+    this.meshCheckInterval = null;
+    this.allKnownPeers = new Set(); // Track all peers we should be connected to
 
-    // ICE servers configuration
+    // ICE servers configuration - more robust for mobile devices
     this.iceConfig = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' }
+      ],
+      iceCandidatePoolSize: 10 // Better for mobile connections
     };
   }
 
@@ -84,22 +89,61 @@ export class P2PConnection {
   async handleSignalingMessage(message) {
     switch (message.type) {
       case 'room-joined':
-        console.log('Joined room:', message.roomId);
-        // Connect to existing peers
-        for (const peerId of message.peers) {
-          await this.createPeerConnection(peerId, true);
+        console.log('Joined room:', message.roomId, 'with existing peers:', message.peers);
+
+        // Track all known peers
+        message.peers.forEach(peerId => this.allKnownPeers.add(peerId));
+
+        // Connect to ALL existing peers (I'm the new joiner, so I initiate all connections)
+        for (let i = 0; i < message.peers.length; i++) {
+          const peerId = message.peers[i];
+          // Stagger connection attempts to reduce race conditions
+          setTimeout(async () => {
+            try {
+              console.log(`🔗 New user connecting to existing peer ${i + 1}/${message.peers.length}:`, peerId);
+              await this.createPeerConnection(peerId, true); // Always initiate as the new joiner
+            } catch (error) {
+              console.error(`❌ Failed to connect to existing peer ${peerId}:`, error);
+            }
+          }, i * 1000); // 1 second delay between each connection
         }
+
+        // Start periodic mesh checking
+        this.startMeshMonitoring();
+
+        // Also trigger mesh completion check after all initial connections
+        setTimeout(() => {
+          this.ensureFullMesh(Array.from(this.allKnownPeers));
+        }, (message.peers.length + 1) * 1000);
         break;
 
       case 'peer-joined':
         console.log('Peer joined:', message.clientId);
-        // New peer joined, create connection and send offer
-        // Use string comparison to determine who should initiate to avoid duplicate connections
-        if (message.clientId !== this.clientId && this.clientId > message.clientId) {
-          console.log('Creating connection to new peer (I initiate):', message.clientId);
-          await this.createPeerConnection(message.clientId, true);
-        } else if (message.clientId !== this.clientId) {
-          console.log('New peer will initiate connection to me:', message.clientId);
+        // New peer joined - track them and ensure connection
+        if (message.clientId !== this.clientId) {
+          // Add to known peers
+          this.allKnownPeers.add(message.clientId);
+
+          // Use a small delay and string comparison to avoid duplicate offers
+          const shouldInitiate = this.clientId > message.clientId;
+          const delay = shouldInitiate ? 500 : 1500; // Stagger by priority
+
+          console.log(`Will ${shouldInitiate ? 'initiate' : 'wait for'} connection to new peer:`, message.clientId, `(delay: ${delay}ms)`);
+
+          setTimeout(async () => {
+            try {
+              // Check if connection already exists (might have been created by the other peer)
+              if (!this.peers.has(message.clientId) ||
+                  ['failed', 'closed', 'disconnected'].includes(this.peers.get(message.clientId).connectionState)) {
+                console.log(`🔗 Creating connection to new peer ${message.clientId}`);
+                await this.createPeerConnection(message.clientId, shouldInitiate);
+              } else {
+                console.log(`✅ Connection to ${message.clientId} already exists`);
+              }
+            } catch (error) {
+              console.error(`Failed to connect to new peer ${message.clientId}:`, error);
+            }
+          }, delay);
         }
         break;
 
@@ -129,20 +173,26 @@ export class P2PConnection {
    * Create a peer connection
    */
   async createPeerConnection(peerId, createOffer = false) {
+    console.log(`Creating peer connection to ${peerId}, createOffer: ${createOffer}`);
+
     // Check if connection already exists
     if (this.peers.has(peerId)) {
       const existingPc = this.peers.get(peerId);
-      console.log(`Peer connection already exists for ${peerId} in state: ${existingPc.signalingState}`);
+      console.log(`Peer connection already exists for ${peerId} in state: ${existingPc.signalingState}/${existingPc.connectionState}`);
 
-      // If we're supposed to create an offer but connection exists, skip
-      if (createOffer && existingPc.signalingState !== 'closed') {
+      // If connection is connecting/connected and healthy, skip
+      if (['connecting', 'connected'].includes(existingPc.connectionState)) {
+        console.log(`Skipping duplicate connection to ${peerId}, already connected`);
         return;
       }
 
-      // If connection is closed, remove it and create new one
-      if (existingPc.connectionState === 'closed' || existingPc.connectionState === 'failed') {
+      // If connection is failed/closed/disconnected, clean up and recreate
+      if (['failed', 'closed', 'disconnected'].includes(existingPc.connectionState)) {
+        console.log(`Removing failed connection to ${peerId}, will recreate`);
         this.removePeer(peerId);
-      } else {
+      } else if (createOffer && existingPc.signalingState !== 'stable') {
+        // Wait for existing negotiation to complete
+        console.log(`Waiting for existing negotiation with ${peerId} to complete`);
         return;
       }
     }
@@ -161,35 +211,82 @@ export class P2PConnection {
       }
     };
 
-    // Create data channel
+    // Create data channel with mobile-friendly settings
     if (createOffer) {
       const dataChannel = pc.createDataChannel('chat', {
         ordered: true,
-        maxRetransmits: 3
+        maxRetransmits: 3,
+        maxRetransmitTime: 3000 // 3 seconds timeout
       });
       this.setupDataChannel(dataChannel, peerId);
 
-      // Create and send offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      // Create and send offer with error handling
+      try {
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: false,
+          offerToReceiveVideo: false
+        });
+        await pc.setLocalDescription(offer);
 
-      this.sendSignalingMessage({
-        type: 'offer',
-        targetId: peerId,
-        data: offer
-      });
+        console.log(`📤 Sending offer to ${peerId}`);
+        this.sendSignalingMessage({
+          type: 'offer',
+          targetId: peerId,
+          data: offer
+        });
+
+        // Set timeout for offer response
+        setTimeout(() => {
+          if (pc.signalingState === 'have-local-offer') {
+            console.log(`⏰ Offer to ${peerId} timed out`);
+          }
+        }, 10000); // 10 second timeout
+      } catch (error) {
+        console.error(`Failed to create offer for ${peerId}:`, error);
+        this.removePeer(peerId);
+      }
     } else {
       // Wait for data channel from remote peer
       pc.ondatachannel = (event) => {
+        console.log(`📥 Received data channel from ${peerId}`);
         this.setupDataChannel(event.channel, peerId);
       };
     }
 
-    // Handle connection state changes
+    // Handle connection state changes with more detailed logging
     pc.onconnectionstatechange = () => {
-      console.log(`Connection state with ${peerId}:`, pc.connectionState);
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+      console.log(`Connection state with ${peerId}:`, pc.connectionState, `(signaling: ${pc.signalingState})`);
+
+      if (pc.connectionState === 'connected') {
+        console.log(`✅ Successfully connected to peer ${peerId}`);
+        // Clear any pending reconnection attempts for this peer
+      } else if (pc.connectionState === 'failed') {
+        console.log(`❌ Connection failed with peer ${peerId}`);
+        // Try to reconnect after a delay
+        setTimeout(() => {
+          if (this.peers.has(peerId)) {
+            console.log(`🔄 Attempting to reconnect to failed peer ${peerId}`);
+            this.removePeer(peerId);
+            this.createPeerConnection(peerId, true);
+          }
+        }, 3000);
+      } else if (pc.connectionState === 'disconnected') {
+        console.log(`⚠️ Peer ${peerId} disconnected, removing connection`);
         this.removePeer(peerId);
+      }
+    };
+
+    // Handle ICE connection state changes
+    pc.oniceconnectionstatechange = () => {
+      console.log(`ICE connection state with ${peerId}:`, pc.iceConnectionState);
+
+      if (pc.iceConnectionState === 'failed') {
+        console.log(`ICE connection failed with ${peerId}, will restart ICE`);
+        try {
+          pc.restartIce();
+        } catch (error) {
+          console.error(`Failed to restart ICE for ${peerId}:`, error);
+        }
       }
     };
   }
@@ -320,28 +417,47 @@ export class P2PConnection {
   }
 
   /**
-   * Send message to all connected peers
+   * Send message to all connected peers with delivery confirmation
    */
   broadcast(message) {
     const messageStr = JSON.stringify(message);
     let deliveredCount = 0;
+    let attemptedCount = 0;
+
+    console.log(`📡 Broadcasting message type '${message.type}' to ${this.dataChannels.size} channels`);
 
     this.dataChannels.forEach((channel, peerId) => {
+      attemptedCount++;
+
       if (channel.readyState === 'open') {
         try {
           channel.send(messageStr);
           deliveredCount++;
+          console.log(`✅ Message sent to ${peerId}`);
         } catch (error) {
-          console.error(`Error sending to ${peerId}:`, error);
+          console.error(`❌ Error sending to ${peerId}:`, error);
           // Try to reconnect if send fails
           this.handleConnectionFailure(peerId);
         }
       } else {
-        console.warn(`Channel to ${peerId} not open: ${channel.readyState}`);
+        console.warn(`⚠️ Channel to ${peerId} not open: ${channel.readyState}`);
+        // Try to re-establish connection if channel is closed
+        if (channel.readyState === 'closed') {
+          console.log(`🔄 Attempting to re-establish connection to ${peerId}`);
+          this.createPeerConnection(peerId, true).catch(err => {
+            console.error(`Failed to re-establish connection to ${peerId}:`, err);
+          });
+        }
       }
     });
 
-    console.log(`Message broadcast to ${deliveredCount} peers`);
+    console.log(`📊 Broadcast result: ${deliveredCount}/${attemptedCount} delivered`);
+
+    // If delivery rate is too low, there might be connection issues
+    if (attemptedCount > 0 && deliveredCount / attemptedCount < 0.5) {
+      console.warn(`🚨 Low delivery rate: ${deliveredCount}/${attemptedCount} - possible connection issues`);
+    }
+
     return deliveredCount;
   }
 
@@ -393,6 +509,12 @@ export class P2PConnection {
    * Disconnect from all peers and signaling server
    */
   disconnect() {
+    // Clear mesh monitoring
+    if (this.meshCheckInterval) {
+      clearInterval(this.meshCheckInterval);
+      this.meshCheckInterval = null;
+    }
+
     // Send leave message
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'leave' }));
@@ -403,6 +525,9 @@ export class P2PConnection {
     this.peers.forEach((pc, peerId) => {
       this.removePeer(peerId);
     });
+
+    // Clear known peers
+    this.allKnownPeers.clear();
   }
 
   /**
@@ -442,6 +567,64 @@ export class P2PConnection {
     if (pc && (pc.connectionState === 'failed' || pc.connectionState === 'disconnected')) {
       this.removePeer(peerId);
     }
+  }
+
+  /**
+   * Start periodic mesh monitoring
+   */
+  startMeshMonitoring() {
+    // Clear any existing interval
+    if (this.meshCheckInterval) {
+      clearInterval(this.meshCheckInterval);
+    }
+
+    // Check mesh every 10 seconds
+    this.meshCheckInterval = setInterval(() => {
+      const expectedPeers = Array.from(this.allKnownPeers);
+      if (expectedPeers.length > 0) {
+        console.log('🔍 Periodic mesh check...');
+        this.ensureFullMesh(expectedPeers);
+      }
+    }, 10000);
+  }
+
+  /**
+   * Ensure full mesh connectivity by checking for missing connections
+   */
+  async ensureFullMesh(expectedPeers) {
+    console.log('🕸️ Ensuring full mesh connectivity...');
+
+    const connectedPeers = this.getConnectedPeers();
+    const allExpectedPeers = [...expectedPeers];
+
+    console.log('Expected peers:', allExpectedPeers);
+    console.log('Currently connected:', connectedPeers);
+
+    // Find missing connections
+    const missingConnections = allExpectedPeers.filter(peerId =>
+      !connectedPeers.includes(peerId) && peerId !== this.clientId
+    );
+
+    if (missingConnections.length > 0) {
+      console.log('🔧 Found missing connections:', missingConnections);
+
+      for (const peerId of missingConnections) {
+        try {
+          console.log(`🔗 Attempting to establish missing connection to ${peerId}`);
+          await this.createPeerConnection(peerId, true);
+        } catch (error) {
+          console.error(`❌ Failed to establish missing connection to ${peerId}:`, error);
+        }
+      }
+    } else {
+      console.log('✅ Full mesh connectivity confirmed');
+    }
+
+    // Log final connection status
+    setTimeout(() => {
+      const finalConnected = this.getConnectedPeers();
+      console.log(`📊 Final mesh status: ${finalConnected.length}/${allExpectedPeers.length} peers connected`);
+    }, 3000);
   }
 
   /**
