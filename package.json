@@ -7,13 +7,14 @@
     "build-wasm": "wasm-pack build --target web",
     "build": "npm run build-wasm && webpack",
     "build:production": "npm run build-wasm && webpack --mode production",
-    "build:cloudflare": "npm run build-wasm && webpack --mode production --env cloudflare=true",
+    "build:cloudflare": "webpack --mode production --env cloudflare=true",
     "start": "webpack serve",
     "serve": "http-server dist -p 8080 -c-1",
     "signaling": "node signaling-server.js",
     "start:production": "concurrently \"npm run serve\" \"npm run signaling\"",
     "deploy": "npm run build:production",
     "deploy:cloudflare": "npm run build:cloudflare",
+    "prebuild:cloudflare": "echo 'Using pre-built WASM from pkg/ directory'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
