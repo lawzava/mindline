@@ -1328,23 +1328,74 @@ function connectNewUIWithWasm() {
 
   log('New UI successfully connected to WASM functionality');
 
-  // Add debug function to window for testing multi-user connections
+  // Add comprehensive debug function for connection issues
   window.debugConnections = () => {
     if (AppState.p2pConnection) {
       const connectedPeers = AppState.p2pConnection.getConnectedPeers();
       console.log('=== CONNECTION DEBUG ===');
       console.log('My client ID:', document.getElementById('userId').textContent);
+      console.log('Room ID:', getCurrentRoomId());
       console.log('Connected peers:', connectedPeers.length, connectedPeers);
+
+      // Debug peer connection states
+      console.log('\n--- PEER CONNECTION STATES ---');
+      AppState.p2pConnection.peers.forEach((pc, peerId) => {
+        console.log(`${peerId}:`);
+        console.log(`  Connection: ${pc.connectionState}`);
+        console.log(`  Signaling: ${pc.signalingState}`);
+        console.log(`  ICE: ${pc.iceConnectionState}`);
+        console.log(`  ICE Gathering: ${pc.iceGatheringState}`);
+      });
+
+      // Debug data channels
+      console.log('\n--- DATA CHANNELS ---');
+      AppState.p2pConnection.dataChannels.forEach((channel, peerId) => {
+        console.log(`${peerId}: ${channel.readyState}`);
+      });
+
+      // Debug draft messages
+      console.log('\n--- DRAFT MESSAGES ---');
       console.log('Draft messages in state:', AppState.draftMessages.size);
       AppState.draftMessages.forEach((draft, peerId) => {
         console.log(`  - ${peerId}: "${draft.content}" (${draft.senderName})`);
       });
+
+      // Connection health summary
+      const totalPeers = AppState.p2pConnection.peers.size;
+      const connectedCount = connectedPeers.length;
+      const healthRate = totalPeers > 0 ? (connectedCount / totalPeers * 100).toFixed(1) : 100;
+
+      console.log('\n--- HEALTH SUMMARY ---');
+      console.log(`Connection Health: ${healthRate}% (${connectedCount}/${totalPeers})`);
+      console.log(`Reconnection attempts: ${AppState.reconnectAttempts}/${AppState.maxReconnectAttempts}`);
+      console.log(`Is reconnecting: ${AppState.isReconnecting}`);
       console.log('=======================');
+
       return {
         myId: document.getElementById('userId').textContent,
+        roomId: getCurrentRoomId(),
+        totalPeers,
         connectedPeers,
-        draftCount: AppState.draftMessages.size
+        healthRate: `${healthRate}%`,
+        draftCount: AppState.draftMessages.size,
+        reconnectAttempts: AppState.reconnectAttempts,
+        isReconnecting: AppState.isReconnecting
       };
+    }
+  };
+
+  // Add function to test message broadcasting
+  window.testBroadcast = (message = 'Test message') => {
+    if (AppState.p2pConnection) {
+      console.log('Testing message broadcast...');
+      const result = AppState.p2pConnection.broadcast({
+        type: 'test',
+        content: message,
+        senderId: document.getElementById('userId').textContent,
+        timestamp: Date.now()
+      });
+      console.log(`Broadcast test result: ${result} peers reached`);
+      return result;
     }
   };
 }
