@@ -12,6 +12,7 @@ export class P2PConnection {
     this.onMessageCallback = null;
     this.onPeerConnectedCallback = null;
     this.onPeerDisconnectedCallback = null;
+    this.onConnectionLostCallback = null;
 
     // ICE servers configuration
     this.iceConfig = {
@@ -62,6 +63,11 @@ export class P2PConnection {
           this.peers.forEach((pc, peerId) => {
             this.removePeer(peerId);
           });
+
+          // Notify about connection loss for reconnection
+          if (this.onConnectionLostCallback) {
+            this.onConnectionLostCallback('signaling_server_disconnect');
+          }
         };
 
         // Resolve after a short delay to ensure connection is established
@@ -418,6 +424,13 @@ export class P2PConnection {
    */
   onPeerDisconnected(callback) {
     this.onPeerDisconnectedCallback = callback;
+  }
+
+  /**
+   * Set callback for connection loss events
+   */
+  onConnectionLost(callback) {
+    this.onConnectionLostCallback = callback;
   }
 
   /**
