@@ -202,3 +202,40 @@ body.dark {
 h1, h2, h3, h4, h5, h6 {
     color: var(--text-color);
 }
+
+/* Draft messages styling */
+.draft-messages-area {
+    transition: all 0.3s ease-in-out;
+}
+
+.draft-message {
+    animation: draft-pulse 2s ease-in-out infinite;
+    position: relative;
+    transition: all 0.2s ease-in-out;
+}
+
+.draft-message::before {
+    content: "🔴 LIVE";
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background-color: #ef4444;
+    color: white;
+    font-size: 9px;
+    font-weight: bold;
+    padding: 1px 4px;
+    border-radius: 3px;
+    z-index: 10;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+@keyframes draft-pulse {
+    0%, 100% {
+        opacity: 0.6;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.9;
+        transform: scale(1.01);
+    }
+}

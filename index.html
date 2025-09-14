@@ -189,25 +189,25 @@
                                 class="text-xl uppercase tracking-wider">CHAT</h2>
                         </div>
                         <div class="flex-1 p-4 flex flex-col" style="height: 600px;">
+                            <!-- Chat messages container -->
                             <div id="chatArea"
-                                class="flex-1 bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white p-4 overflow-y-auto mb-4 relative min-h-0">
+                                class="flex-1 bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white p-4 overflow-y-auto mb-2 relative min-h-0">
                                 <!-- Welcome message -->
                                 <div id="welcomeMessage"
-                                    class="text-center py-8 text-gray-500 dark:text-gray-400 italic">
-                                    Join or create a room to start chatting
-                                </div>
-
-                                <!-- Typing indicator -->
-                                <div id="typingIndicator"
-                                    class="absolute bottom-4 left-4 bg-white dark:bg-gray-800 border-2 border-black dark:border-white p-2 shadow-md hidden">
-                                    <span class="typing-dot"></span>
-                                    <span class="typing-dot"></span>
-                                    <span class="typing-dot"></span>
+                                    class="text-center py-8 text-gray-500 dark:text-gray-400">
+                                    <h3 class="text-lg font-bold mb-2">🚫 No Hidden Drafts</h3>
+                                    <p class="italic mb-4">Join or create a room to experience radical transparency</p>
+                                    <p class="text-sm bg-yellow-100 dark:bg-yellow-900/30 border-2 border-dashed border-yellow-400 dark:border-yellow-600 p-3 rounded-lg mx-4">
+                                        <strong>⚡ Live Transparency:</strong> Others see exactly what you're typing in real-time. No time to hide thoughts or craft perfect responses. Just authentic communication.
+                                    </p>
                                 </div>
                             </div>
+
+                            <!-- Draft messages area - positioned between chat and input -->
+                            <div id="draftsArea" class="draft-messages-area bg-gray-50 dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-lg p-2 mb-2 min-h-[20px] max-h-[100px] overflow-y-auto" style="display: none;"></div>
                             <div class="flex gap-2">
                                 <input type="text" id="messageInput"
-                                    placeholder="Type your message..."
+                                    placeholder="Others see this as you type..."
                                     class="neo-input flex-1">
                                 <button id="sendBtn"
                                     class="neo-btn neo-btn-primary"
