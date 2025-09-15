@@ -1017,18 +1017,23 @@ async function initializeP2P(roomId) {
  * Handle incoming P2P messages
  */
 function handleIncomingP2PMessage(message, peerId) {
+  console.log(`📨 Handling incoming P2P message from ${peerId}:`, message.type, message.id || 'no-id');
+
   // For draft messages, we don't need to prevent duplicates since they should update in real-time
   if (message.type !== 'draft' && message.type !== 'clear-draft' && AppState.messageHistory.has(message.id)) {
+    console.log(`🔄 Duplicate message detected, ignoring: ${message.id}`);
     return;
   }
 
   // Only store chat messages in history, not draft messages
   if (message.type === 'chat') {
+    console.log(`💬 Processing chat message: ${message.id}`);
     AppState.messageHistory.set(message.id, message);
   }
 
   switch (message.type) {
     case 'chat':
+      console.log(`💬 Displaying received chat message: "${message.content}" from ${message.sender}`);
       // Display chat message
       displayReceivedMessage(message);
       // Store in WASM for persistence
@@ -1037,6 +1042,7 @@ function handleIncomingP2PMessage(message, peerId) {
         window.safeWasm.send_message(roomId, message.content, message.id);
         // Add to persistent chat history
         addMessageToHistory(roomId, message);
+        console.log(`✅ Chat message stored and displayed successfully`);
       } catch (error) {
         console.error('Error storing message in WASM:', error);
       }
@@ -1102,7 +1108,10 @@ function sendMessage() {
 
     // Send via P2P if connected
     if (AppState.p2pConnection) {
+      console.log(`📤 Broadcasting chat message:`, messageObj);
       AppState.p2pConnection.broadcast(messageObj);
+    } else {
+      console.log(`❌ No P2P connection to broadcast message`);
     }
 
     // Store locally in WASM
