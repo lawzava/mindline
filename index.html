@@ -276,10 +276,17 @@
             <div class="w-full max-w-5xl mx-auto">
                 <!-- Rooms Card -->
                 <div class="neo-card-elevated neo-hover-mega">
-                    <div class="neo-header">
-                        <h2 class="neo-subtitle">ROOMS</h2>
+                    <div class="neo-header cursor-pointer" id="roomsHeader" onclick="toggleRoomsSection()">
+                        <div class="flex items-center justify-between">
+                            <h2 class="neo-subtitle">ROOMS</h2>
+                            <svg id="roomsChevron" class="w-6 h-6 transform transition-transform duration-300 rotate-180"
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </div>
                     </div>
-                    <div class="p-4 md:p-8">
+                    <div id="roomsContent" class="overflow-hidden transition-all duration-300 max-h-0">
+                        <div class="p-4 md:p-8">
                         <!-- Room ID Input Section -->
                         <div class="mb-6">
                             <div class="flex gap-2">
@@ -317,12 +324,29 @@
                                 </div>
                             </div>
                         </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <script>
+        // Toggle rooms section
+        function toggleRoomsSection() {
+            const content = document.getElementById('roomsContent');
+            const chevron = document.getElementById('roomsChevron');
+
+            if (content.style.maxHeight === '0px' || !content.style.maxHeight) {
+                // Expand
+                content.style.maxHeight = content.scrollHeight + 'px';
+                chevron.classList.remove('rotate-180');
+            } else {
+                // Collapse
+                content.style.maxHeight = '0px';
+                chevron.classList.add('rotate-180');
+            }
+        }
+
         // Update connection status
         const updateConnectionStatus = (isConnected) => {
             const statusElement = document.getElementById('connectionStatus');
