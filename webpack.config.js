@@ -125,5 +125,18 @@ module.exports = (env = {}) => ({
         port: 8080,
         hot: true, // Enable hot module replacement
         historyApiFallback: true, // Handle SPAs
+        client: {
+            overlay: {
+                errors: true,
+                warnings: false,
+                runtimeErrors: (error) => {
+                    // Suppress HMR errors for WASM modules
+                    if (error.message && error.message.includes('mindline.js is not accepted')) {
+                        return false;
+                    }
+                    return true;
+                }
+            }
+        }
     },
 });
