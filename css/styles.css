@@ -1602,6 +1602,382 @@ h1, h2, h3, h4, h5, h6 {
     }
 }
 
+/* PWA Install Prompt Styles */
+.install-prompt {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    background: var(--bg-color);
+    border: 4px solid var(--border-color);
+    box-shadow: var(--large-shadow) var(--shadow-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    z-index: 2000;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.install-prompt.show {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.install-prompt-content {
+    text-align: center;
+}
+
+.install-prompt-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.install-prompt-icon {
+    width: 2rem;
+    height: 2rem;
+    color: var(--primary-color);
+    flex-shrink: 0;
+}
+
+.install-prompt-header h3 {
+    font-size: 1.25rem;
+    font-weight: 800;
+    margin: 0;
+    color: var(--text-color);
+    text-shadow: 1px 1px 0px var(--shadow-color);
+}
+
+.install-prompt p {
+    margin: 0 0 1.5rem 0;
+    color: var(--text-color);
+    opacity: 0.9;
+    line-height: 1.5;
+}
+
+.install-prompt-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.install-prompt .neo-btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.875rem;
+    min-height: 48px; /* Better touch targets on mobile */
+}
+
+/* iOS Install Instructions */
+.ios-prompt .ios-instructions {
+    text-align: left;
+    margin: 1rem 0;
+    padding: 1rem;
+    background: var(--surface-light);
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.dark .ios-prompt .ios-instructions {
+    background: var(--surface-dark);
+}
+
+.ios-instructions ol {
+    margin: 0.5rem 0 0 0;
+    padding-left: 1.5rem;
+    color: var(--text-color);
+}
+
+.ios-instructions li {
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ios-instructions svg {
+    flex-shrink: 0;
+}
+
+/* Update Notification */
+.update-notification {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, var(--success-color), #88c999);
+    color: white;
+    border: 3px solid var(--border-color);
+    box-shadow: var(--medium-shadow) var(--shadow-color);
+    border-radius: 8px;
+    padding: 1rem;
+    z-index: 2100;
+    transform: translateY(-100px);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.update-notification.show {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.update-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.update-content span {
+    font-weight: 600;
+    flex: 1;
+}
+
+.update-notification .neo-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+    min-height: auto;
+    background: white;
+    color: var(--text-color);
+    border-color: white;
+}
+
+/* Enhanced Mobile-First Responsive Design */
+@media (max-width: 768px) {
+    /* Mobile-first chat container improvements */
+    .chat-container {
+        height: calc(100vh - 200px) !important;
+        min-height: 500px !important;
+        max-height: none !important;
+        margin-bottom: 1rem;
+    }
+
+    /* Better mobile header layout */
+    .neo-header-hero {
+        padding: 1.5rem 1rem;
+        font-size: 1.25rem;
+    }
+
+    /* Mobile message input improvements */
+    .neo-input-hero {
+        font-size: 16px !important; /* Prevent zoom on iOS */
+        padding: 1rem 1.25rem;
+        border-width: 3px;
+    }
+
+    /* Mobile button improvements */
+    .neo-btn-hero {
+        padding: 1rem 1.25rem;
+        min-width: 60px;
+        border-width: 3px;
+    }
+
+    /* Better touch targets */
+    .neo-btn {
+        min-height: 48px;
+        padding: 0.875rem 1.25rem;
+    }
+
+    /* Mobile-optimized empty state */
+    .empty-state {
+        padding: 2rem 1rem;
+    }
+
+    .empty-state-icon {
+        width: 3rem;
+        height: 3rem;
+    }
+
+    .empty-state-title {
+        font-size: 1.125rem;
+    }
+
+    .empty-state-description {
+        font-size: 0.875rem;
+        max-width: 280px;
+    }
+
+    /* Mobile install prompt adjustments */
+    .install-prompt {
+        bottom: 10px;
+        left: 10px;
+        right: 10px;
+        padding: 1.25rem;
+    }
+
+    .install-prompt-actions {
+        flex-direction: column;
+    }
+
+    .install-prompt .neo-btn {
+        width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    /* Extra small mobile optimizations */
+    .container {
+        padding: 0.5rem !important;
+    }
+
+    .chat-container {
+        height: calc(100vh - 180px) !important;
+        min-height: 400px !important;
+    }
+
+    .neo-card-elevated {
+        margin-bottom: 0.75rem;
+    }
+
+    .neo-header-hero {
+        padding: 1rem 0.75rem;
+        font-size: 1.125rem;
+    }
+
+    /* Compact mobile inputs */
+    .neo-input {
+        padding: 0.875rem 1rem;
+        font-size: 16px; /* Prevent zoom */
+    }
+
+    .neo-input-hero {
+        padding: 0.875rem 1rem;
+        font-size: 16px;
+    }
+
+    /* Compact mobile buttons */
+    .neo-btn {
+        padding: 0.75rem 1rem;
+        font-size: 0.875rem;
+        min-height: 44px;
+    }
+
+    .neo-btn-hero {
+        padding: 0.875rem 1rem;
+        min-width: 56px;
+    }
+
+    /* Mobile typography adjustments */
+    .neo-title-hero {
+        font-size: 1.5rem;
+        line-height: 1;
+    }
+
+    .neo-subtitle {
+        font-size: 0.875rem;
+    }
+}
+
+/* Landscape mobile optimizations */
+@media (max-height: 600px) and (orientation: landscape) {
+    .chat-container {
+        height: calc(100vh - 120px) !important;
+        min-height: 300px !important;
+    }
+
+    .neo-header-hero {
+        padding: 0.75rem 1rem;
+    }
+
+    .empty-state {
+        padding: 1rem;
+    }
+
+    .install-prompt {
+        bottom: 5px;
+        left: 5px;
+        right: 5px;
+        padding: 1rem;
+    }
+}
+
+/* Touch improvements */
+@media (hover: none) and (pointer: coarse) {
+    /* Touch device improvements */
+    .neo-btn:hover {
+        /* Reduce hover effects on touch devices */
+        transform: none;
+        box-shadow: var(--medium-shadow) var(--shadow-color);
+    }
+
+    .neo-card:hover {
+        transform: none;
+        box-shadow: var(--large-shadow) var(--shadow-color);
+    }
+
+    .neo-input:hover {
+        transform: none;
+        box-shadow: var(--small-shadow) var(--shadow-color);
+    }
+
+    /* Better active states for touch */
+    .neo-btn:active {
+        transform: scale(0.95);
+        transition: transform 0.1s ease;
+    }
+
+    .neo-card:active {
+        transform: scale(0.98);
+        transition: transform 0.1s ease;
+    }
+}
+
+/* High DPI/Retina display optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .neo-card,
+    .neo-btn,
+    .neo-input {
+        border-width: 2px; /* Thinner borders on high DPI */
+    }
+
+    .neo-card-elevated {
+        border-width: 3px;
+    }
+
+    .neo-btn-hero,
+    .neo-input-hero {
+        border-width: 3px;
+    }
+}
+
+/* Safe area insets for notched devices */
+@supports (padding: max(0px)) {
+    .container {
+        padding-left: max(1rem, env(safe-area-inset-left));
+        padding-right: max(1rem, env(safe-area-inset-right));
+    }
+
+    .install-prompt {
+        bottom: max(20px, env(safe-area-inset-bottom));
+        left: max(20px, env(safe-area-inset-left));
+        right: max(20px, env(safe-area-inset-right));
+    }
+
+    .update-notification {
+        top: max(20px, env(safe-area-inset-top));
+        left: max(20px, env(safe-area-inset-left));
+        right: max(20px, env(safe-area-inset-right));
+    }
+}
+
+/* Performance optimizations */
+.neo-card,
+.neo-btn,
+.neo-input {
+    will-change: transform;
+    backface-visibility: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
 /* Enhanced draft messages styling */
 .draft-messages-area {
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
