@@ -157,6 +157,9 @@ async function initializeApp() {
     // Check for room ID in URL and auto-join if present
     const urlRoomId = getRoomFromURL();
     if (urlRoomId) {
+      // Ensure user is initialized before joining room
+      await ensureUserInitialized();
+
       // Auto-join the room
       try {
         await joinRoom(urlRoomId);
@@ -547,6 +550,38 @@ function getCurrentRoomId() {
   }
   
   return roomId;
+}
+
+/**
+ * Ensure user is initialized (create one if needed)
+ */
+async function ensureUserInitialized() {
+  const userId = getCurrentUserId();
+  if (!userId || userId === 'Not initialized') {
+    // Initialize user if not already done
+    const userName = document.getElementById('userName').value || 'Anonymous';
+    const newUserId = generateUUID();
+
+    try {
+      window.safeWasm.initialize(userName, newUserId);
+
+      // Update tooltip with user ID
+      const userIdTooltip = document.getElementById('userIdTooltip');
+      if (userIdTooltip) {
+        userIdTooltip.textContent = newUserId;
+      }
+
+      // Store both username and user ID
+      localStorage.setItem('userName', userName);
+      localStorage.setItem('userId', newUserId);
+
+      log(`Auto-initialized user for room join: ${userName} with ID: ${newUserId}`);
+    } catch (error) {
+      console.error("Could not initialize user:", error);
+      log(`Error initializing user: ${error.message}`);
+      throw error;
+    }
+  }
 }
 
 /**
