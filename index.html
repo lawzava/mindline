@@ -825,6 +825,39 @@
         document.addEventListener('click', trackInteraction);
         document.addEventListener('touchstart', trackInteraction);
 
+        // Fix mobile hover state issues
+        function setupMobileTouchHandlers() {
+            // Only apply on touch devices
+            if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+                // Add touch event handlers to prevent stuck hover states
+                document.addEventListener('touchstart', function(e) {
+                    // Add a temporary class to prevent hover effects during touch
+                    document.body.classList.add('touching');
+                });
+
+                document.addEventListener('touchend', function(e) {
+                    // Remove the class after a short delay to allow normal interaction
+                    setTimeout(() => {
+                        document.body.classList.remove('touching');
+                    }, 300);
+                });
+
+                // Force blur on buttons after touch to clear any stuck states
+                document.addEventListener('touchend', function(e) {
+                    if (e.target.classList.contains('neo-btn') ||
+                        e.target.closest('.neo-btn')) {
+                        const button = e.target.classList.contains('neo-btn') ? e.target : e.target.closest('.neo-btn');
+                        setTimeout(() => {
+                            button.blur();
+                        }, 100);
+                    }
+                });
+            }
+        }
+
+        // Initialize mobile touch handlers
+        setupMobileTouchHandlers();
+
         // Add keyboard shortcut for testing (Ctrl+Shift+I)
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.shiftKey && e.key === 'I') {
