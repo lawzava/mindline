@@ -7,7 +7,7 @@
     "build-wasm": "wasm-pack build --target web",
     "build": "npm run build-wasm && webpack",
     "build:production": "npm run build-wasm && webpack --mode production",
-    "build:cloudflare": "webpack --mode production --env cloudflare=true",
+    "build:cloudflare": "webpack --mode production --env cloudflare=true && node scripts/inject-env.js",
     "start": "webpack serve",
     "serve": "http-server dist -p 8080 -c-1",
     "signaling": "node signaling-server.js",
@@ -32,6 +32,7 @@
   "devDependencies": {
     "@wasm-tool/wasm-pack-plugin": "^1.6.0",
     "concurrently": "^7.6.0",
+    "copy-webpack-plugin": "^13.0.1",
     "css-loader": "^7.1.2",
     "html-webpack-plugin": "^5.5.0",
     "http-server": "^14.1.1",
