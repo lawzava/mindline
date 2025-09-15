@@ -38,7 +38,12 @@ module.exports = (env = {}) => ({
         new CopyPlugin({
             patterns: [
                 { from: 'js/env-config.js', to: 'js/env-config.js' },
-                { from: 'js/config.js', to: 'js/config.js' }
+                { from: 'js/config.js', to: 'js/config.js' },
+                { from: 'manifest.json', to: 'manifest.json' },
+                { from: 'sw.js', to: 'sw.js' },
+                { from: 'icons', to: 'icons', noErrorOnMissing: true },
+                { from: 'screenshots', to: 'screenshots', noErrorOnMissing: true },
+                { from: 'favicon.ico', to: 'favicon.ico', noErrorOnMissing: true }
             ]
         }),
         // Extract CSS with content hash for cache busting

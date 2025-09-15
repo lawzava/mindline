@@ -42,7 +42,41 @@ npm start
 
 # Install dependencies
 npm install
+
+# Generate PWA icons (after creating/updating icons/icon.svg)
+node generate-icons.js
 ```
+
+## PWA Features
+
+Mindline is now a Progressive Web App (PWA) with:
+
+### Mobile-First Design
+- Responsive layout optimized for mobile devices
+- Touch-friendly buttons and inputs (minimum 44px touch targets)
+- Safe area insets support for notched devices
+- Viewport meta tag with `user-scalable=no` for consistent mobile experience
+- Font size minimum 16px to prevent iOS zoom
+
+### PWA Capabilities
+- **Service Worker**: Provides offline functionality and caching
+- **Web App Manifest**: Enables "Add to Home Screen" functionality
+- **App Icons**: Complete icon set for various platforms (16x16 to 512x512)
+- **Install Prompts**: Smart install prompts for Chrome/Edge and iOS Safari
+- **Standalone Display**: Runs fullscreen like a native app
+- **Theme Colors**: Consistent branding with Nord color scheme
+
+### Installation Experience
+- Automatic install prompt after user interaction (3 clicks/taps)
+- iOS-specific installation instructions
+- Install prompt respects user preferences (won't show again if dismissed)
+- Update notifications when new versions are available
+
+### Performance Optimizations
+- CSS performance improvements with `will-change` and `backface-visibility`
+- Reduced animations on touch devices
+- High DPI display optimizations
+- Code splitting and caching strategies
 
 ## Working with the Codebase
 
