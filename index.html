@@ -200,6 +200,7 @@
                         <div class="neo-header">
                             <h2
                                 class="text-xl uppercase tracking-wider">CHAT</h2>
+                            <button id="debugToggleBtn" class="text-xs bg-yellow-500 hover:bg-yellow-400 text-black px-2 py-1 rounded font-mono" title="Toggle Debug Panel">🐛 Debug</button>
                         </div>
                         <div class="flex-1 p-4 flex flex-col" style="height: 600px;">
                             <!-- Chat messages container -->
@@ -218,6 +219,15 @@
 
                             <!-- Draft messages area - positioned between chat and input -->
                             <div id="draftsArea" class="draft-messages-area bg-gray-50 dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-lg p-2 mb-2 min-h-[20px] max-h-[100px] overflow-y-auto" style="display: none;"></div>
+
+                            <!-- Debug Panel -->
+                            <div id="debugPanel" class="bg-yellow-100 dark:bg-yellow-900 border-2 border-yellow-500 rounded-lg p-2 mb-2 text-xs" style="display: none;">
+                                <div class="flex justify-between items-center mb-2">
+                                    <strong class="text-yellow-800 dark:text-yellow-200">🐛 Debug Info</strong>
+                                    <button id="clearDebugBtn" class="text-yellow-800 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-800 px-2 py-1 rounded">Clear</button>
+                                </div>
+                                <div id="debugContent" class="max-h-[200px] overflow-y-auto font-mono text-yellow-800 dark:text-yellow-200 whitespace-pre-wrap"></div>
+                            </div>
                             <div class="flex gap-2">
                                 <input type="text" id="messageInput"
                                     placeholder="Others see this as you type..."
@@ -339,7 +349,33 @@
             
             // Initialize theme based on preference
             initTheme();
-            
+
+            // Setup debug panel event listeners
+            const debugToggleBtn = document.getElementById('debugToggleBtn');
+            const clearDebugBtn = document.getElementById('clearDebugBtn');
+
+            if (debugToggleBtn) {
+                debugToggleBtn.addEventListener('click', function() {
+                    const debugPanel = document.getElementById('debugPanel');
+                    if (debugPanel.style.display === 'none' || !debugPanel.style.display) {
+                        debugPanel.style.display = 'block';
+                        debugToggleBtn.textContent = '🐛 Hide';
+                    } else {
+                        debugPanel.style.display = 'none';
+                        debugToggleBtn.textContent = '🐛 Debug';
+                    }
+                });
+            }
+
+            if (clearDebugBtn) {
+                clearDebugBtn.addEventListener('click', function() {
+                    const debugContent = document.getElementById('debugContent');
+                    if (debugContent) {
+                        debugContent.textContent = '';
+                    }
+                });
+            }
+
             // For testing - add a fallback click handler on the parent
             const headerElement = document.querySelector('.neo-header');
             headerElement.addEventListener('click', function(event) {
