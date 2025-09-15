@@ -1641,8 +1641,9 @@ function debugLog(message) {
     debugContent.textContent += `[${timestamp}] ${message}\n`;
     debugContent.scrollTop = debugContent.scrollHeight;
 
-    // Auto-show debug panel if there's new content
-    if (!debugVisible) {
+    // Only auto-show debug panel if debug mode is enabled
+    const debugToggleBtn = document.getElementById('debugToggleBtn');
+    if (debugToggleBtn && debugToggleBtn.style.display !== 'none' && !debugVisible) {
       showDebugPanel();
     }
   }
@@ -1679,6 +1680,56 @@ function clearDebugPanel() {
   if (debugContent) {
     debugContent.textContent = '';
   }
+}
+
+/**
+ * Enable debug mode via console
+ */
+function enableDebugMode() {
+  const debugToggleBtn = document.getElementById('debugToggleBtn');
+  if (debugToggleBtn) {
+    debugToggleBtn.style.display = 'inline-block';
+    console.log('🐛 Debug mode enabled! Debug button is now visible.');
+    return true;
+  }
+  console.error('Debug button not found');
+  return false;
+}
+
+/**
+ * Disable debug mode
+ */
+function disableDebugMode() {
+  const debugToggleBtn = document.getElementById('debugToggleBtn');
+  const debugPanel = document.getElementById('debugPanel');
+
+  if (debugToggleBtn) {
+    debugToggleBtn.style.display = 'none';
+  }
+  if (debugPanel) {
+    debugPanel.style.display = 'none';
+  }
+  debugVisible = false;
+
+  console.log('🐛 Debug mode disabled.');
+  return true;
+}
+
+// Make debug functions available globally for console access
+window.enableDebugMode = enableDebugMode;
+window.disableDebugMode = disableDebugMode;
+window.showDebugPanel = showDebugPanel;
+window.hideDebugPanel = hideDebugPanel;
+window.clearDebugPanel = clearDebugPanel;
+
+// Log debug commands availability (only in development)
+if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+  console.log('%c🐛 Debug Commands Available:', 'color: #f39c12; font-weight: bold;');
+  console.log('%cenableDebugMode()', 'color: #3498db; font-family: monospace;', '- Show debug button and enable visual debugging');
+  console.log('%cdisableDebugMode()', 'color: #3498db; font-family: monospace;', '- Hide debug button and disable visual debugging');
+  console.log('%cshowDebugPanel()', 'color: #3498db; font-family: monospace;', '- Show debug panel (if debug mode enabled)');
+  console.log('%chideDebugPanel()', 'color: #3498db; font-family: monospace;', '- Hide debug panel');
+  console.log('%cclearDebugPanel()', 'color: #3498db; font-family: monospace;', '- Clear debug panel contents');
 }
 
 /**
