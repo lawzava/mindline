@@ -1,61 +1,53 @@
 import '../css/styles.css';
 import { P2PConnection } from './webrtc.js';
+import logger from './logger.js';
+import sanitizer from './sanitizer.js';
+import {
+  AppState,
+  CONSTANTS,
+  getCurrentUserId,
+  getCurrentRoomId,
+  setCurrentUserId,
+  setCurrentRoomId,
+  generateUUID,
+  getRoomFromURL,
+  updateURLWithRoom
+} from './state.js';
+import {
+  log,
+  displayMessage,
+  scrollChatToBottom,
+  updateConnectionStatus,
+  updateRoomDisplay,
+  clearMessageInput,
+  showToast,
+  displayChatHistory,
+  updateDraftsDisplay
+} from './ui.js';
 
 /**
  * Mindline Chat Application
  * Enterprise-ready implementation of a P2P encrypted chat application
  */
 
-// Application state
-const AppState = {
+// Extended application state for index.js specific properties
+const IndexState = {
   wasmModule: null,
   typingTimeout: null,
   initialized: false,
   darkMode: false,
-  p2pConnection: null,
-  messageHistory: new Map(), // Store messages by ID to avoid duplicates
-  draftMessages: new Map(), // Store draft messages by peer ID: peerId -> {content, senderName, lastUpdate}
-  draftTimeouts: new Map(), // Track timeouts for clearing stale drafts
-  chatHistory: new Map(), // Store chat history per room: roomId -> {messages: [], lastSync: timestamp}
-  reconnectAttempts: 0, // Track reconnection attempts
-  maxReconnectAttempts: 5, // Max reconnection attempts
-  reconnectInterval: null, // Store reconnection interval
-  isReconnecting: false // Track if currently reconnecting
+  reconnectAttempts: 0,
+  maxReconnectAttempts: 5,
+  reconnectInterval: null,
+  isReconnecting: false,
+  draftTimeouts: new Map() // Track timeouts for clearing stale drafts
 };
 
-// Constants
-const CONSTANTS = {
-  TIMEOUT_DRAFT_CLEAR: 3000, // Clear draft after 3 seconds of inactivity
-  MIN_ROOM_ID_LENGTH: 8
+// Additional constants for index.js
+const INDEX_CONSTANTS = {
+  TIMEOUT_DRAFT_CLEAR: 3000 // Clear draft after 3 seconds of inactivity
 };
 
-/**
- * Get the current user ID from localStorage
- * @returns {string} The user ID or empty string if not initialized
- */
-function getCurrentUserId() {
-  return localStorage.getItem('userId') || '';
-}
-
-/**
- * Parse URL query parameters
- * @returns {URLSearchParams} URL search parameters
- */
-function getURLParams() {
-  return new URLSearchParams(window.location.search);
-}
-
-/**
- * Get room ID from URL parameter
- * @returns {string|null} Room ID from ?r= parameter or null
- */
-function getRoomFromURL() {
-  const params = getURLParams();
-  const roomId = params.get('r');
-  console.log('getRoomFromURL - URL search:', window.location.search);
-  console.log('getRoomFromURL - parsed room ID:', roomId);
-  return roomId;
-}
 
 /**
  * Generate shareable room URL
@@ -76,7 +68,7 @@ function getRoomHistory() {
     const history = localStorage.getItem('roomHistory');
     return history ? JSON.parse(history) : [];
   } catch (error) {
-    console.error('Error parsing room history:', error);
+    logger.error('Error parsing room history:', error);
     return [];
   }
 }
@@ -111,7 +103,7 @@ function addRoomToHistory(roomId) {
     localStorage.setItem('roomHistory', JSON.stringify(limitedHistory));
     updateRoomHistoryUI();
   } catch (error) {
-    console.error('Error saving room history:', error);
+    logger.error('Error saving room history:', error);
   }
 }
 
@@ -127,7 +119,7 @@ function removeRoomFromHistory(roomId) {
     localStorage.setItem('roomHistory', JSON.stringify(filteredHistory));
     updateRoomHistoryUI();
   } catch (error) {
-    console.error('Error removing room from history:', error);
+    logger.error('Error removing room from history:', error);
   }
 }
 
@@ -159,26 +151,26 @@ async function initializeApp() {
 
     // Check for room ID in URL and auto-join if present
     const urlRoomId = getRoomFromURL();
-    console.log('URL Room ID detected:', urlRoomId);
+    logger.info('URL Room ID detected:', urlRoomId);
 
     if (urlRoomId) {
-      console.log('Attempting to auto-join room from URL:', urlRoomId);
+      logger.info('Attempting to auto-join room from URL:', urlRoomId);
 
       // Ensure user is initialized before joining room
       await ensureUserInitialized();
-      console.log('User initialized for URL room join');
+      logger.debug('User initialized for URL room join');
 
       // Auto-join the room
       try {
-        console.log('Calling joinRoom with URL room ID:', urlRoomId);
+        logger.debug('Calling joinRoom with URL room ID:', urlRoomId);
         await joinRoom(urlRoomId);
-        console.log('Successfully joined room from URL');
+        logger.info('Successfully joined room from URL');
 
         // Clean up URL after successful join (optional)
         const newURL = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
         window.history.replaceState({}, document.title, newURL);
       } catch (error) {
-        console.error('Failed to auto-join room from URL:', error);
+        logger.error('Failed to auto-join room from URL:', error);
         log(`Failed to auto-join room from URL: ${error.message}`);
       }
     } else {
@@ -200,7 +192,7 @@ async function initializeApp() {
 
     log('Application initialized successfully');
   } catch (error) {
-    console.error('Failed to initialize application:', error);
+    logger.error('Failed to initialize application:', error);
     updateDebugOutput(`Error initializing application: ${error.message}`);
   }
 }
@@ -214,13 +206,13 @@ async function loadWasmModule() {
     // Dynamically import the module
     const wasm = await import('../pkg/mindline.js');
     const initialized = await wasm.default();
-    AppState.wasmModule = initialized;
+    IndexState.wasmModule = initialized;
     
     updateDebugOutput('WASM module loaded successfully!');
     return true;
   } catch (err) {
     updateDebugOutput(`Error loading WASM module: ${err.message}`);
-    console.error('Error loading WASM module:', err);
+    logger.error('Error loading WASM module:', err);
     throw err;
   }
 }
@@ -229,8 +221,8 @@ async function loadWasmModule() {
  * Create safe proxy functions to handle WebAssembly calls
  */
 function createSafeWasmProxies() {
-  if (!AppState.wasmModule) {
-    console.warn("WASM module not loaded, cannot create safe proxies");
+  if (!IndexState.wasmModule) {
+    logger.warn("WASM module not loaded, cannot create safe proxies");
     return;
   }
   
@@ -273,35 +265,24 @@ function safeWasmCall(funcName, paramNames, paramTransforms = {}) {
       });
       
       // Call the original function
-      const result = AppState.wasmModule[funcName](...safeArgs);
+      const result = IndexState.wasmModule[funcName](...safeArgs);
       
       // Special handling for get_messages result
       if (funcName === 'get_messages') {
         if (Array.isArray(result)) {
-          console.warn(`Detected memory pointer, returning empty array ${result}`);
+          logger.warn(`Detected memory pointer, returning empty array ${result}`);
           return "[]";
         }
       }
       
       return result;
     } catch (error) {
-      console.error(`Error in ${funcName}:`, error);
+      logger.error(`Error in ${funcName}:`, error);
       throw error;
     }
   };
 }
 
-/**
- * Generate a UUID v4
- * @returns {string} Generated UUID
- */
-function generateUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-}
 
 /**
  * Chat History Management
@@ -331,7 +312,7 @@ function loadChatHistory(roomId) {
       return [];
     }
   } catch (error) {
-    console.error('Error loading chat history:', error);
+    logger.error('Error loading chat history:', error);
     AppState.chatHistory.set(roomId, {
       messages: [],
       lastSync: 0
@@ -428,39 +409,6 @@ function getChatHistory(roomId) {
   return roomHistory ? roomHistory.messages : [];
 }
 
-/**
- * Display chat history in the UI
- * @param {Array} messages - Array of message objects
- */
-function displayChatHistory(messages) {
-  const chatArea = document.getElementById('chatArea');
-  const welcomeMessage = document.getElementById('welcomeMessage');
-
-  // Clear current chat display
-  chatArea.innerHTML = '';
-
-  if (messages.length === 0) {
-    // Show welcome message if no history
-    if (welcomeMessage) {
-      chatArea.appendChild(welcomeMessage.cloneNode(true));
-    }
-  } else {
-    // Display all messages
-    messages.forEach(message => {
-      const isMe = message.senderId === getCurrentUserId();
-      displayMessage(message.content, isMe, message.sender, false); // false = don't scroll yet
-    });
-
-    // Scroll to bottom after all messages are displayed - use immediate scroll for page load
-    scrollChatToBottom('auto', 100);
-  }
-
-  // Ensure draft area is ready (it's now in HTML, not dynamically created)
-  const draftsArea = document.getElementById('draftsArea');
-  if (draftsArea) {
-    draftsArea.style.display = 'none'; // Hidden by default
-  }
-}
 
 /**
  * Message Synchronization Protocol
@@ -591,24 +539,6 @@ function isValidRoomId(id) {
   return idRegex.test(id);
 }
 
-/**
- * Get the current room ID safely
- * @returns {string|null} Current room ID or null
- */
-function getCurrentRoomId() {
-  // Get room ID from localStorage
-  let roomId = localStorage.getItem('currentRoomId');
-  
-  // Validate the room ID format
-  if (!isValidRoomId(roomId)) {
-    if (roomId) {
-      console.warn(`Invalid room ID format: ${roomId}`);
-    }
-    return null;
-  }
-  
-  return roomId;
-}
 
 /**
  * Ensure user is initialized (create one if needed)
@@ -832,21 +762,32 @@ async function createRoom() {
  * @returns {string|null} The room ID or null if failed
  */
 async function joinRoom(roomId) {
-  console.log('joinRoom called with roomId:', roomId);
+  logger.info('joinRoom called with roomId:', roomId);
 
   if (!roomId) {
     log('Please enter a room ID to join');
     return null;
   }
 
-  // Basic ID validation
-  if (!isValidRoomId(roomId)) {
-    console.log('Room ID validation failed:', roomId);
+  // Sanitize and validate room ID
+  const sanitizedRoomId = sanitizer.validateRoomId(roomId);
+  if (!sanitizedRoomId) {
+    logger.warn('Room ID validation failed:', roomId);
     log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
     return null;
   }
 
-  console.log('Room ID validation passed:', roomId);
+  // Rate limiting check
+  if (!sanitizer.checkRateLimit(`join_room_${sanitizedRoomId}`, 5, 30000)) {
+    logger.warn('Rate limit exceeded for room join:', sanitizedRoomId);
+    log('Too many join attempts. Please wait before trying again.');
+    return null;
+  }
+
+  logger.info('Room ID validation passed:', sanitizedRoomId);
+
+  // Use sanitized room ID for the rest of the function
+  roomId = sanitizedRoomId;
 
   try {
     // Show connecting status
@@ -1112,14 +1053,20 @@ function sendMessage() {
   debugLog(`🚀 ========== SENDMESSAGE STARTED ==========`);
 
   const messageInput = document.getElementById('messageInput');
-  const message = messageInput.value.trim();
+  const rawMessage = messageInput.value;
 
-  debugLog(`📝 Message input value: "${message}"`);
+  debugLog(`📝 Raw message input: "${rawMessage}"`);
+
+  // Sanitize and validate the message
+  const message = sanitizer.validateMessage(rawMessage);
 
   if (!message) {
-    debugLog(`❌ Empty message, aborting send`);
+    debugLog(`❌ Invalid or empty message, aborting send`);
+    logger.warn('Message failed validation:', rawMessage);
     return;
   }
+
+  debugLog(`✅ Sanitized message: "${message}"`);
 
   // Get the current room ID safely
   const roomId = getCurrentRoomId();
@@ -1142,7 +1089,8 @@ function sendMessage() {
 
     // Generate message ID on client side
     const messageId = generateUUID();
-    const userName = document.getElementById('userName').value || 'Anonymous';
+    const rawUserName = document.getElementById('userName').value || 'Anonymous';
+    const userName = sanitizer.validateUsername(rawUserName) || 'Anonymous';
 
     console.log(`📝 Sending message: userId=${userId}, userName=${userName}, messageId=${messageId}, roomId=${roomId}`);
 
@@ -1339,38 +1287,6 @@ function retrieveMessages(roomId) {
  * Update connection status indicator
  * @param {boolean} isConnected - Whether connected to a room
  */
-/**
- * Update connection status with detailed states
- * @param {string} status - 'disconnected', 'connecting', 'connected', 'failed'
- */
-function updateConnectionStatus(status = 'disconnected') {
-  const statusElement = document.getElementById('connectionStatus');
-  if (!statusElement) return;
-
-  // Remove all status classes
-  statusElement.className = 'inline-block px-3 py-1 text-xs font-bold uppercase border-2 border-black dark:border-white tracking-wider';
-
-  switch (status) {
-    case 'connecting':
-      statusElement.textContent = 'Connecting...';
-      statusElement.classList.add('status-connecting');
-      break;
-    case 'connected':
-      statusElement.textContent = 'Connected';
-      statusElement.classList.add('status-connected');
-      break;
-    case 'failed':
-      statusElement.textContent = 'Failed';
-      statusElement.classList.add('status-failed');
-      break;
-    case 'disconnected':
-    default:
-      statusElement.textContent = 'Disconnected';
-      statusElement.classList.add('status-disconnected');
-      break;
-  }
-}
-
 /**
  * Legacy function for backward compatibility
  */
@@ -1591,31 +1507,7 @@ function showUserConnectionNotification(userName) {
   log(`${userName} connected`);
 }
 
-/**
- * Scroll chat area to bottom
- * @param {string} behavior - 'smooth' or 'auto'
- * @param {number} delay - Delay in milliseconds
- */
-function scrollChatToBottom(behavior = 'smooth', delay = 50) {
-  setTimeout(() => {
-    const chatArea = document.getElementById('chatArea');
-    if (chatArea) {
-      chatArea.scrollTo({
-        top: chatArea.scrollHeight,
-        behavior: behavior
-      });
-    }
-  }, delay);
-}
 
-/**
- * Log message to debug output
- * @param {string} message - Message to log
- */
-function log(message) {
-  console.log(message);
-  updateDebugOutput(`${new Date().toLocaleTimeString()} - ${message}`);
-}
 
 /**
  * Update debug output area
@@ -1632,7 +1524,7 @@ function updateDebugOutput(message) {
 let debugVisible = false;
 
 function debugLog(message) {
-  console.log(message);
+  logger.debug(message);
 
   // Also add to visual debug panel
   const debugContent = document.getElementById('debugContent');
@@ -1803,15 +1695,6 @@ function showTemporaryMessage(message) {
 /**
  * Update room display and connection section visibility
  */
-function updateRoomDisplay(roomId) {
-  const connectionSection = document.getElementById('connectionSection');
-
-  if (roomId) {
-    connectionSection.classList.remove('hidden');
-  } else {
-    connectionSection.classList.add('hidden');
-  }
-}
 
 /**
  * Update room history UI
@@ -2027,47 +1910,6 @@ function connectNewUIWithWasm() {
   };
 }
 
-// Override display message function to work with the new UI
-function displayMessage(message, isMe = true, senderName = null, shouldScroll = true) {
-  const chatArea = document.getElementById('chatArea');
-  const welcomeMessage = document.getElementById('welcomeMessage');
-
-  // Hide welcome message when first message is displayed
-  if (welcomeMessage) {
-    welcomeMessage.style.display = 'none';
-  }
-
-  const messageElement = document.createElement('div');
-
-  if (isMe) {
-    messageElement.className = 'ml-auto max-w-[75%] mb-4 p-3 bg-primary/20 dark:bg-primary-dark/30 border-2 border-black dark:border-white shadow-md rounded-lg';
-  } else {
-    messageElement.className = 'mr-auto max-w-[75%] mb-4 p-3 bg-gray-200 dark:bg-gray-700 border-2 border-black dark:border-white shadow-md rounded-lg';
-  }
-
-  // Add sender name if provided
-  if (senderName) {
-    const nameElement = document.createElement('div');
-    nameElement.className = 'font-bold text-sm mb-1 text-primary dark:text-primary-dark';
-    nameElement.textContent = senderName;
-    messageElement.appendChild(nameElement);
-  }
-
-  const contentElement = document.createElement('div');
-  contentElement.textContent = message;
-  contentElement.className = 'break-words';
-  messageElement.appendChild(contentElement);
-
-  chatArea.appendChild(messageElement);
-
-  // Smooth scroll to bottom if requested
-  if (shouldScroll) {
-    chatArea.scrollTo({
-      top: chatArea.scrollHeight,
-      behavior: 'smooth'
-    });
-  }
-}
 
 // Display received message from P2P
 function displayReceivedMessage(messageObj) {
