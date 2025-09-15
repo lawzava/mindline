@@ -20,7 +20,7 @@ module.exports = (env = {}) => ({
             {
                 test: /\.css$/,
                 use: [
-                    env.production || env.cloudflare ? MiniCssExtractPlugin.loader : 'style-loader',
+                    !!(env.production || env.cloudflare) ? MiniCssExtractPlugin.loader : 'style-loader',
                     'css-loader'
                 ]
             }
@@ -29,7 +29,7 @@ module.exports = (env = {}) => ({
     plugins: [
         new HtmlWebpackPlugin({
             template: './index.html',
-            minify: env.production || env.cloudflare
+            minify: !!(env.production || env.cloudflare)
         }),
         new webpack.DefinePlugin({
             'process.env.SIGNALING_SERVER': JSON.stringify(process.env.SIGNALING_SERVER || 'localhost:3000'),
@@ -42,21 +42,21 @@ module.exports = (env = {}) => ({
             ]
         }),
         // Extract CSS with content hash for cache busting
-        ...(env.production || env.cloudflare ? [
+        ...(!!(env.production || env.cloudflare) ? [
             new MiniCssExtractPlugin({
                 filename: '[name].[contenthash].css',
                 chunkFilename: '[id].[contenthash].css',
             })
         ] : [])
     ],
-    mode: env.production || env.cloudflare ? 'production' : 'development',
+    mode: !!(env.production || env.cloudflare) ? 'production' : 'development',
     optimization: {
         // Enable tree shaking
         usedExports: true,
         sideEffects: false,
 
         // Minimize in production
-        minimize: env.production || env.cloudflare,
+        minimize: !!(env.production || env.cloudflare),
 
         // Advanced code splitting
         splitChunks: {
@@ -94,7 +94,7 @@ module.exports = (env = {}) => ({
     },
     // Performance hints
     performance: {
-        hints: env.production || env.cloudflare ? 'warning' : false,
+        hints: !!(env.production || env.cloudflare) ? 'warning' : false,
         maxEntrypointSize: 400000, // 400KB
         maxAssetSize: 200000, // 200KB
     },
