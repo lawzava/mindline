@@ -39,22 +39,6 @@
       "purpose": "maskable"
     }
   ],
-  "screenshots": [
-    {
-      "src": "/screenshots/desktop-chat.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "platform": "wide",
-      "label": "Main chat interface showing secure P2P messaging"
-    },
-    {
-      "src": "/screenshots/mobile-chat.png",
-      "sizes": "375x667",
-      "type": "image/png",
-      "platform": "narrow",
-      "label": "Mobile chat view with typing indicators"
-    }
-  ],
   "prefer_related_applications": false,
   "edge_side_panel": {
     "preferred_width": 400
