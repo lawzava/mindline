@@ -28,6 +28,17 @@ export function clear_all_connected_peers(): void;
 export function generate_uuid(): any;
 export function get_room_from_url(): string | undefined;
 export function update_url_with_room(room_id: string): void;
+export function validate_room_id(room_id: string): any;
+export function validate_username(username: string): any;
+export function validate_message(message: string): any;
+export function sanitize_html_content(html: string): string;
+export function validate_url_param(param: string): any;
+export function generate_secure_room_id(): string;
+export function check_rate_limit(key: string, max_attempts: number, window_ms: number): boolean;
+export function validate_file(file_name: string, file_size: number, mime_type: string): boolean;
+export function detect_attack_patterns(input: string): any;
+export function validate_json_input(json_str: string, max_size: number): any;
+export function validate_input_batch(input_type: string, values: any): any;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -60,6 +71,17 @@ export interface InitOutput {
   readonly generate_uuid: () => any;
   readonly get_room_from_url: () => [number, number];
   readonly update_url_with_room: (a: number, b: number) => [number, number];
+  readonly validate_room_id: (a: number, b: number) => any;
+  readonly validate_username: (a: number, b: number) => any;
+  readonly validate_message: (a: number, b: number) => any;
+  readonly sanitize_html_content: (a: number, b: number) => [number, number];
+  readonly validate_url_param: (a: number, b: number) => any;
+  readonly generate_secure_room_id: () => [number, number, number, number];
+  readonly check_rate_limit: (a: number, b: number, c: number, d: number) => number;
+  readonly validate_file: (a: number, b: number, c: number, d: number, e: number) => number;
+  readonly detect_attack_patterns: (a: number, b: number) => any;
+  readonly validate_json_input: (a: number, b: number, c: number) => any;
+  readonly validate_input_batch: (a: number, b: number, c: any) => any;
   readonly __wbindgen_exn_store: (a: number) => void;
   readonly __externref_table_alloc: () => number;
   readonly __wbindgen_export_2: WebAssembly.Table;
