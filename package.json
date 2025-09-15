@@ -9,6 +9,8 @@
     "build:production": "npm run build-wasm && webpack --mode production",
     "build:cloudflare": "webpack --mode production --env cloudflare=true && node scripts/inject-env.js",
     "start": "webpack serve",
+    "start-local": "webpack serve --port 8088",
+    "logging": "node logging-server.js",
     "serve": "http-server dist -p 8080 -c-1",
     "signaling": "node signaling-server.js",
     "start:production": "concurrently \"npm run serve\" \"npm run signaling\"",

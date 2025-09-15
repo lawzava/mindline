@@ -3,8 +3,8 @@ import { P2PConnection } from './webrtc.js';
 import logger from './logger.js';
 import sanitizer from './sanitizer.js';
 import { initializeUXEnhancements } from './ux-enhancements.js';
+// Import CONSTANTS and functions still needed for compatibility
 import {
-  AppState,
   CONSTANTS,
   getCurrentUserId,
   getCurrentRoomId,
@@ -14,7 +14,8 @@ import {
   getRoomFromURL,
   updateURLWithRoom,
   setP2PConnection,
-  getP2PConnection
+  getP2PConnection,
+  AppState
 } from './state.js';
 import {
   log,
@@ -237,11 +238,45 @@ function createSafeWasmProxies() {
   }
   
   window.safeWasm = {
+    // Original functions
     initialize: safeWasmCall('initialize', ['userName', 'userId']),
     join_room: safeWasmCall('join_room', ['roomId', 'signalData']),
     create_room_with_id: safeWasmCall('create_room_with_id', ['roomId']),
     send_message: safeWasmCall('send_message', ['roomId', 'content', 'messageId']),
-    get_messages: safeWasmCall('get_messages', ['roomId'])
+    get_messages: safeWasmCall('get_messages', ['roomId']),
+
+    // Phase 1: Enhanced State Management Functions
+    // Core state management
+    get_app_state: safeWasmCall('get_app_state', []),
+    get_app_config: safeWasmCall('get_app_config', []),
+    get_current_user_id: safeWasmCall('get_current_user_id', []),
+    get_current_room_id: safeWasmCall('get_current_room_id', []),
+    set_current_room_id: safeWasmCall('set_current_room_id', ['roomId']),
+    update_user_session: safeWasmCall('update_user_session', ['name', 'userId']),
+    set_typing_status: safeWasmCall('set_typing_status', ['isTyping'], { isTyping: Boolean }),
+
+    // Room history management
+    get_room_history_list: safeWasmCall('get_room_history_list', []),
+    add_room_to_history: safeWasmCall('add_room_to_history', ['roomId', 'displayName']),
+    remove_room_from_history: safeWasmCall('remove_room_from_history', ['roomId']),
+    get_room_metadata: safeWasmCall('get_room_metadata', ['roomId']),
+
+    // Draft messages management
+    get_draft_messages: safeWasmCall('get_draft_messages', []),
+    set_draft_message: safeWasmCall('set_draft_message', ['peerId', 'content', 'senderName']),
+    clear_draft_message: safeWasmCall('clear_draft_message', ['peerId']),
+    clear_all_draft_messages: safeWasmCall('clear_all_draft_messages', []),
+
+    // P2P state management
+    get_connected_peers: safeWasmCall('get_connected_peers', []),
+    add_connected_peer: safeWasmCall('add_connected_peer', ['peerId']),
+    remove_connected_peer: safeWasmCall('remove_connected_peer', ['peerId']),
+    clear_all_connected_peers: safeWasmCall('clear_all_connected_peers', []),
+
+    // URL and utility functions
+    generate_uuid: safeWasmCall('generate_uuid', []),
+    get_room_from_url: safeWasmCall('get_room_from_url', []),
+    update_url_with_room: safeWasmCall('update_url_with_room', ['roomId'])
   };
   
   log("Safe WASM function proxies created");
@@ -266,8 +301,9 @@ function safeWasmCall(funcName, paramNames, paramTransforms = {}) {
         // Apply transform function (String by default)
         const safeArg = transform(arg || "");
         
-        // Validate required parameters
-        if (safeArg === "" && paramName !== 'content' && paramName !== 'signalData') {
+        // Validate required parameters (allow optional parameters for new functions)
+        if (safeArg === "" && paramName !== 'content' && paramName !== 'signalData' &&
+            paramName !== 'displayName' && paramName !== 'senderName' && paramName !== 'isTyping') {
           throw new Error(`${paramName} cannot be empty`);
         }
         
@@ -276,7 +312,7 @@ function safeWasmCall(funcName, paramNames, paramTransforms = {}) {
       
       // Call the original function
       const result = IndexState.wasmModule[funcName](...safeArgs);
-      
+
       // Special handling for get_messages result
       if (funcName === 'get_messages') {
         if (Array.isArray(result)) {
@@ -284,7 +320,13 @@ function safeWasmCall(funcName, paramNames, paramTransforms = {}) {
           return "[]";
         }
       }
-      
+
+      // Handle arrays in functions that should return strings (safety check)
+      if (Array.isArray(result) && (funcName.includes('get_current_user_id') || funcName.includes('get_current_room_id') || funcName.includes('generate_uuid') || funcName.includes('get_room_from_url'))) {
+        logger.warn(`WASM ${funcName} returned array instead of string:`, result);
+        return null; // Return null instead of array
+      }
+
       return result;
     } catch (error) {
       logger.error(`Error in ${funcName}:`, error);
@@ -887,7 +929,7 @@ async function attemptReconnect() {
     }
 
     // Wait a bit before trying to reconnect (exponential backoff)
-    const delay = Math.min(2000 * Math.pow(1.5, IndexState.reconnectAttempts - 1), 10000);
+    const delay = Math.min(1000 * Math.pow(1.2, IndexState.reconnectAttempts - 1), 5000);
     await new Promise(resolve => setTimeout(resolve, delay));
 
     // Try to reinitialize P2P connection
@@ -928,6 +970,9 @@ async function attemptReconnect() {
  * Initialize P2P connection for a room
  */
 async function initializeP2P(roomId) {
+  console.log(`🚨 STARTING initializeP2P with roomId: ${roomId}`);
+  console.log(`🚨 Called from:`, new Error().stack);
+
   // Disconnect existing connection if any
   const existingConnection = getP2PConnection();
   if (existingConnection) {
@@ -937,15 +982,41 @@ async function initializeP2P(roomId) {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
 
+  // Clear any corrupted state from localStorage
+  const storedUserId = localStorage.getItem('userId');
+  if (storedUserId && (storedUserId.includes(',') || storedUserId.length < 10)) {
+    console.warn('🧹 Clearing corrupted stored user ID:', storedUserId);
+    localStorage.removeItem('userId');
+    localStorage.removeItem('userName');
+    // Force re-initialization
+    window.location.reload();
+    return;
+  }
+
   // Get user ID
   const userId = getCurrentUserId();
   if (!userId || userId === 'Not initialized') {
     throw new Error('User not initialized');
   }
 
+  // Ensure userId is a string (safety check)
+  const userIdString = Array.isArray(userId) ? userId.join(',') : String(userId);
+
   // Create new P2P connection
-  const p2pConnection = new P2PConnection(userId, roomId, null);
-  setP2PConnection(p2pConnection);
+  console.log(`🔧 initializeP2P: Creating P2PConnection for user ${userIdString} in room ${roomId}`);
+  let p2pConnection;
+  try {
+    p2pConnection = new P2PConnection(userIdString, roomId, null);
+    console.log(`🔧 initializeP2P: P2PConnection created successfully:`, p2pConnection);
+    setP2PConnection(p2pConnection);
+    console.log(`🔧 initializeP2P: P2PConnection stored in AppState`);
+  } catch (constructorError) {
+    console.error(`❌ P2PConnection constructor failed:`, constructorError);
+    throw constructorError;
+  }
+
+  // Add warning for testing
+  console.warn('🧪 TESTING TIP: To test P2P messaging, open a second browser window/tab with a different username and join the same room!');
 
   // Set up message handlers
   p2pConnection.onMessage((message, peerId) => {
@@ -1026,7 +1097,13 @@ async function initializeP2P(roomId) {
  * Handle incoming P2P messages
  */
 function handleIncomingP2PMessage(message, peerId) {
-  console.log(`📨 Handling incoming P2P message from ${peerId}:`, message.type, message.id || 'no-id');
+  console.log(`🟡 JS LEVEL: handleIncomingP2PMessage called`);
+  console.log(`🟡 Peer ID: ${peerId}`);
+  console.log(`🟡 Full message object:`, message);
+  console.log(`🟡 Message type: ${message.type}`);
+  console.log(`🟡 Message ID: ${message.id || 'no-id'}`);
+  console.log(`🟡 Message content: ${message.content || 'no-content'}`);
+  console.log(`🟡 Message senderId: ${message.senderId || 'no-senderId'}`);
 
   // For draft messages, we don't need to prevent duplicates since they should update in real-time
   if (message.type !== 'draft' && message.type !== 'clear-draft' && AppState.messageHistory.has(message.id)) {
@@ -1048,10 +1125,18 @@ function handleIncomingP2PMessage(message, peerId) {
       // Store in WASM for persistence
       try {
         const roomId = getCurrentRoomId();
-        window.safeWasm.send_message(roomId, message.content, message.id);
+        console.log(`🟢 WASM LEVEL: Storing received message in WASM`);
+        console.log(`🟢 Room ID: ${roomId}`);
+        console.log(`🟢 Message content: ${message.content}`);
+        console.log(`🟢 Message ID: ${message.id}`);
+        console.log(`🟢 Calling window.safeWasm.send_message...`);
+
+        const wasmResult = window.safeWasm.send_message(roomId, message.content, message.id);
+        console.log(`🟢 WASM send_message result:`, wasmResult);
+
         // Add to persistent chat history
         addMessageToHistory(roomId, message);
-        console.log(`✅ Chat message stored and displayed successfully`);
+        console.log(`🟢 WASM storage and history update completed successfully`);
       } catch (error) {
         console.error('Error storing message in WASM:', error);
       }
@@ -1059,7 +1144,10 @@ function handleIncomingP2PMessage(message, peerId) {
 
     case 'draft':
       // Handle real-time draft message
+      console.log(`🟣 DRAFT PROCESSING: handlePeerDraft called for peer ${peerId}`);
+      console.log(`🟣 Draft content: "${message.content}"`);
       handlePeerDraft(message, peerId);
+      console.log(`🟣 DRAFT PROCESSING: handlePeerDraft completed`);
       break;
 
     case 'clear-draft':
@@ -1148,8 +1236,11 @@ function sendMessage() {
     if (!messageObj.id || !messageObj.content || !messageObj.senderId) {
       console.error(`❌ Invalid message object:`, messageObj);
       log('Failed to create valid message object');
+      console.log(`🔥 EARLY RETURN: Invalid message object`);
       return;
     }
+
+    console.log(`✅ Message object validation passed, continuing to P2P broadcast...`);
 
     // Check P2P connection status
     console.log(`🌐 P2P Connection state:`, {
@@ -1158,17 +1249,24 @@ function sendMessage() {
       roomConnected: AppState.p2pConnection?.roomId
     });
 
+    console.log(`🔥 REACHED P2P BROADCAST SECTION`);
     // Send via P2P if connected
+    console.log(`🔥 CRITICAL: AppState.p2pConnection =`, AppState.p2pConnection);
+    console.log(`🔥 CRITICAL: !!AppState.p2pConnection =`, !!AppState.p2pConnection);
     if (AppState.p2pConnection) {
-      debugLog(`📤 Broadcasting chat message...`);
+      console.log(`📤 CHAT BROADCAST: Starting chat message broadcast...`);
+      console.log(`📤 CHAT BROADCAST: dataChannels.size =`, AppState.p2pConnection.dataChannels.size);
+      console.log(`📤 CHAT BROADCAST: Message object:`, messageObj);
+
       try {
         const result = AppState.p2pConnection.broadcast(messageObj);
-        debugLog(`✅ P2P broadcast completed successfully`);
+        console.log(`📤 CHAT BROADCAST: Broadcast returned:`, result);
+        console.log(`✅ CHAT BROADCAST: P2P broadcast completed successfully`);
       } catch (broadcastError) {
-        debugLog(`❌ P2P broadcast failed: ${broadcastError.message}`);
+        console.error(`❌ CHAT BROADCAST: P2P broadcast failed:`, broadcastError);
       }
     } else {
-      debugLog(`❌ No P2P connection to broadcast message`);
+      console.log(`❌ CHAT BROADCAST: No P2P connection to broadcast message`);
     }
 
     // Store locally in WASM
@@ -1344,12 +1442,14 @@ function setupEventHandlers() {
     console.warn('themeToggleBtn element not found');
   }
 
-  // Auto-initialize user on name change
+  // Auto-initialize user on name change - enhanced for Firefox compatibility
   let initDebounceTimeout = null;
+  let lastInitializedName = '';
   const userNameInput = document.getElementById('userName');
   if (userNameInput) {
-    userNameInput.addEventListener('input', (event) => {
+    const handleUserNameChange = (event) => {
       const userName = event.target.value.trim();
+      console.log(`👤 Username changed to: ${userName} (event: ${event.type})`);
 
       // Clear existing timeout
       if (initDebounceTimeout) {
@@ -1358,11 +1458,28 @@ function setupEventHandlers() {
 
       // Debounce the initialization to avoid too many re-inits
       initDebounceTimeout = setTimeout(() => {
-        if (userName) {
+        if (userName && userName !== lastInitializedName) {
+          console.log(`👤 Re-initializing user with name: ${userName} (previous: ${lastInitializedName})`);
+
+          // Force clear localStorage before re-initializing to ensure Firefox compatibility
+          localStorage.removeItem('userId');
+          localStorage.removeItem('userName');
+
+          // Force a new initialization
           handleInitializeUser(userName);
+          lastInitializedName = userName;
         }
-      }, 500); // Wait 500ms after user stops typing
-    });
+      }, 300); // Reduced timeout for better responsiveness
+    };
+
+    // Add multiple event listeners for better browser compatibility
+    userNameInput.addEventListener('input', handleUserNameChange);
+    userNameInput.addEventListener('change', handleUserNameChange); // Firefox compatibility
+    userNameInput.addEventListener('blur', handleUserNameChange);   // When user leaves field
+    userNameInput.addEventListener('keyup', handleUserNameChange);  // Additional Firefox compatibility
+
+    // Store initial value to track changes
+    lastInitializedName = userNameInput.value.trim();
   } else {
     console.warn('userName element not found');
   }
@@ -1439,25 +1556,56 @@ function handleInitializeUser(userName = null) {
     // Generate user ID client-side
     const userId = generateUUID();
 
+    console.log(`🔄 Firefox-safe initialization: userName=${userName}, userId=${userId}`);
+
     // Initialize user in WASM module
     window.safeWasm.initialize(userName, userId);
 
-    // Update tooltip with user ID
+    // Update tooltip with user ID - Firefox compatibility
     const tooltip = document.getElementById('userIdTooltip');
     if (tooltip) {
-      tooltip.textContent = userId;
+      // Force text content update for Firefox
+      tooltip.textContent = '';
+      setTimeout(() => {
+        tooltip.textContent = userId;
+      }, 0);
     }
 
-    // Update both desktop and mobile inputs
-    document.getElementById('userName').value = userName;
+    // Update both desktop and mobile inputs - Firefox compatibility
+    const userNameInputElement = document.getElementById('userName');
+    if (userNameInputElement) {
+      userNameInputElement.value = userName;
+      // Trigger input event for Firefox
+      userNameInputElement.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
     const mobileUserNameInput = document.getElementById('userNameMobile');
     if (mobileUserNameInput) {
       mobileUserNameInput.value = userName;
+      // Trigger input event for Firefox
+      mobileUserNameInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
-    // Store both username and user ID
-    localStorage.setItem('userName', userName);
-    localStorage.setItem('userId', userId);
+    // Store both username and user ID - Force localStorage update for Firefox
+    try {
+      localStorage.setItem('userName', userName);
+      localStorage.setItem('userId', userId);
+
+      // Verify storage worked (Firefox localStorage can be finicky)
+      const verifyUserName = localStorage.getItem('userName');
+      const verifyUserId = localStorage.getItem('userId');
+
+      if (verifyUserName !== userName || verifyUserId !== userId) {
+        console.warn(`🔧 Firefox localStorage verification failed, retrying...`);
+        // Clear and retry
+        localStorage.removeItem('userName');
+        localStorage.removeItem('userId');
+        localStorage.setItem('userName', userName);
+        localStorage.setItem('userId', userId);
+      }
+    } catch (storageError) {
+      console.error('Firefox localStorage error:', storageError);
+    }
 
     log(`Initialized user: ${userName} with ID: ${userId}`);
   } catch (error) {
@@ -1470,22 +1618,30 @@ function handleInitializeUser(userName = null) {
  * Handle real-time draft message updates
  */
 function handleDraftMessage() {
+  console.log(`🟠 DRAFT HANDLER: handleDraftMessage called`);
   const roomId = getCurrentRoomId();
+  console.log(`🟠 DRAFT HANDLER: roomId = ${roomId}`);
   if (!roomId) {
+    console.log(`🟠 DRAFT HANDLER: No roomId, returning early`);
     return;
   }
 
   // Skip if not connected
   const statusElement = document.getElementById('connectionStatus');
-  if (!statusElement.textContent.startsWith('Connected')) {
+  console.log(`🟠 DRAFT HANDLER: Status element text = "${statusElement?.textContent}"`);
+  if (!statusElement || !statusElement.textContent.includes('Connected')) {
+    console.log(`🟠 DRAFT HANDLER: Not connected, returning early`);
     return;
   }
+  console.log(`🟠 DRAFT HANDLER: Connection check passed, continuing...`);
 
   const messageInput = document.getElementById('messageInput');
   const content = messageInput.value;
+  console.log(`🟠 DRAFT HANDLER: Input content = "${content}"`);
 
   try {
     const p2pConnection = getP2PConnection();
+    console.log(`🟠 DRAFT HANDLER: p2pConnection =`, p2pConnection);
     if (p2pConnection) {
       if (content.trim()) {
         // Send draft content to peers
