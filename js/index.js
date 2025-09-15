@@ -1108,8 +1108,9 @@ function sendMessage() {
 
     // Send via P2P if connected
     if (AppState.p2pConnection) {
-      console.log(`📤 Broadcasting chat message:`, messageObj);
-      AppState.p2pConnection.broadcast(messageObj);
+      console.log(`📤 Broadcasting chat message at ${new Date().toISOString()}:`, messageObj);
+      const result = AppState.p2pConnection.broadcast(messageObj);
+      console.log(`📤 Broadcast result:`, result);
     } else {
       console.log(`❌ No P2P connection to broadcast message`);
     }
