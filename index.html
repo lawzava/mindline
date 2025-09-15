@@ -259,23 +259,6 @@
         </div>
 
         <script>
-        // Theme toggle functionality
-        document.getElementById('themeToggleBtn').addEventListener('click', () => {
-            document.body.classList.toggle('dark');
-            const isDark = document.body.classList.contains('dark');
-            localStorage.setItem('theme', isDark ? 'dark' : 'light');
-        });
-        
-        // Initialize theme based on preference
-        const initTheme = () => {
-            const savedTheme = localStorage.getItem('theme');
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            
-            if (savedTheme === 'dark' || (savedTheme === null && prefersDark)) {
-                document.body.classList.add('dark');
-            }
-        };
-        
         // Update connection status
         const updateConnectionStatus = (isConnected) => {
             const statusElement = document.getElementById('connectionStatus');
@@ -311,89 +294,7 @@
             chatArea.scrollTop = chatArea.scrollHeight;
         };
         
-        // Initialize the UI
-        window.addEventListener('DOMContentLoaded', () => {
-            initTheme();
-            
-            // Demo functionality removed (createRoomBtn no longer exists)
-            // Send button functionality is handled in main JavaScript file
-            
-            // Debug functionality removed for production
-
-            // Get toggle button element
-            const themeToggleBtn = document.getElementById('themeToggleBtn');
-            
-            // Add event listener with debugging
-            themeToggleBtn.addEventListener('click', function(event) {
-                console.log('Theme toggle clicked');
-                
-                // Toggle dark class
-                document.body.classList.toggle('dark');
-                
-                // Update icons based on current state
-                if (document.body.classList.contains('dark')) {
-                    document.getElementById('moonIcon').classList.add('hidden');
-                    document.getElementById('sunIcon').classList.remove('hidden');
-                    localStorage.setItem('theme', 'dark');
-                } else {
-                    document.getElementById('sunIcon').classList.add('hidden');
-                    document.getElementById('moonIcon').classList.remove('hidden');
-                    localStorage.setItem('theme', 'light');
-                }
-            });
-            
-            // Explicitly make the button clickable by giving it a larger hit area
-            themeToggleBtn.style.cursor = 'pointer';
-            
-            // Initialize theme based on preference
-            initTheme();
-
-            // Setup debug panel event listeners
-            const debugToggleBtn = document.getElementById('debugToggleBtn');
-            const clearDebugBtn = document.getElementById('clearDebugBtn');
-
-            if (debugToggleBtn) {
-                debugToggleBtn.addEventListener('click', function() {
-                    const debugPanel = document.getElementById('debugPanel');
-                    if (debugPanel.style.display === 'none' || !debugPanel.style.display) {
-                        debugPanel.style.display = 'block';
-                        debugToggleBtn.textContent = '🐛 Hide';
-                    } else {
-                        debugPanel.style.display = 'none';
-                        debugToggleBtn.textContent = '🐛 Debug';
-                    }
-                });
-            }
-
-            if (clearDebugBtn) {
-                clearDebugBtn.addEventListener('click', function() {
-                    const debugContent = document.getElementById('debugContent');
-                    if (debugContent) {
-                        debugContent.textContent = '';
-                    }
-                });
-            }
-
-            // For testing - add a fallback click handler on the parent
-            const headerElement = document.querySelector('.neo-header');
-            headerElement.addEventListener('click', function(event) {
-                if (event.target === headerElement) {
-                    return; // Only handle clicks on the header itself, not children
-                }
-                
-                // Check if the click is near the toggle button
-                const toggleRect = themeToggleBtn.getBoundingClientRect();
-                if (
-                    event.clientX >= toggleRect.left - 10 && 
-                    event.clientX <= toggleRect.right + 10 &&
-                    event.clientY >= toggleRect.top - 10 && 
-                    event.clientY <= toggleRect.bottom + 10
-                ) {
-                    console.log('Nearby click detected, triggering theme toggle');
-                    themeToggleBtn.click();
-                }
-            });
-    });
+        // All functionality moved to JavaScript modules
     </script>
     </body>
 </html>
