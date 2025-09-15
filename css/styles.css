@@ -1704,6 +1704,35 @@ h1, h2, h3, h4, h5, h6 {
     flex-shrink: 0;
 }
 
+/* Generic Install Instructions */
+.generic-prompt .generic-instructions {
+    text-align: left;
+    margin: 1rem 0;
+    padding: 1rem;
+    background: var(--surface-light);
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.dark .generic-prompt .generic-instructions {
+    background: var(--surface-dark);
+}
+
+.generic-instructions ul {
+    margin: 0.5rem 0 0 0;
+    padding-left: 1.5rem;
+    color: var(--text-color);
+}
+
+.generic-instructions li {
+    margin-bottom: 0.75rem;
+    line-height: 1.4;
+}
+
+.generic-instructions strong {
+    color: var(--primary-color);
+}
+
 /* Update Notification */
 .update-notification {
     position: fixed;
