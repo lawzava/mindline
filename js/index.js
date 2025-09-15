@@ -30,16 +30,109 @@ const CONSTANTS = {
 };
 
 /**
+ * Get the current user ID from localStorage
+ * @returns {string} The user ID or empty string if not initialized
+ */
+function getCurrentUserId() {
+  return localStorage.getItem('userId') || '';
+}
+
+/**
+ * Parse URL query parameters
+ * @returns {URLSearchParams} URL search parameters
+ */
+function getURLParams() {
+  return new URLSearchParams(window.location.search);
+}
+
+/**
+ * Get room ID from URL parameter
+ * @returns {string|null} Room ID from ?r= parameter or null
+ */
+function getRoomFromURL() {
+  const params = getURLParams();
+  return params.get('r');
+}
+
+/**
+ * Generate shareable room URL
+ * @param {string} roomId - The room ID to share
+ * @returns {string} Complete shareable URL
+ */
+function generateShareableURL(roomId) {
+  const baseURL = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
+  return `${baseURL}?r=${encodeURIComponent(roomId)}`;
+}
+
+/**
+ * Get room history from localStorage
+ * @returns {Array} Array of room objects with {id, name, lastJoined}
+ */
+function getRoomHistory() {
+  try {
+    const history = localStorage.getItem('roomHistory');
+    return history ? JSON.parse(history) : [];
+  } catch (error) {
+    console.error('Error parsing room history:', error);
+    return [];
+  }
+}
+
+/**
+ * Add room to history
+ * @param {string} roomId - Room ID to add
+ */
+function addRoomToHistory(roomId) {
+  if (!roomId || !isValidRoomId(roomId)) return;
+
+  const history = getRoomHistory();
+  const now = Date.now();
+
+  // Remove existing entry for this room
+  const filteredHistory = history.filter(room => room.id !== roomId);
+
+  // Add new entry at the beginning
+  const newEntry = {
+    id: roomId,
+    name: roomId, // Could be extended to store custom names
+    lastJoined: now
+  };
+
+  filteredHistory.unshift(newEntry);
+
+  // Keep only last 10 rooms
+  const limitedHistory = filteredHistory.slice(0, 10);
+
+  // Save back to localStorage
+  try {
+    localStorage.setItem('roomHistory', JSON.stringify(limitedHistory));
+    updateRoomHistoryUI();
+  } catch (error) {
+    console.error('Error saving room history:', error);
+  }
+}
+
+/**
+ * Remove room from history
+ * @param {string} roomId - Room ID to remove
+ */
+function removeRoomFromHistory(roomId) {
+  const history = getRoomHistory();
+  const filteredHistory = history.filter(room => room.id !== roomId);
+
+  try {
+    localStorage.setItem('roomHistory', JSON.stringify(filteredHistory));
+    updateRoomHistoryUI();
+  } catch (error) {
+    console.error('Error removing room from history:', error);
+  }
+}
+
+/**
  * Initialize the application
  */
 async function initializeApp() {
   try {
-    console.log('=== APP START ===');
-    console.log('Starting application initialization...');
-    console.log('Initial localStorage check:');
-    console.log('- userName:', localStorage.getItem('userName'));
-    console.log('- userId:', localStorage.getItem('userId'));
-    console.log('- currentRoomId:', localStorage.getItem('currentRoomId'));
 
     // Initialize theme preference
     initializeTheme();
@@ -48,7 +141,6 @@ async function initializeApp() {
     await loadWasmModule();
     createSafeWasmProxies();
 
-    console.log('WASM loaded, restoring user state...');
 
     // Restore user state
     await restoreUserState();
@@ -56,11 +148,33 @@ async function initializeApp() {
     // Connect UI elements
     connectNewUIWithWasm();
 
+    // Update room history UI after user state is restored
+    updateRoomHistoryUI();
+
     // Initialize event handlers
     setupEventHandlers();
 
+    // Check for room ID in URL and auto-join if present
+    const urlRoomId = getRoomFromURL();
+    if (urlRoomId) {
+      // Auto-join the room
+      try {
+        await joinRoom(urlRoomId);
+        // Clean up URL after successful join (optional)
+        const newURL = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
+        window.history.replaceState({}, document.title, newURL);
+      } catch (error) {
+        console.error('Failed to auto-join room from URL:', error);
+      }
+    }
+
     const roomId = getCurrentRoomId();
-    updateConnectionStatus(Boolean(roomId));
+    updateConnectionStatus(roomId ? 'connected' : 'disconnected');
+
+    // Initialize room history UI (with small delay to ensure DOM is ready)
+    setTimeout(() => {
+      updateRoomHistoryUI();
+    }, 100);
 
     // Ensure chat is scrolled to bottom after full initialization
     if (roomId) {
@@ -86,7 +200,6 @@ async function loadWasmModule() {
     AppState.wasmModule = initialized;
     
     updateDebugOutput('WASM module loaded successfully!');
-    console.log('WASM module loaded successfully!');
     return true;
   } catch (err) {
     updateDebugOutput(`Error loading WASM module: ${err.message}`);
@@ -125,7 +238,6 @@ function createSafeWasmProxies() {
 function safeWasmCall(funcName, paramNames, paramTransforms = {}) {
   return function(...args) {
     try {
-      console.log(`Safe ${funcName} proxy called with:`, ...args);
       
       // Ensure correct number of parameters
       const safeArgs = args.slice(0, paramNames.length).map((arg, index) => {
@@ -144,7 +256,6 @@ function safeWasmCall(funcName, paramNames, paramTransforms = {}) {
       });
       
       // Call the original function
-      console.log(`Safe ${funcName} calling original with:`, safeArgs);
       const result = AppState.wasmModule[funcName](...safeArgs);
       
       // Special handling for get_messages result
@@ -194,7 +305,6 @@ function loadChatHistory(roomId) {
         messages: parsed.messages || [],
         lastSync: parsed.lastSync || 0
       });
-      console.log(`Loaded ${parsed.messages?.length || 0} messages for room ${roomId}`);
       return parsed.messages || [];
     } else {
       AppState.chatHistory.set(roomId, {
@@ -230,7 +340,6 @@ function saveChatHistory(roomId) {
 
     localStorage.setItem(historyKey, JSON.stringify(historyData));
     roomHistory.lastSync = historyData.lastSync;
-    console.log(`Saved ${roomHistory.messages.length} messages for room ${roomId}`);
   } catch (error) {
     console.error('Error saving chat history:', error);
   }
@@ -291,7 +400,7 @@ function displayChatHistory(messages) {
   } else {
     // Display all messages
     messages.forEach(message => {
-      const isMe = message.senderId === document.getElementById('userId').textContent;
+      const isMe = message.senderId === getCurrentUserId();
       displayMessage(message.content, isMe, message.sender, false); // false = don't scroll yet
     });
 
@@ -319,14 +428,13 @@ function requestMessageSync(roomId) {
   const lastSync = roomHistory ? roomHistory.lastSync : 0;
   const messageCount = roomHistory ? roomHistory.messages.length : 0;
 
-  console.log(`Requesting message sync for room ${roomId}, lastSync: ${lastSync}, messageCount: ${messageCount}`);
 
   const syncRequest = {
     type: 'sync-request',
     roomId: roomId,
     lastSync: lastSync,
     messageCount: messageCount,
-    requesterId: document.getElementById('userId').textContent,
+    requesterId: getCurrentUserId(),
     timestamp: Date.now()
   };
 
@@ -345,11 +453,8 @@ function handleSyncRequest(message, peerId) {
   const peerLastSync = message.lastSync;
   const peerMessageCount = message.messageCount;
 
-  console.log(`Received sync request from ${peerId} for room ${roomId}`);
-
   const roomHistory = AppState.chatHistory.get(roomId);
   if (!roomHistory) {
-    console.log('No history for this room, ignoring sync request');
     return;
   }
 
@@ -358,14 +463,13 @@ function handleSyncRequest(message, peerId) {
     msg.timestamp > peerLastSync
   );
 
-  console.log(`Found ${missingMessages.length} potentially missing messages for peer`);
 
   if (missingMessages.length > 0) {
     const syncResponse = {
       type: 'sync-response',
       roomId: roomId,
       messages: missingMessages,
-      senderId: document.getElementById('userId').textContent,
+      senderId: getCurrentUserId(),
       timestamp: Date.now()
     };
 
@@ -384,7 +488,6 @@ function handleSyncResponse(message, peerId) {
   const roomId = message.roomId;
   const newMessages = message.messages || [];
 
-  console.log(`Received sync response from ${peerId} with ${newMessages.length} messages`);
 
   if (newMessages.length === 0) {
     return;
@@ -403,7 +506,7 @@ function handleSyncResponse(message, peerId) {
       addMessageToHistory(roomId, msg);
 
       // Display the message
-      const isMe = msg.senderId === document.getElementById('userId').textContent;
+      const isMe = msg.senderId === getCurrentUserId();
       displayMessage(msg.content, isMe, msg.sender);
 
       addedMessages++;
@@ -432,16 +535,8 @@ function isValidRoomId(id) {
  * @returns {string|null} Current room ID or null
  */
 function getCurrentRoomId() {
-  // First try localStorage
+  // Get room ID from localStorage
   let roomId = localStorage.getItem('currentRoomId');
-  
-  // If not in localStorage, try the UI element
-  if (!roomId) {
-    const roomElement = document.getElementById('currentRoom');
-    if (roomElement && roomElement.textContent !== 'None') {
-      roomId = roomElement.textContent;
-    }
-  }
   
   // Validate the room ID format
   if (!isValidRoomId(roomId)) {
@@ -458,20 +553,10 @@ function getCurrentRoomId() {
  * Restore user state from localStorage
  */
 async function restoreUserState() {
-  console.log('=== restoreUserState called ===');
-
   if (!window.safeWasm) {
     console.warn("Safe WASM proxies not created yet, cannot restore state safely");
     return;
   }
-
-  console.log('Safe WASM available, proceeding with user restoration...');
-
-  // Check what's in localStorage
-  console.log('Current localStorage contents:');
-  console.log('- userName:', localStorage.getItem('userName'));
-  console.log('- userId:', localStorage.getItem('userId'));
-  console.log('- currentRoomId:', localStorage.getItem('currentRoomId'));
 
   // Initialize user if needed
   restoreUserInfo();
@@ -484,14 +569,11 @@ async function restoreUserState() {
  * Restore user information from localStorage
  */
 function restoreUserInfo() {
-  const userIdElement = document.getElementById('userId');
-  const userIdText = userIdElement.textContent.trim();
-
-  console.log('Current userId element text:', userIdText);
+  const userIdTooltip = document.getElementById('userIdTooltip');
+  const userIdText = userIdTooltip ? userIdTooltip.textContent.trim() : 'Not initialized';
 
   // Check if user needs initialization (handle HTML whitespace)
-  const needsInitialization = userIdText.includes('Not') && userIdText.includes('initialized');
-  console.log('needsInitialization:', needsInitialization);
+  const needsInitialization = userIdText.includes('Not') || userIdText.includes('initialized');
 
   if (needsInitialization) {
     try {
@@ -499,13 +581,12 @@ function restoreUserInfo() {
       const savedUserName = localStorage.getItem('userName');
       const savedUserId = localStorage.getItem('userId');
 
-      console.log('Saved userName:', savedUserName);
-      console.log('Saved userId:', savedUserId);
-
       if (savedUserName && savedUserId) {
         // Restore saved user data
         window.safeWasm.initialize(savedUserName, savedUserId);
-        document.getElementById('userId').textContent = savedUserId;
+        if (userIdTooltip) {
+          userIdTooltip.textContent = savedUserId;
+        }
         document.getElementById('userName').value = savedUserName;
 
         log(`Restored user: ${savedUserName} with ID: ${savedUserId}`);
@@ -517,7 +598,9 @@ function restoreUserInfo() {
       const userId = generateUUID();
 
       window.safeWasm.initialize(userName, userId);
-      document.getElementById('userId').textContent = userId;
+      if (userIdTooltip) {
+        userIdTooltip.textContent = userId;
+      }
 
       // Store both username and user ID
       localStorage.setItem('userName', userName);
@@ -528,8 +611,6 @@ function restoreUserInfo() {
       console.error("Could not initialize user:", error);
       log(`Error initializing user: ${error.message}`);
     }
-  } else {
-    console.log('User already initialized, skipping restoration');
   }
 }
 
@@ -538,20 +619,17 @@ function restoreUserInfo() {
  */
 async function restoreRoomConnection() {
   const savedRoomId = localStorage.getItem('currentRoomId');
-  console.log("Restoring room ID from localStorage:", savedRoomId);
 
   if (!savedRoomId || !isValidRoomId(savedRoomId)) {
-    updateConnectionStatus(false);
+    updateConnectionStatus('failed');
     return;
   }
 
-  document.getElementById('currentRoom').textContent = savedRoomId;
-  document.getElementById('roomIdInput').value = savedRoomId;
+  updateRoomDisplay(savedRoomId);
 
   try {
     // Try to join the room in WASM
     const connectionToken = window.safeWasm.join_room(savedRoomId, "{}");
-    console.log("Room joined successfully, token:", connectionToken);
 
     // Initialize P2P connection
     try {
@@ -565,7 +643,7 @@ async function restoreRoomConnection() {
     const messages = loadChatHistory(savedRoomId);
     displayChatHistory(messages);
 
-    updateConnectionStatus(true);
+    updateConnectionStatus('connected');
     log(`Restored previous room: ${savedRoomId}`);
 
     // Optionally, retrieve messages for the room
@@ -590,12 +668,12 @@ async function restoreRoomConnection() {
       const messages = loadChatHistory(savedRoomId);
       displayChatHistory(messages);
 
-      updateConnectionStatus(true);
+      updateConnectionStatus('connected');
       log(`Created room with previous ID: ${savedRoomId}`);
     } catch (createError) {
       console.error("Failed to create room as fallback:", createError);
       log(`Failed to create room: ${createError.message}`);
-      updateConnectionStatus(false);
+      updateConnectionStatus('failed');
     }
   }
 }
@@ -620,6 +698,9 @@ async function createRoom() {
       return null;
     }
 
+    // Show connecting status
+    updateConnectionStatus('connecting');
+
     // Create the room in the WASM module
     window.safeWasm.create_room_with_id(roomId);
 
@@ -631,12 +712,14 @@ async function createRoom() {
     displayChatHistory(messages);
 
     // Update UI and localStorage
-    document.getElementById('currentRoom').textContent = roomId;
-    document.getElementById('roomIdInput').value = roomId;
+    updateRoomDisplay(roomId);
     localStorage.setItem('currentRoomId', roomId);
 
+    // Add to room history
+    addRoomToHistory(roomId);
+
     // Update connection status
-    updateConnectionStatus(true);
+    updateConnectionStatus('connected');
 
     // Scroll to bottom after room creation
     scrollChatToBottom('auto', 200);
@@ -645,7 +728,7 @@ async function createRoom() {
     return roomId;
   } catch (error) {
     log(`Error creating room: ${error.message}`);
-    updateConnectionStatus(false);
+    updateConnectionStatus('failed');
     return null;
   }
 }
@@ -668,6 +751,9 @@ async function joinRoom(roomId) {
   }
 
   try {
+    // Show connecting status
+    updateConnectionStatus('connecting');
+
     // Join the room
     const connectionToken = window.safeWasm.join_room(roomId, '{}');
 
@@ -679,11 +765,14 @@ async function joinRoom(roomId) {
     displayChatHistory(messages);
 
     // Update UI and localStorage
-    document.getElementById('currentRoom').textContent = roomId;
+    updateRoomDisplay(roomId);
     localStorage.setItem('currentRoomId', roomId);
 
+    // Add to room history
+    addRoomToHistory(roomId);
+
     // Update connection status
-    updateConnectionStatus(true);
+    updateConnectionStatus('connected');
 
     // Scroll to bottom after joining room
     scrollChatToBottom('auto', 200);
@@ -692,7 +781,7 @@ async function joinRoom(roomId) {
     return roomId;
   } catch (error) {
     log(`Error joining room: ${error.message}`);
-    updateConnectionStatus(false);
+    updateConnectionStatus('failed');
     return null;
   }
 }
@@ -763,7 +852,7 @@ async function initializeP2P(roomId) {
   }
 
   // Get user ID
-  const userId = document.getElementById('userId').textContent;
+  const userId = getCurrentUserId();
   if (!userId || userId === 'Not initialized') {
     throw new Error('User not initialized');
   }
@@ -778,7 +867,6 @@ async function initializeP2P(roomId) {
 
   AppState.p2pConnection.onPeerConnected((peerId) => {
     log(`Peer connected: ${peerId}`);
-    console.log('P2P connection established with peer:', peerId);
     updatePeerCount();
 
     // Request message synchronization from new peer
@@ -788,11 +876,10 @@ async function initializeP2P(roomId) {
 
     // Send brief connection notification to peers
     setTimeout(() => {
-      console.log('Sending connection notification to peers...');
       const userName = document.getElementById('userName').value || 'Anonymous';
       const connectMessage = {
         type: 'user-connected',
-        senderId: document.getElementById('userId').textContent,
+        senderId: getCurrentUserId(),
         senderName: userName,
         timestamp: Date.now()
       };
@@ -817,10 +904,9 @@ async function initializeP2P(roomId) {
 
   AppState.p2pConnection.onConnectionLost((reason) => {
     log(`Connection lost: ${reason}`);
-    console.log('Connection lost, starting reconnection attempts...');
 
     // Update status immediately
-    updateConnectionStatus(false);
+    updateConnectionStatus('failed');
 
     // Start reconnection if not already trying
     if (!AppState.isReconnecting && AppState.reconnectAttempts < AppState.maxReconnectAttempts) {
@@ -834,16 +920,6 @@ async function initializeP2P(roomId) {
   try {
     await AppState.p2pConnection.connect();
     log('Connected to P2P network');
-    console.log('P2P connection initialized for room:', roomId);
-
-    // Log connection status every 5 seconds for debugging
-    const connectionLogger = setInterval(() => {
-      const connectedPeers = AppState.p2pConnection.getConnectedPeers();
-      console.log('Current connected peers:', connectedPeers.length, connectedPeers);
-    }, 5000);
-
-    // Store interval reference for cleanup
-    AppState.connectionLogger = connectionLogger;
   } catch (error) {
     console.error('Failed to connect to P2P network:', error);
     log('Failed to connect to P2P network. Starting reconnection...');
@@ -859,11 +935,8 @@ async function initializeP2P(roomId) {
  * Handle incoming P2P messages
  */
 function handleIncomingP2PMessage(message, peerId) {
-  console.log('handleIncomingP2PMessage received:', message.type, 'from peer:', peerId);
-
   // For draft messages, we don't need to prevent duplicates since they should update in real-time
   if (message.type !== 'draft' && message.type !== 'clear-draft' && AppState.messageHistory.has(message.id)) {
-    console.log('Ignoring duplicate message:', message.id);
     return;
   }
 
@@ -941,7 +1014,7 @@ function sendMessage() {
       type: 'chat',
       content: message,
       sender: userName,
-      senderId: document.getElementById('userId').textContent,
+      senderId: getCurrentUserId(),
       timestamp: Date.now()
     };
 
@@ -966,7 +1039,7 @@ function sendMessage() {
     if (AppState.p2pConnection) {
       AppState.p2pConnection.broadcast({
         type: 'clear-draft',
-        senderId: document.getElementById('userId').textContent,
+        senderId: getCurrentUserId(),
         timestamp: Date.now()
       });
     }
@@ -991,9 +1064,7 @@ function sendMessage() {
 function retrieveMessages(roomId) {
   try {
     // Get messages from the WASM module
-    console.log("Retrieving messages for room:", roomId);
     const messagesResult = window.safeWasm.get_messages(roomId);
-    console.log("Retrieved messages:", messagesResult);
     
     // Parse the JSON string
     if (typeof messagesResult === 'string') {
@@ -1017,15 +1088,43 @@ function retrieveMessages(roomId) {
  * Update connection status indicator
  * @param {boolean} isConnected - Whether connected to a room
  */
-function updateConnectionStatus(isConnected) {
+/**
+ * Update connection status with detailed states
+ * @param {string} status - 'disconnected', 'connecting', 'connected', 'failed'
+ */
+function updateConnectionStatus(status = 'disconnected') {
   const statusElement = document.getElementById('connectionStatus');
-  if (isConnected) {
-    statusElement.textContent = 'Connected';
-    statusElement.className = 'status status-connected';
-  } else {
-    statusElement.textContent = 'Disconnected';
-    statusElement.className = 'status status-disconnected';
+  if (!statusElement) return;
+
+  // Remove all status classes
+  statusElement.className = 'inline-block px-3 py-1 text-xs font-bold uppercase border-2 border-black dark:border-white tracking-wider';
+
+  switch (status) {
+    case 'connecting':
+      statusElement.textContent = 'Connecting...';
+      statusElement.classList.add('status-connecting');
+      break;
+    case 'connected':
+      statusElement.textContent = 'Connected';
+      statusElement.classList.add('status-connected');
+      break;
+    case 'failed':
+      statusElement.textContent = 'Failed';
+      statusElement.classList.add('status-failed');
+      break;
+    case 'disconnected':
+    default:
+      statusElement.textContent = 'Disconnected';
+      statusElement.classList.add('status-disconnected');
+      break;
   }
+}
+
+/**
+ * Legacy function for backward compatibility
+ */
+function updateConnectionStatusLegacy(isConnected) {
+  updateConnectionStatus(isConnected ? 'connected' : 'disconnected');
 }
 
 /**
@@ -1035,14 +1134,41 @@ function setupEventHandlers() {
   // Theme toggle functionality
   document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
   
-  // Initialize user
-  document.getElementById('initializeBtn').addEventListener('click', handleInitializeUser);
+  // Auto-initialize user on name change
+  let initDebounceTimeout = null;
+  document.getElementById('userName').addEventListener('input', (event) => {
+    const userName = event.target.value.trim();
+
+    // Clear existing timeout
+    if (initDebounceTimeout) {
+      clearTimeout(initDebounceTimeout);
+    }
+
+    // Debounce the initialization to avoid too many re-inits
+    initDebounceTimeout = setTimeout(() => {
+      if (userName) {
+        handleInitializeUser(userName);
+      }
+    }, 500); // Wait 500ms after user stops typing
+  });
   
   // Room management
-  document.getElementById('createRoomBtn').addEventListener('click', async () => await createRoom());
   document.getElementById('joinRoomBtn').addEventListener('click', async () => {
-    const roomId = document.getElementById('roomIdInput').value;
-    await joinRoom(roomId);
+    let roomId = document.getElementById('roomIdInput').value.trim();
+
+    // Generate UUID if room ID is empty
+    if (!roomId) {
+      roomId = generateUUID();
+    }
+
+    try {
+      await joinRoom(roomId);
+      // Clear the input only after successfully joining
+      document.getElementById('roomIdInput').value = '';
+    } catch (error) {
+      console.error('Failed to join room:', error);
+      // Don't clear input if join failed
+    }
   });
   
   // Message sending
@@ -1055,40 +1181,37 @@ function setupEventHandlers() {
   
   // Real-time draft messages
   document.getElementById('messageInput').addEventListener('input', handleDraftMessage);
-  
-  // Debug controls
-  document.getElementById('clearLogBtn').addEventListener('click', () => {
-    document.getElementById('debugOutput').textContent = '';
-    log('Debug log cleared');
-  });
+
+  // Share room functionality
+  document.getElementById('shareRoomBtn').addEventListener('click', shareCurrentRoom);
+
+  // Debug controls removed for production
 }
 
 /**
  * Handle user initialization
  */
-function handleInitializeUser() {
-  const userName = document.getElementById('userName').value || 'Anonymous';
+function handleInitializeUser(userName = null) {
+  // Use provided userName or get from input
+  if (!userName) {
+    userName = document.getElementById('userName').value || 'Anonymous';
+  }
   try {
     // Generate user ID client-side
     const userId = generateUUID();
 
-    console.log('=== handleInitializeUser ===');
-    console.log('userName:', userName);
-    console.log('generated userId:', userId);
-
     // Initialize user in WASM module
     window.safeWasm.initialize(userName, userId);
 
-    // Update UI
-    document.getElementById('userId').textContent = userId;
+    // Update tooltip with user ID
+    const tooltip = document.getElementById('userIdTooltip');
+    if (tooltip) {
+      tooltip.textContent = userId;
+    }
 
     // Store both username and user ID
     localStorage.setItem('userName', userName);
     localStorage.setItem('userId', userId);
-
-    console.log('Stored to localStorage:');
-    console.log('- userName:', localStorage.getItem('userName'));
-    console.log('- userId:', localStorage.getItem('userId'));
 
     log(`Initialized user: ${userName} with ID: ${userId}`);
   } catch (error) {
@@ -1103,50 +1226,39 @@ function handleInitializeUser() {
 function handleDraftMessage() {
   const roomId = getCurrentRoomId();
   if (!roomId) {
-    console.log('No room ID, skipping draft message');
     return;
   }
 
   // Skip if not connected
   const statusElement = document.getElementById('connectionStatus');
   if (!statusElement.textContent.startsWith('Connected')) {
-    console.log('Not connected, skipping draft message');
     return;
   }
 
   const messageInput = document.getElementById('messageInput');
   const content = messageInput.value;
 
-  console.log('handleDraftMessage called with content:', content);
-
   try {
     if (AppState.p2pConnection) {
-      const connectedPeers = AppState.p2pConnection.getConnectedPeers();
-      console.log('Connected peers:', connectedPeers.length);
-
       if (content.trim()) {
         // Send draft content to peers
         const draftMessage = {
           type: 'draft',
           content: content,
-          senderId: document.getElementById('userId').textContent,
+          senderId: getCurrentUserId(),
           senderName: document.getElementById('userName').value || 'Anonymous',
           timestamp: Date.now()
         };
 
-        console.log('Sending draft message:', draftMessage);
-        const delivered = AppState.p2pConnection.broadcast(draftMessage);
-        const connectedPeersList = AppState.p2pConnection.getConnectedPeers();
-        console.log('Draft message delivered to', delivered, 'of', connectedPeersList.length, 'connected peers:', connectedPeersList);
+        AppState.p2pConnection.broadcast(draftMessage);
       } else {
         // Send clear draft message when input is empty
         const clearMessage = {
           type: 'clear-draft',
-          senderId: document.getElementById('userId').textContent,
+          senderId: getCurrentUserId(),
           timestamp: Date.now()
         };
 
-        console.log('Sending clear draft message:', clearMessage);
         AppState.p2pConnection.broadcast(clearMessage);
       }
     } else {
@@ -1225,28 +1337,221 @@ function log(message) {
  * @param {string} message - Message to display
  */
 function updateDebugOutput(message) {
-  const debugOutput = document.getElementById('debugOutput');
-  debugOutput.textContent = `${message}\n${debugOutput.textContent}`;
+  // Debug output removed for production - using console.error instead
+  console.error('Debug:', message);
 }
+
+/**
+ * Share room URL by room ID
+ * @param {string} roomId - The room ID to share
+ */
+async function shareRoomById(roomId) {
+  if (!roomId) {
+    alert('Invalid room ID.');
+    return;
+  }
+
+  const shareUrl = generateShareableURL(roomId);
+
+  // Try to use Web Share API if available
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: 'Join my Mindline chat room',
+        text: `Join my secure P2P chat room: ${roomId}`,
+        url: shareUrl,
+      });
+      return;
+    } catch (error) {
+      // Fall back to clipboard if user cancels or error occurs
+    }
+  }
+
+  // Fallback: Copy to clipboard
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    // Show temporary feedback
+    showTemporaryMessage('Room link copied to clipboard!');
+  } catch (error) {
+    // Ultimate fallback: show URL in prompt
+    prompt('Copy this room link to share:', shareUrl);
+  }
+}
+
+/**
+ * Share current room URL (legacy function for backward compatibility)
+ */
+async function shareCurrentRoom() {
+  const roomId = getCurrentRoomId();
+  if (!roomId) {
+    alert('No room to share. Create or join a room first.');
+    return;
+  }
+
+  await shareRoomById(roomId);
+}
+
+/**
+ * Show temporary feedback message
+ */
+function showTemporaryMessage(message) {
+  // Create a temporary toast notification
+  const toast = document.createElement('div');
+  toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 border-2 border-black dark:border-white shadow-lg z-50';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  // Remove after 3 seconds
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+  }, 3000);
+}
+
+/**
+ * Update room display and connection section visibility
+ */
+function updateRoomDisplay(roomId) {
+  const connectionSection = document.getElementById('connectionSection');
+
+  if (roomId) {
+    connectionSection.classList.remove('hidden');
+  } else {
+    connectionSection.classList.add('hidden');
+  }
+}
+
+/**
+ * Update room history UI
+ */
+function updateRoomHistoryUI() {
+  const historyContainer = document.getElementById('roomHistoryList');
+  if (!historyContainer) {
+    console.warn('Room history container not found, skipping update');
+    return;
+  }
+
+  const history = getRoomHistory();
+  const currentRoom = getCurrentRoomId();
+
+  if (history.length === 0) {
+    historyContainer.innerHTML = `
+      <div class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+        No recent rooms
+      </div>
+    `;
+    return;
+  }
+
+  const historyHTML = history.map(room => {
+    const isCurrentRoom = room.id === currentRoom;
+    const timeAgo = formatTimeAgo(room.lastJoined);
+
+    return `
+      <div class="flex items-center justify-between p-2 border-2 border-gray-300 dark:border-gray-600 hover:border-black dark:hover:border-white transition-colors ${isCurrentRoom ? 'bg-gray-200 dark:bg-gray-700' : 'bg-gray-100 dark:bg-gray-800'} cursor-pointer group"
+           onclick="joinRoomFromHistory('${room.id}')"
+           title="Click to join room">
+        <div class="flex-1 min-w-0">
+          <div class="font-mono text-sm truncate ${isCurrentRoom ? 'font-bold' : ''}">${room.id}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">${timeAgo}</div>
+        </div>
+        <div class="flex items-center gap-1">
+          ${isCurrentRoom ? `
+            <span class="text-xs text-success dark:text-success-dark font-bold mr-2">CURRENT</span>
+          ` : ''}
+          <button onclick="event.stopPropagation(); shareRoomById('${room.id}')"
+                  class="opacity-0 group-hover:opacity-100 p-1 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-opacity"
+                  title="Share room link">
+            <svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+            </svg>
+          </button>
+          ${!isCurrentRoom ? `
+            <button onclick="event.stopPropagation(); removeRoomFromHistory('${room.id}')"
+                    class="opacity-0 group-hover:opacity-100 p-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-opacity"
+                    title="Remove from history">
+              <svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  historyContainer.innerHTML = historyHTML;
+}
+
+/**
+ * Format timestamp to relative time
+ */
+function formatTimeAgo(timestamp) {
+  const now = Date.now();
+  const diff = now - timestamp;
+
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+
+  return new Date(timestamp).toLocaleDateString();
+}
+
+/**
+ * Join room from history (called by onclick)
+ */
+async function joinRoomFromHistory(roomId) {
+  if (!roomId) return;
+
+  // Check if we're already in this room
+  const currentRoom = getCurrentRoomId();
+  if (currentRoom === roomId) {
+    return; // Already in this room
+  }
+
+  // Join the room
+  try {
+    await joinRoom(roomId);
+  } catch (error) {
+    console.error('Failed to join room from history:', error);
+  }
+}
+
+/**
+ * Global functions to make them available to inline onclick
+ */
+window.joinRoomFromHistory = joinRoomFromHistory;
+window.removeRoomFromHistory = removeRoomFromHistory;
+window.shareRoomById = shareRoomById;
 
 
 /**
  * Toggle between light and dark themes
  */
 function toggleTheme() {
-  const body = document.body;
-  const isDarkMode = AppState.darkMode;
-  
-  if (isDarkMode) {
-    body.classList.remove('dark-mode');
-    body.classList.add('light-mode');
-    AppState.darkMode = false;
-    localStorage.setItem('theme', 'light');
-  } else {
-    body.classList.remove('light-mode');
-    body.classList.add('dark-mode');
-    AppState.darkMode = true;
-    localStorage.setItem('theme', 'dark');
+  // Toggle on both documentElement and body for consistency
+  document.documentElement.classList.toggle('dark');
+  document.body.classList.toggle('dark');
+  const isDark = document.documentElement.classList.contains('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+
+  // Update icon visibility
+  const sunIcon = document.getElementById('sunIcon');
+  const moonIcon = document.getElementById('moonIcon');
+  if (sunIcon && moonIcon) {
+    if (isDark) {
+      moonIcon.classList.add('hidden');
+      sunIcon.classList.remove('hidden');
+    } else {
+      sunIcon.classList.add('hidden');
+      moonIcon.classList.remove('hidden');
+    }
   }
 }
 
@@ -1255,12 +1560,30 @@ function toggleTheme() {
  */
 function initializeTheme() {
   const savedTheme = localStorage.getItem('theme');
-  const prefersDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  
-  if (savedTheme === 'dark' || (savedTheme === null && prefersDarkMode)) {
-    document.body.classList.remove('light-mode');
-    document.body.classList.add('dark-mode');
-    AppState.darkMode = true;
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  // Ensure both documentElement and body have the correct class
+  if (savedTheme === 'dark' || (savedTheme === null && prefersDark)) {
+    document.documentElement.classList.add('dark');
+    document.body.classList.add('dark');
+  } else {
+    // Explicitly remove dark class if light theme
+    document.documentElement.classList.remove('dark');
+    document.body.classList.remove('dark');
+  }
+
+  // Update icon visibility based on current theme
+  const isDark = document.documentElement.classList.contains('dark');
+  const sunIcon = document.getElementById('sunIcon');
+  const moonIcon = document.getElementById('moonIcon');
+  if (sunIcon && moonIcon) {
+    if (isDark) {
+      moonIcon.classList.add('hidden');
+      sunIcon.classList.remove('hidden');
+    } else {
+      sunIcon.classList.add('hidden');
+      moonIcon.classList.remove('hidden');
+    }
   }
 }
 
@@ -1274,105 +1597,20 @@ function connectNewUIWithWasm() {
     return;
   }
 
-  // Theme toggle functionality
-  document.getElementById('themeToggleBtn').addEventListener('click', () => {
-    document.body.classList.toggle('dark');
-    const isDark = document.body.classList.contains('dark');
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-  });
-
-  // Initialize theme based on preference
-  const savedTheme = localStorage.getItem('theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-  if (savedTheme === 'dark' || (savedTheme === null && prefersDark)) {
-    document.body.classList.add('dark');
-  }
-
-  // Connect Create Room button
-  document.getElementById('createRoomBtn').addEventListener('click', async () => {
-    await createRoom();
-  });
-
-  // Connect Join Room button
-  document.getElementById('joinRoomBtn').addEventListener('click', async () => {
-    const roomId = document.getElementById('roomIdInput').value;
-    await joinRoom(roomId);
-  });
-
-  // Connect Send Message button
-  document.getElementById('sendBtn').addEventListener('click', () => {
-    sendMessage();
-  });
-
-  // Connect Enter key on message input
-  document.getElementById('messageInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      sendMessage();
-    }
-  });
-
-  // Connect clear debug log button
-  document.getElementById('clearLogBtn').addEventListener('click', () => {
-    document.getElementById('debugOutput').textContent = '';
-    log('Debug log cleared');
-  });
-
-  // Connect initialize user button
-  document.getElementById('initializeBtn').addEventListener('click', () => {
-    handleInitializeUser();
-  });
-
-  // Connect real-time draft messages
-  document.getElementById('messageInput').addEventListener('input', handleDraftMessage);
+  // Event handlers are already set up in setupEventHandlers(), just log success
 
   log('New UI successfully connected to WASM functionality');
 
-  // Add comprehensive debug function for connection issues
+  // Debug function for connection issues (development only)
   window.debugConnections = () => {
     if (AppState.p2pConnection) {
       const connectedPeers = AppState.p2pConnection.getConnectedPeers();
-      console.log('=== CONNECTION DEBUG ===');
-      console.log('My client ID:', document.getElementById('userId').textContent);
-      console.log('Room ID:', getCurrentRoomId());
-      console.log('Connected peers:', connectedPeers.length, connectedPeers);
-
-      // Debug peer connection states
-      console.log('\n--- PEER CONNECTION STATES ---');
-      AppState.p2pConnection.peers.forEach((pc, peerId) => {
-        console.log(`${peerId}:`);
-        console.log(`  Connection: ${pc.connectionState}`);
-        console.log(`  Signaling: ${pc.signalingState}`);
-        console.log(`  ICE: ${pc.iceConnectionState}`);
-        console.log(`  ICE Gathering: ${pc.iceGatheringState}`);
-      });
-
-      // Debug data channels
-      console.log('\n--- DATA CHANNELS ---');
-      AppState.p2pConnection.dataChannels.forEach((channel, peerId) => {
-        console.log(`${peerId}: ${channel.readyState}`);
-      });
-
-      // Debug draft messages
-      console.log('\n--- DRAFT MESSAGES ---');
-      console.log('Draft messages in state:', AppState.draftMessages.size);
-      AppState.draftMessages.forEach((draft, peerId) => {
-        console.log(`  - ${peerId}: "${draft.content}" (${draft.senderName})`);
-      });
-
-      // Connection health summary
       const totalPeers = AppState.p2pConnection.peers.size;
       const connectedCount = connectedPeers.length;
       const healthRate = totalPeers > 0 ? (connectedCount / totalPeers * 100).toFixed(1) : 100;
 
-      console.log('\n--- HEALTH SUMMARY ---');
-      console.log(`Connection Health: ${healthRate}% (${connectedCount}/${totalPeers})`);
-      console.log(`Reconnection attempts: ${AppState.reconnectAttempts}/${AppState.maxReconnectAttempts}`);
-      console.log(`Is reconnecting: ${AppState.isReconnecting}`);
-      console.log('=======================');
-
       return {
-        myId: document.getElementById('userId').textContent,
+        myId: getCurrentUserId(),
         roomId: getCurrentRoomId(),
         totalPeers,
         connectedPeers,
@@ -1384,17 +1622,15 @@ function connectNewUIWithWasm() {
     }
   };
 
-  // Add function to test message broadcasting
+  // Test message broadcasting (development only)
   window.testBroadcast = (message = 'Test message') => {
     if (AppState.p2pConnection) {
-      console.log('Testing message broadcast...');
       const result = AppState.p2pConnection.broadcast({
         type: 'test',
         content: message,
-        senderId: document.getElementById('userId').textContent,
+        senderId: getCurrentUserId(),
         timestamp: Date.now()
       });
-      console.log(`Broadcast test result: ${result} peers reached`);
       return result;
     }
   };
@@ -1461,15 +1697,11 @@ function updatePeerCount() {
       statusElement.textContent = statusText;
     }
 
-    // Log for debugging multi-user issues
-    console.log('Peer count updated:', peerCount, 'peers:', connectedPeers);
   }
 }
 
 // Handle peer draft message
 function handlePeerDraft(message, peerId) {
-  console.log('handlePeerDraft called with message:', message, 'from peer:', peerId);
-
   const senderName = message.senderName || message.senderId || peerId;
 
   // Store the draft message
@@ -1479,8 +1711,6 @@ function handlePeerDraft(message, peerId) {
     lastUpdate: Date.now()
   });
 
-  console.log('Stored draft message for peer:', peerId, 'content:', message.content);
-
   // Clear any existing timeout for this peer
   const existingTimeout = AppState.draftTimeouts.get(peerId);
   if (existingTimeout) {
@@ -1489,7 +1719,6 @@ function handlePeerDraft(message, peerId) {
 
   // Set a timeout to automatically clear draft after inactivity
   const timeout = setTimeout(() => {
-    console.log('Clearing draft message for peer:', peerId, 'due to timeout');
     AppState.draftMessages.delete(peerId);
     AppState.draftTimeouts.delete(peerId);
     updateDraftMessages();
@@ -1503,8 +1732,6 @@ function handlePeerDraft(message, peerId) {
 
 // Clear peer's draft message
 function clearPeerDraft(peerId) {
-  console.log('clearPeerDraft called for peer:', peerId);
-
   AppState.draftMessages.delete(peerId);
 
   // Clear timeout for this peer
@@ -1519,8 +1746,6 @@ function clearPeerDraft(peerId) {
 
 // Update draft messages display
 function updateDraftMessages() {
-  console.log('updateDraftMessages called, draft messages count:', AppState.draftMessages.size);
-
   const draftsArea = document.getElementById('draftsArea');
   if (!draftsArea) {
     console.warn('Drafts area element not found');
@@ -1536,13 +1761,11 @@ function updateDraftMessages() {
   if (activeDrafts.length === 0) {
     // Hide draft area when no drafts
     draftsArea.style.display = 'none';
-    console.log('No active drafts, hiding draft area');
     return;
   }
 
   // Show draft area
   draftsArea.style.display = 'block';
-  console.log('Showing draft area with', activeDrafts.length, 'drafts');
 
   // Add header showing how many people are typing
   if (activeDrafts.length > 1) {
@@ -1554,11 +1777,7 @@ function updateDraftMessages() {
 
   // Display each peer's draft message
   AppState.draftMessages.forEach((draft, peerId) => {
-    console.log('Processing draft for peer:', peerId, 'content:', draft.content);
-
     if (draft.content.trim()) {
-      console.log('Creating draft element for peer:', peerId);
-
       const draftElement = document.createElement('div');
       draftElement.className = 'draft-message mb-2 p-2 bg-yellow-100 dark:bg-yellow-900/50 border border-yellow-400 dark:border-yellow-500 rounded opacity-90';
 
@@ -1569,13 +1788,8 @@ function updateDraftMessages() {
       draftElement.appendChild(contentElement);
 
       draftsArea.appendChild(draftElement);
-      console.log('Draft element added to DOM');
-    } else {
-      console.log('Draft content is empty, skipping');
     }
   });
-
-  console.log('Finished updating draft messages, DOM children count:', draftsArea.children.length);
 
   // Scroll draft area to bottom if it has overflow
   draftsArea.scrollTop = draftsArea.scrollHeight;
@@ -1586,11 +1800,6 @@ window.addEventListener('beforeunload', () => {
   // Clear reconnection attempts
   if (AppState.reconnectInterval) {
     clearInterval(AppState.reconnectInterval);
-  }
-
-  // Clear connection logger
-  if (AppState.connectionLogger) {
-    clearInterval(AppState.connectionLogger);
   }
 
   if (AppState.p2pConnection) {

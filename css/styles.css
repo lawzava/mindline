@@ -164,9 +164,10 @@ body.dark {
     letter-spacing: 0.05em;
     box-shadow: 3px 3px 0 0 var(--shadow-color);
     transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
 }
 
 .status-disconnected {
@@ -180,13 +181,32 @@ body.dark {
     letter-spacing: 0.05em;
     box-shadow: 3px 3px 0 0 var(--shadow-color);
     transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
 }
 
-.status-reconnecting {
-    background-color: #f59e0b;
+.status-connecting {
+    background-color: var(--accent-color);
+    color: black;
+    border-color: var(--border-color);
+    padding: 0.5rem 1rem;
+    border: 3px solid var(--border-color);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 3px 3px 0 0 var(--shadow-color);
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    animation: pulse 2s infinite;
+}
+
+.status-failed {
+    background-color: var(--error-color);
     color: white;
     border-color: var(--border-color);
     padding: 0.5rem 1rem;
@@ -196,9 +216,36 @@ body.dark {
     letter-spacing: 0.05em;
     box-shadow: 3px 3px 0 0 var(--shadow-color);
     transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.status-reconnecting {
+    background-color: var(--accent-color);
+    color: black;
+    border-color: var(--border-color);
+    padding: 0.5rem 1rem;
+    border: 3px solid var(--border-color);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 3px 3px 0 0 var(--shadow-color);
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
     animation: reconnect-pulse 1.5s ease-in-out infinite;
 }
 
