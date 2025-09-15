@@ -2,6 +2,7 @@ import '../css/styles.css';
 import { P2PConnection } from './webrtc.js';
 import logger from './logger.js';
 import sanitizer from './sanitizer.js';
+import { initializeUXEnhancements } from './ux-enhancements.js';
 import {
   AppState,
   CONSTANTS,
@@ -1750,19 +1751,15 @@ function updateRoomHistoryUI() {
         </div>
         <div class="flex items-center gap-1">
           <button onclick="event.stopPropagation(); shareRoomById('${room.id}')"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-opacity"
+                  class="neo-btn neo-btn-sm neo-hover-bounce px-2 py-1 text-xs"
                   title="Share room link">
-            <svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-            </svg>
+            Share
           </button>
           ${!isCurrentRoom ? `
             <button onclick="event.stopPropagation(); removeRoomFromHistory('${room.id}')"
-                    class="opacity-0 group-hover:opacity-100 p-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-opacity"
+                    class="neo-btn neo-btn-sm neo-hover-bounce px-2 py-1 text-xs bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-600"
                     title="Remove from history">
-              <svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              Delete
             </button>
           ` : ''}
         </div>
