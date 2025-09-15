@@ -569,6 +569,13 @@ async function ensureUserInitialized() {
         userIdTooltip.textContent = newUserId;
       }
 
+      // Update both desktop and mobile inputs
+      document.getElementById('userName').value = userName;
+      const mobileUserNameInput = document.getElementById('userNameMobile');
+      if (mobileUserNameInput) {
+        mobileUserNameInput.value = userName;
+      }
+
       // Store both username and user ID
       localStorage.setItem('userName', userName);
       localStorage.setItem('userId', newUserId);
@@ -622,6 +629,12 @@ function restoreUserInfo() {
         }
         document.getElementById('userName').value = savedUserName;
 
+        // Also update mobile input if it exists
+        const mobileUserNameInput = document.getElementById('userNameMobile');
+        if (mobileUserNameInput) {
+          mobileUserNameInput.value = savedUserName;
+        }
+
         log(`Restored user: ${savedUserName} with ID: ${savedUserId}`);
         return;
       }
@@ -633,6 +646,13 @@ function restoreUserInfo() {
       window.safeWasm.initialize(userName, userId);
       if (userIdTooltip) {
         userIdTooltip.textContent = userId;
+      }
+
+      // Update both desktop and mobile inputs
+      document.getElementById('userName').value = userName;
+      const mobileUserNameInput = document.getElementById('userNameMobile');
+      if (mobileUserNameInput) {
+        mobileUserNameInput.value = userName;
       }
 
       // Store both username and user ID
@@ -1426,6 +1446,13 @@ function handleInitializeUser(userName = null) {
     const tooltip = document.getElementById('userIdTooltip');
     if (tooltip) {
       tooltip.textContent = userId;
+    }
+
+    // Update both desktop and mobile inputs
+    document.getElementById('userName').value = userName;
+    const mobileUserNameInput = document.getElementById('userNameMobile');
+    if (mobileUserNameInput) {
+      mobileUserNameInput.value = userName;
     }
 
     // Store both username and user ID
