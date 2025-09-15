@@ -368,24 +368,54 @@ function saveChatHistory(roomId) {
  * @param {Object} message - Message object
  */
 function addMessageToHistory(roomId, message) {
+  console.log(`🗂️ ========== ADD MESSAGE TO HISTORY STARTED ==========`);
+  console.log(`🗂️ Adding message to history: roomId=${roomId}, messageId=${message.id}`);
+  console.log(`🗂️ Message to add:`, message);
+
   const roomHistory = AppState.chatHistory.get(roomId);
+  console.log(`🗂️ Current room history:`, roomHistory);
+
   if (!roomHistory) {
-    AppState.chatHistory.set(roomId, {
+    console.log(`🗂️ No existing history, creating new room history`);
+    const newHistory = {
       messages: [message],
       lastSync: 0
-    });
+    };
+    AppState.chatHistory.set(roomId, newHistory);
+    console.log(`🗂️ Created new room history:`, newHistory);
   } else {
+    console.log(`🗂️ Existing history found with ${roomHistory.messages.length} messages`);
+
     // Check if message already exists (avoid duplicates)
     const exists = roomHistory.messages.some(msg => msg.id === message.id);
+    console.log(`🗂️ Message already exists check: ${exists}`);
+
     if (!exists) {
+      console.log(`🗂️ Adding new message to existing history`);
       roomHistory.messages.push(message);
+      console.log(`🗂️ Messages after push: ${roomHistory.messages.length}`);
+
       // Sort messages by timestamp
       roomHistory.messages.sort((a, b) => a.timestamp - b.timestamp);
+      console.log(`🗂️ Messages after sort: ${roomHistory.messages.length}`);
+      console.log(`🗂️ Latest message after sort:`, roomHistory.messages[roomHistory.messages.length - 1]);
+    } else {
+      console.log(`🗂️ Message already exists, skipping duplicate`);
     }
   }
 
+  console.log(`🗂️ Final room history state:`, AppState.chatHistory.get(roomId));
+
   // Save to localStorage
-  saveChatHistory(roomId);
+  console.log(`🗂️ Saving to localStorage...`);
+  try {
+    saveChatHistory(roomId);
+    console.log(`✅ Saved to localStorage successfully`);
+  } catch (saveError) {
+    console.error(`❌ Failed to save to localStorage:`, saveError);
+  }
+
+  console.log(`🗂️ ========== ADD MESSAGE TO HISTORY COMPLETED ==========`);
 }
 
 /**
@@ -1079,22 +1109,42 @@ function handleIncomingP2PMessage(message, peerId) {
  * Send a message to the current room
  */
 function sendMessage() {
+  debugLog(`🚀 ========== SENDMESSAGE STARTED ==========`);
+
   const messageInput = document.getElementById('messageInput');
   const message = messageInput.value.trim();
 
-  if (!message) return;
+  debugLog(`📝 Message input value: "${message}"`);
+
+  if (!message) {
+    debugLog(`❌ Empty message, aborting send`);
+    return;
+  }
 
   // Get the current room ID safely
   const roomId = getCurrentRoomId();
+  debugLog(`🏠 Current room ID: ${roomId}`);
   if (!roomId) {
+    debugLog(`❌ No room ID available`);
     log('Please create or join a room first');
     return;
   }
 
   try {
+    // Check if user is properly initialized
+    const userId = getCurrentUserId();
+    debugLog(`👤 Current user ID: ${userId}`);
+    if (!userId || userId === 'Not initialized') {
+      debugLog(`❌ Cannot send message: User not initialized. userId=${userId}`);
+      log('Please wait for user initialization before sending messages');
+      return;
+    }
+
     // Generate message ID on client side
     const messageId = generateUUID();
     const userName = document.getElementById('userName').value || 'Anonymous';
+
+    console.log(`📝 Sending message: userId=${userId}, userName=${userName}, messageId=${messageId}, roomId=${roomId}`);
 
     // Create message object
     const messageObj = {
@@ -1106,45 +1156,119 @@ function sendMessage() {
       timestamp: Date.now()
     };
 
+    console.log(`📦 Created message object:`, messageObj);
+
+    // Validate message object
+    if (!messageObj.id || !messageObj.content || !messageObj.senderId) {
+      console.error(`❌ Invalid message object:`, messageObj);
+      log('Failed to create valid message object');
+      return;
+    }
+
+    // Check P2P connection status
+    console.log(`🌐 P2P Connection state:`, {
+      hasConnection: !!AppState.p2pConnection,
+      connectionId: AppState.p2pConnection?.clientId,
+      roomConnected: AppState.p2pConnection?.roomId
+    });
+
     // Send via P2P if connected
     if (AppState.p2pConnection) {
-      console.log(`📤 Broadcasting chat message at ${new Date().toISOString()}:`, messageObj);
-      const result = AppState.p2pConnection.broadcast(messageObj);
-      console.log(`📤 Broadcast result:`, result);
+      debugLog(`📤 Broadcasting chat message...`);
+      try {
+        const result = AppState.p2pConnection.broadcast(messageObj);
+        debugLog(`✅ P2P broadcast completed successfully`);
+      } catch (broadcastError) {
+        debugLog(`❌ P2P broadcast failed: ${broadcastError.message}`);
+      }
     } else {
-      console.log(`❌ No P2P connection to broadcast message`);
+      debugLog(`❌ No P2P connection to broadcast message`);
     }
 
     // Store locally in WASM
-    window.safeWasm.send_message(roomId, message, messageId);
+    debugLog(`💾 Attempting to store in WASM...`);
+    try {
+      if (!window.safeWasm) {
+        throw new Error('window.safeWasm is not available');
+      }
+      if (!window.safeWasm.send_message) {
+        throw new Error('window.safeWasm.send_message function is missing');
+      }
+
+      debugLog(`💾 Calling WASM send_message...`);
+      const wasmResult = window.safeWasm.send_message(roomId, message, messageId);
+      debugLog(`✅ Message stored in WASM successfully`);
+    } catch (wasmError) {
+      debugLog(`❌ Failed to store message in WASM: ${wasmError.message}`);
+      log(`Failed to store message: ${wasmError.message}`);
+    }
 
     // Store in history to prevent duplicates
+    console.log(`📚 Adding to message history: ${messageId}`);
     AppState.messageHistory.set(messageId, messageObj);
+    console.log(`📚 AppState.messageHistory size after add:`, AppState.messageHistory.size);
 
     // Add to persistent chat history
-    addMessageToHistory(roomId, messageObj);
+    console.log(`🗂️ Attempting to add to persistent chat history...`);
+    try {
+      console.log(`🗂️ Calling addMessageToHistory for room: ${roomId}`);
+      addMessageToHistory(roomId, messageObj);
+      console.log(`✅ Message added to persistent history successfully`);
+
+      // Verify it was added
+      const roomHistory = AppState.chatHistory.get(roomId);
+      console.log(`🗂️ Room history after add:`, {
+        roomId: roomId,
+        messageCount: roomHistory?.messages?.length || 0,
+        lastMessage: roomHistory?.messages?.[roomHistory.messages.length - 1]
+      });
+    } catch (historyError) {
+      console.error(`❌ Failed to add message to persistent history:`, historyError);
+      console.error(`❌ History Error stack:`, historyError.stack);
+    }
 
     // Clear input and send clear-draft message
+    console.log(`🧹 Clearing input field`);
     messageInput.value = '';
 
     // Send clear draft message to peers
     if (AppState.p2pConnection) {
-      AppState.p2pConnection.broadcast({
-        type: 'clear-draft',
-        senderId: getCurrentUserId(),
-        timestamp: Date.now()
-      });
+      console.log(`🧹 Broadcasting clear-draft message`);
+      try {
+        const clearResult = AppState.p2pConnection.broadcast({
+          type: 'clear-draft',
+          senderId: getCurrentUserId(),
+          timestamp: Date.now()
+        });
+        console.log(`🧹 Clear-draft broadcast result:`, clearResult);
+      } catch (clearError) {
+        console.error(`❌ Failed to broadcast clear-draft:`, clearError);
+      }
     }
 
     // Display the message in chat
-    displayMessage(message, true, userName);
+    console.log(`🖥️ Displaying message in chat UI`);
+    try {
+      displayMessage(message, true, userName);
+      console.log(`✅ Message displayed in UI successfully`);
+    } catch (displayError) {
+      console.error(`❌ Failed to display message in UI:`, displayError);
+    }
 
     // Ensure chat stays scrolled to bottom after sending
     scrollChatToBottom('smooth', 50);
 
     // Retrieve messages for debugging
-    setTimeout(retrieveMessages, 500, roomId);
+    console.log(`🔍 Scheduling message retrieval for verification...`);
+    setTimeout(() => {
+      console.log(`🔍 Retrieving messages for verification...`);
+      retrieveMessages(roomId);
+    }, 500);
+
+    debugLog(`🏁 ========== SENDMESSAGE COMPLETED ==========`);
   } catch (error) {
+    console.error(`💥 Critical error in sendMessage:`, error);
+    console.error(`💥 Error stack:`, error.stack);
     log(`Error sending message: ${error.message}`);
   }
 }
@@ -1154,26 +1278,61 @@ function sendMessage() {
  * @param {string} roomId - Room ID to get messages from
  */
 function retrieveMessages(roomId) {
+  console.log(`🔍 ========== RETRIEVE MESSAGES STARTED ==========`);
+  console.log(`🔍 Retrieving messages for room: ${roomId}`);
+
   try {
-    // Get messages from the WASM module
+    if (!window.safeWasm) {
+      throw new Error('window.safeWasm is not available');
+    }
+    if (!window.safeWasm.get_messages) {
+      throw new Error('window.safeWasm.get_messages function is missing');
+    }
+
+    console.log(`🔍 Calling WASM get_messages for room: ${roomId}`);
     const messagesResult = window.safeWasm.get_messages(roomId);
-    
+    console.log(`🔍 WASM get_messages returned:`, {
+      type: typeof messagesResult,
+      length: messagesResult?.length,
+      value: messagesResult
+    });
+
     // Parse the JSON string
     if (typeof messagesResult === 'string') {
       try {
         const messages = JSON.parse(messagesResult);
+        console.log(`✅ Retrieved ${messages.length} messages from room ${roomId}`);
+        console.log(`📋 Messages retrieved:`, messages);
+
+        // Also check JavaScript-side message history
+        const jsHistory = AppState.chatHistory.get(roomId);
+        console.log(`📋 JS history comparison:`, {
+          wasmMessageCount: messages.length,
+          jsMessageCount: jsHistory?.messages?.length || 0,
+          jsMessages: jsHistory?.messages || []
+        });
+
+        // Check if latest message persisted
+        if (messages.length > 0) {
+          const latestWasmMessage = messages[messages.length - 1];
+          console.log(`🔍 Latest WASM message:`, latestWasmMessage);
+        }
+
         log(`Retrieved ${messages.length} messages from room ${roomId}`);
-        
+
         // In a real app, we would update the chat UI with all messages
       } catch (jsonError) {
-        console.error("Failed to parse messages JSON:", jsonError, "Raw JSON:", messagesResult);
+        console.error("❌ Failed to parse messages JSON:", jsonError, "Raw JSON:", messagesResult);
       }
     } else {
-      console.warn(`Unexpected type from get_messages: ${typeof messagesResult}`);
+      console.warn(`⚠️ Unexpected type from get_messages: ${typeof messagesResult}, value:`, messagesResult);
     }
   } catch (error) {
-    console.error('Error retrieving messages:', error);
+    console.error('❌ Error retrieving messages:', error);
+    console.error('❌ Error stack:', error.stack);
   }
+
+  console.log(`🔍 ========== RETRIEVE MESSAGES COMPLETED ==========`);
 }
 
 /**
@@ -1465,6 +1624,61 @@ function log(message) {
 function updateDebugOutput(message) {
   // Debug output removed for production - using console.error instead
   console.error('Debug:', message);
+}
+
+/**
+ * Visual debug system for mobile devices
+ */
+let debugVisible = false;
+
+function debugLog(message) {
+  console.log(message);
+
+  // Also add to visual debug panel
+  const debugContent = document.getElementById('debugContent');
+  if (debugContent) {
+    const timestamp = new Date().toLocaleTimeString();
+    debugContent.textContent += `[${timestamp}] ${message}\n`;
+    debugContent.scrollTop = debugContent.scrollHeight;
+
+    // Auto-show debug panel if there's new content
+    if (!debugVisible) {
+      showDebugPanel();
+    }
+  }
+}
+
+function showDebugPanel() {
+  const debugPanel = document.getElementById('debugPanel');
+  if (debugPanel) {
+    debugPanel.style.display = 'block';
+    debugVisible = true;
+
+    const toggleBtn = document.getElementById('debugToggleBtn');
+    if (toggleBtn) {
+      toggleBtn.textContent = '🐛 Hide';
+    }
+  }
+}
+
+function hideDebugPanel() {
+  const debugPanel = document.getElementById('debugPanel');
+  if (debugPanel) {
+    debugPanel.style.display = 'none';
+    debugVisible = false;
+
+    const toggleBtn = document.getElementById('debugToggleBtn');
+    if (toggleBtn) {
+      toggleBtn.textContent = '🐛 Debug';
+    }
+  }
+}
+
+function clearDebugPanel() {
+  const debugContent = document.getElementById('debugContent');
+  if (debugContent) {
+    debugContent.textContent = '';
+  }
 }
 
 /**
