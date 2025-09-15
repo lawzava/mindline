@@ -1,34 +1,34 @@
 /* World-class Neobrutalist styles */
 :root {
-    --bg-light: #ffffff;
-    --bg-dark: #1a1a1a;
-    --border-light: #000000;
-    --border-dark: #ffffff;
-    --shadow-light: #ff6b6b;
-    --shadow-dark: #4ecdc4;
-    --accent-light: #ffeb3b;
-    --accent-dark: #ff9800;
-    --primary-light: #e91e63;
-    --primary-dark: #9c27b0;
-    --secondary-light: #2196f3;
-    --secondary-dark: #03dac6;
-    --success-light: #4caf50;
-    --success-dark: #00e676;
-    --error-light: #f44336;
-    --error-dark: #ff5722;
-    --text-light: #000000;
-    --text-dark: #ffffff;
-    --warning-light: #ff9800;
-    --warning-dark: #ffc107;
-    --surface-light: #f5f5f5;
-    --surface-dark: #2d2d2d;
+    --bg-light: #F1FAEE;
+    --bg-dark: #1D3557;
+    --border-light: #1D3557;
+    --border-dark: #F1FAEE;
+    --shadow-light: #457B9D;
+    --shadow-dark: #F9C74F;
+    --accent-light: #F1C40F;
+    --accent-dark: #F3722C;
+    --primary-light: #E63946;
+    --primary-dark: #F3722C;
+    --secondary-light: #457B9D;
+    --secondary-dark: #A8DADC;
+    --success-light: #2A9D8F;
+    --success-dark: #2A9D8F;
+    --error-light: #E63946;
+    --error-dark: #F3722C;
+    --text-light: #1D3557;
+    --text-dark: #F1FAEE;
+    --warning-light: #F9C74F;
+    --warning-dark: #F1C40F;
+    --surface-light: #D8E2DC;
+    --surface-dark: #457B9D;
     --hero-shadow: 12px 12px 0px;
     --large-shadow: 10px 10px 0px;
     --medium-shadow: 8px 8px 0px;
     --small-shadow: 6px 6px 0px;
     --micro-shadow: 4px 4px 0px;
     --mega-shadow: 16px 16px 0px;
-    --focus-outline: 3px solid #88c0d0;
+    --focus-outline: 3px solid #A8DADC;
 }
 
 body {
@@ -40,6 +40,8 @@ body {
     --secondary-color: var(--secondary-light);
     --success-color: var(--success-light);
     --error-color: var(--error-light);
+    --warning-color: var(--warning-light);
+    --surface-color: var(--surface-light);
     --text-color: var(--text-light);
     --input-text: var(--text-light);
     --input-bg: var(--bg-light);
@@ -77,18 +79,19 @@ body.dark {
 /* Enhanced card system with hierarchy */
 .neo-card {
     background-color: var(--bg-color);
-    border: 4px solid var(--border-color);
+    border: 6px solid var(--border-color);
     box-shadow: var(--medium-shadow) var(--shadow-color);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: none;
     position: relative;
     overflow: hidden;
     transform: translate(0, 0);
+    border-radius: 0;
 }
 
 .neo-card:hover {
     transform: translate(-4px, -4px);
     box-shadow: var(--mega-shadow) var(--shadow-color);
-    border-width: 5px;
+    border-width: 8px;
 }
 
 .neo-card:focus-within {
@@ -102,42 +105,44 @@ body.dark {
 /* Hero card for main chat */
 .neo-card-hero {
     background-color: var(--bg-color);
-    border: 6px solid var(--border-color);
+    border: 8px solid var(--border-color);
     box-shadow: var(--mega-shadow) var(--shadow-color);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: none;
     position: relative;
     overflow: hidden;
     transform: translate(0, 0);
+    border-radius: 0;
 }
 
 .neo-card-hero:hover {
     transform: translate(-6px, -6px);
     box-shadow: 20px 20px 0px var(--shadow-color);
-    border-width: 7px;
+    border-width: 10px;
 }
 
 /* Compact sidebar cards */
 .neo-card-compact {
     background-color: var(--bg-color);
-    border: 3px solid var(--border-color);
+    border: 5px solid var(--border-color);
     box-shadow: var(--small-shadow) var(--shadow-color);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: none;
     position: relative;
     transform: translate(0, 0);
+    border-radius: 0;
 }
 
 .neo-card-compact:hover {
     transform: translate(-3px, -3px);
     box-shadow: var(--large-shadow) var(--shadow-color);
-    border-width: 4px;
+    border-width: 7px;
 }
 
 /* Enhanced Message bubble styling */
 .neo-message-bubble {
-    border: 2px solid var(--border-color);
+    border: 4px solid var(--border-color);
     padding: 0.45rem 0.75rem;
     box-shadow: var(--micro-shadow) var(--shadow-color);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: none;
     position: relative;
     transform: translate(0, 0);
     max-width: min(75%, 400px);
@@ -147,7 +152,7 @@ body.dark {
     word-break: break-word;
     overflow-wrap: break-word;
     white-space: pre-wrap;
-    border-radius: 8px;
+    border-radius: 12px;
     overflow: hidden;
     animation: message-slide-in 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
@@ -159,14 +164,14 @@ body.dark {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+    background: rgba(255,255,255,0.15);
     transition: left 0.6s ease;
 }
 
 .neo-message-bubble:hover {
     transform: translate(-3px, -3px) scale(1.02);
     box-shadow: var(--medium-shadow) var(--shadow-color);
-    border-width: 4px;
+    border-width: 6px;
     z-index: 10;
 }
 
@@ -176,29 +181,40 @@ body.dark {
 
 /* Message bubble variants */
 .neo-message-bubble.sent {
-    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
-    color: white;
-    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: var(--text-dark);
+    border-color: var(--border-light);
     margin-left: auto;
     margin-right: 0;
-    text-shadow: 1px 1px 0px rgba(0,0,0,0.3);
+    text-shadow: 1px 1px 0px var(--shadow-color);
 }
 
 .neo-message-bubble.received {
-    background: linear-gradient(135deg, var(--surface-light), var(--bg-color));
+    background: var(--surface-color);
     color: var(--text-color);
-    border-color: var(--secondary-color);
+    border-color: var(--border-color);
     margin-left: 0;
     margin-right: auto;
+    box-shadow: var(--micro-shadow) var(--secondary-color);
+}
+
+.neo-message-bubble.received:hover {
+    transform: translate(-3px, -3px) scale(1.02);
+    box-shadow: var(--medium-shadow) var(--secondary-color);
+    border-width: 6px;
+    z-index: 10;
+    margin-left: 8px;
 }
 
 .dark .neo-message-bubble.received {
-    background: linear-gradient(135deg, var(--surface-dark), var(--bg-dark));
+    background: var(--surface-dark);
+    border-color: var(--border-color);
 }
 
 .dark .neo-message-bubble.sent {
-    background: linear-gradient(135deg, var(--shadow-color), var(--accent-color));
-    border-color: var(--primary-color);
+    background: var(--primary-dark);
+    border-color: var(--border-dark);
+    color: var(--text-dark);
 }
 
 /* Message timestamp styling */
@@ -226,7 +242,7 @@ body.dark {
 }
 
 .neo-message-bubble.sent .message-sender {
-    color: rgba(255,255,255,0.8);
+    color: rgba(241,250,238,0.8);
 }
 
 /* Message content styling */
@@ -276,7 +292,7 @@ body.dark {
 
 /* Enhanced header system */
 .neo-header {
-    background-color: var(--accent-color);
+    background-color: var(--primary-color);
     border-bottom: 5px solid var(--border-color);
     padding: 1.5rem;
     font-weight: 900;
@@ -286,7 +302,7 @@ body.dark {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    color: var(--text-color);
+    color: var(--text-dark);
     position: relative;
     overflow: hidden;
     text-shadow: 2px 2px 0px var(--shadow-color);
@@ -299,7 +315,7 @@ body.dark {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    background: rgba(255,255,255,0.2);
     transition: left 0.5s ease;
 }
 
@@ -309,21 +325,21 @@ body.dark {
 
 /* Hero header for main sections */
 .neo-header-hero {
-    background: linear-gradient(135deg, var(--shadow-color), var(--accent-color));
+    background: var(--primary-color);
     border-bottom: 4px solid var(--border-color);
     padding: 0.5rem;
     font-weight: 900;
     font-size: 1rem;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--text-color);
-    text-shadow: 2px 2px 0px var(--shadow-color);
+    color: var(--text-dark);
+    text-shadow: 2px 2px 0px var(--border-color);
     position: relative;
 }
 
 /* Compact header for sidebar */
 .neo-header-compact {
-    background-color: var(--surface-light);
+    background-color: var(--surface-color);
     border-bottom: 3px solid var(--border-color);
     padding: 1rem 1.25rem;
     font-weight: 800;
@@ -338,18 +354,19 @@ body.dark {
 .neo-input {
     width: 100%;
     padding: 1.25rem;
-    border: 4px solid var(--border-color);
+    border: 6px solid var(--border-color);
     background-color: var(--input-bg);
     color: var(--input-text);
     font-family: 'Inter', sans-serif;
     font-size: 1.125rem;
-    font-weight: 700;
-    transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    font-weight: 400;
+    transition: none;
     position: relative;
     transform: translate(0, 0);
     text-shadow: 1px 1px 0px var(--shadow-color);
     box-shadow: var(--small-shadow) var(--shadow-color);
     overflow: hidden;
+    border-radius: 0;
 }
 
 .neo-input::before {
@@ -359,7 +376,7 @@ body.dark {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    background: rgba(255,255,255,0.1);
     transition: left 0.5s ease;
     pointer-events: none;
 }
@@ -369,7 +386,7 @@ body.dark {
     box-shadow: var(--large-shadow) var(--shadow-color);
     transform: translate(-4px, -4px);
     border-color: var(--secondary-color);
-    border-width: 5px;
+    border-width: 8px;
     z-index: 5;
     scale: 1.02;
 }
@@ -381,7 +398,7 @@ body.dark {
 .neo-input:hover:not(:focus) {
     transform: translate(-3px, -3px);
     box-shadow: var(--medium-shadow) var(--shadow-color);
-    border-width: 5px;
+    border-width: 8px;
 }
 
 .neo-input::placeholder {
@@ -393,13 +410,13 @@ body.dark {
 /* Input success state */
 .neo-input.success {
     border-color: var(--success-color);
-    background: linear-gradient(135deg, var(--input-bg), rgba(163, 190, 140, 0.1));
+    background: var(--input-bg);
 }
 
 /* Input error state */
 .neo-input.error {
     border-color: var(--error-color);
-    background: linear-gradient(135deg, var(--input-bg), rgba(191, 97, 106, 0.1));
+    background: var(--input-bg);
     animation: input-shake 0.5s ease-in-out;
 }
 
@@ -437,28 +454,29 @@ body.dark {
 /* Hero input for main message */
 .neo-input-hero {
     padding: 1.5rem 2rem;
-    border: 6px solid var(--border-color);
+    border: 8px solid var(--border-color);
     font-size: 1.25rem;
-    font-weight: 800;
+    font-weight: 400;
     background: var(--input-bg);
+    border-radius: 0;
 }
 
 .neo-input-hero:focus {
     transform: translate(-2px, -2px);
     border-color: var(--primary-color);
-    border-width: 7px;
+    border-width: 10px;
     scale: 1.01;
 }
 
 /* Enhanced button system */
 .neo-btn {
     padding: 1rem 2rem;
-    border: 4px solid var(--border-color);
+    border: 6px solid var(--border-color);
     font-weight: 900;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     box-shadow: var(--medium-shadow) var(--shadow-color);
-    transition: all 0.1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transition: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -482,7 +500,7 @@ body.dark {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    background: rgba(255,255,255,0.3);
     transition: left 0.4s ease;
 }
 
@@ -493,14 +511,14 @@ body.dark {
 .neo-btn:hover {
     transform: translate(-4px, -4px);
     box-shadow: var(--large-shadow) var(--shadow-color);
-    border-width: 5px;
+    border-width: 8px;
     scale: 1.02;
 }
 
 .neo-btn:active {
     transform: translate(2px, 2px);
     box-shadow: var(--micro-shadow) var(--shadow-color);
-    border-width: 3px;
+    border-width: 4px;
     scale: 0.98;
 }
 
@@ -523,33 +541,33 @@ body.dark {
 
 /* Enhanced Button variants with feedback */
 .neo-btn-primary {
-    background: linear-gradient(135deg, var(--primary-color), var(--error-color));
-    color: white;
-    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: var(--text-dark);
+    border-color: var(--border-light);
     font-weight: 900;
-    text-shadow: 2px 2px 0px rgba(0,0,0,0.5);
+    text-shadow: 2px 2px 0px var(--shadow-color);
     position: relative;
     overflow: hidden;
 }
 
 .neo-btn-primary:hover {
-    background: linear-gradient(135deg, var(--error-color), var(--primary-color));
+    background: var(--error-color);
     box-shadow: var(--mega-shadow) var(--shadow-color);
     transform: translate(-6px, -6px);
-    border-width: 6px;
+    border-width: 8px;
     scale: 1.05;
 }
 
 /* Button success state */
 .neo-btn.success {
-    background: linear-gradient(135deg, var(--success-color), #88c999);
+    background: var(--success-color);
     border-color: var(--success-color);
     animation: button-success 0.6s ease-out;
 }
 
 /* Button error state */
 .neo-btn.error {
-    background: linear-gradient(135deg, var(--error-color), #d47685);
+    background: var(--error-color);
     border-color: var(--error-color);
     animation: button-error 0.6s ease-out;
 }
@@ -609,41 +627,42 @@ body.dark {
 }
 
 .neo-btn-secondary {
-    background: linear-gradient(135deg, var(--secondary-color), var(--secondary-dark));
-    color: white;
-    border-color: var(--secondary-color);
+    background: var(--secondary-color);
+    color: var(--text-dark);
+    border-color: var(--border-light);
     font-weight: 900;
-    text-shadow: 2px 2px 0px rgba(0,0,0,0.5);
+    text-shadow: 2px 2px 0px var(--shadow-color);
 }
 
 .neo-btn-secondary:hover {
-    background: linear-gradient(135deg, var(--secondary-dark), var(--secondary-color));
+    background: var(--secondary-dark);
     box-shadow: var(--mega-shadow) var(--shadow-color);
     transform: translate(-6px, -6px);
-    border-width: 6px;
+    border-width: 8px;
     scale: 1.05;
 }
 
 .neo-btn-success {
-    background: linear-gradient(135deg, var(--success-color), #88c999);
-    color: white;
-    border-color: var(--success-color);
+    background: var(--success-color);
+    color: var(--text-dark);
+    border-color: var(--border-light);
 }
 
 .neo-btn-warning {
-    background: linear-gradient(135deg, var(--warning-color), #e8a87c);
-    color: white;
-    border-color: var(--warning-color);
+    background: var(--warning-color);
+    color: var(--text-color);
+    border-color: var(--border-light);
 }
 
 /* Hero button for primary actions */
 .neo-btn-hero {
     padding: 1.25rem 2rem;
-    border: 4px solid var(--border-color);
+    border: 8px solid var(--border-color);
     font-size: 1rem;
     font-weight: 800;
     box-shadow: var(--hero-shadow) var(--shadow-color);
     min-height: 56px;
+    border-radius: 0;
 }
 
 .neo-btn-hero:hover {
@@ -654,11 +673,12 @@ body.dark {
 /* Compact button for secondary actions */
 .neo-btn-compact {
     padding: 0.5rem 1rem;
-    border: 2px solid var(--border-color);
+    border: 4px solid var(--border-color);
     font-size: 0.75rem;
     font-weight: 600;
     box-shadow: var(--small-shadow) var(--shadow-color);
     min-height: 40px;
+    border-radius: 0;
 }
 
 /* Icon button */
@@ -700,12 +720,12 @@ body.dark {
 /* Enhanced status indicators */
 .status-indicator {
     padding: 0.875rem 1.5rem;
-    border: 3px solid var(--border-color);
+    border: 5px solid var(--border-color);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     box-shadow: var(--small-shadow) var(--shadow-color);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: none;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -714,6 +734,7 @@ body.dark {
     overflow: hidden;
     font-size: 0.875rem;
     gap: 0.5rem;
+    border-radius: 0;
 }
 
 .status-indicator::before {
@@ -727,7 +748,7 @@ body.dark {
 }
 
 .status-connected {
-    background: linear-gradient(135deg, var(--success-color), #88c999);
+    background: var(--success-color);
     color: white;
     border-color: var(--success-color);
     box-shadow: var(--medium-shadow) var(--success-color);
@@ -745,7 +766,7 @@ body.dark {
 }
 
 .status-disconnected {
-    background: linear-gradient(135deg, var(--error-color), #d47685);
+    background: var(--error-color);
     color: white;
     border-color: var(--error-color);
     box-shadow: var(--medium-shadow) var(--error-color);
@@ -761,7 +782,7 @@ body.dark {
 }
 
 .status-connecting {
-    background: linear-gradient(135deg, var(--warning-color), var(--accent-color));
+    background: var(--warning-color);
     color: var(--text-color);
     border-color: var(--warning-color);
     box-shadow: var(--medium-shadow) var(--warning-color);
@@ -779,7 +800,7 @@ body.dark {
 }
 
 .status-failed {
-    background: linear-gradient(135deg, var(--error-color), #8b4049);
+    background: var(--error-color);
     color: white;
     border-color: var(--error-color);
     box-shadow: var(--medium-shadow) var(--error-color);
@@ -792,7 +813,7 @@ body.dark {
 }
 
 .status-reconnecting {
-    background: linear-gradient(135deg, var(--warning-color), var(--accent-color));
+    background: var(--warning-color);
     color: var(--text-color);
     border-color: var(--warning-color);
     box-shadow: var(--medium-shadow) var(--warning-color);
@@ -897,7 +918,7 @@ h1, h2, h3, h4, h5, h6 {
     top: 1rem;
     left: 1rem;
     z-index: 1000;
-    background: linear-gradient(135deg, var(--primary-color), var(--error-color));
+    background: var(--primary-color);
     color: white;
     border: 3px solid var(--border-color);
     box-shadow: var(--small-shadow) var(--shadow-color);
@@ -987,11 +1008,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Loading States & Skeleton Screens */
 .skeleton {
-    background: linear-gradient(90deg,
-        var(--surface-light) 25%,
-        var(--bg-color) 50%,
-        var(--surface-light) 75%);
-    background-size: 200% 100%;
+    background: var(--surface-light);
     animation: skeleton-loading 1.5s infinite;
     border-radius: 4px;
 }
@@ -1084,25 +1101,25 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .toast-success {
-    background: linear-gradient(135deg, var(--success-color), #88c999);
+    background: var(--success-color);
     color: white;
     border-color: var(--success-color);
 }
 
 .toast-error {
-    background: linear-gradient(135deg, var(--error-color), #d47685);
+    background: var(--error-color);
     color: white;
     border-color: var(--error-color);
 }
 
 .toast-warning {
-    background: linear-gradient(135deg, var(--warning-color), var(--accent-color));
+    background: var(--warning-color);
     color: var(--text-color);
     border-color: var(--warning-color);
 }
 
 .toast-info {
-    background: linear-gradient(135deg, var(--secondary-color), var(--secondary-dark));
+    background: var(--secondary-color);
     color: white;
     border-color: var(--secondary-color);
 }
@@ -1221,7 +1238,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .feature-card {
-    background: linear-gradient(135deg, var(--surface-light), var(--bg-color));
+    background: var(--surface-light);
     border: 3px solid var(--border-color);
     border-radius: 12px;
     padding: 1.5rem 1rem;
@@ -1232,7 +1249,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .dark .feature-card {
-    background: linear-gradient(135deg, var(--surface-dark), var(--bg-dark));
+    background: var(--surface-dark);
 }
 
 .feature-card:hover {
@@ -1248,7 +1265,7 @@ h1, h2, h3, h4, h5, h6 {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    background: rgba(255,255,255,0.1);
     transition: left 0.6s ease;
 }
 
@@ -1280,7 +1297,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Welcome steps */
 .welcome-steps {
-    background: linear-gradient(135deg, var(--accent-color), var(--warning-light));
+    background: var(--accent-color);
     border: 3px solid var(--border-color);
     border-radius: 12px;
     padding: 2rem;
@@ -1400,7 +1417,7 @@ h1, h2, h3, h4, h5, h6 {
     right: 2rem;
     width: 56px;
     height: 56px;
-    background: linear-gradient(135deg, var(--primary-color), var(--error-color));
+    background: var(--primary-color);
     color: white;
     border: 3px solid var(--border-color);
     border-radius: 50%;
@@ -2158,7 +2175,7 @@ h1, h2, h3, h4, h5, h6 {
     top: 20px;
     left: 20px;
     right: 20px;
-    background: linear-gradient(135deg, var(--success-color), #88c999);
+    background: var(--success-color);
     color: white;
     border: 3px solid var(--border-color);
     box-shadow: var(--medium-shadow) var(--shadow-color);
@@ -2453,9 +2470,7 @@ h1, h2, h3, h4, h5, h6 {
 .draft-messages-area {
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     border: 3px dashed var(--border-color);
-    background: linear-gradient(135deg,
-        rgba(235, 203, 139, 0.15),
-        rgba(208, 135, 112, 0.15));
+    background: rgba(235, 203, 139, 0.15);
     border-radius: 12px;
     position: relative;
     overflow: hidden;
@@ -2469,17 +2484,12 @@ h1, h2, h3, h4, h5, h6 {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg,
-        transparent,
-        rgba(235, 203, 139, 0.3),
-        transparent);
+    background: rgba(235, 203, 139, 0.3);
     animation: draft-shimmer 3s infinite;
 }
 
 .draft-message {
-    background: linear-gradient(135deg,
-        var(--warning-color),
-        var(--accent-color));
+    background: var(--warning-color);
     border: 3px solid var(--border-color);
     border-radius: 10px;
     padding: 0.875rem 1.25rem;
@@ -2505,7 +2515,7 @@ h1, h2, h3, h4, h5, h6 {
     top: 0;
     height: 100%;
     width: 4px;
-    background: linear-gradient(135deg, var(--error-color), #dc2626);
+    background: var(--error-color);
     animation: live-bar 2s infinite;
 }
 
@@ -2515,7 +2525,7 @@ h1, h2, h3, h4, h5, h6 {
     align-items: center;
     gap: 0.5rem;
     padding: 0.75rem 1rem;
-    background: linear-gradient(135deg, var(--surface-light), var(--bg-color));
+    background: var(--surface-light);
     border: 2px solid var(--border-color);
     border-radius: 8px;
     margin: 0.5rem;
@@ -2525,7 +2535,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .dark .typing-indicator {
-    background: linear-gradient(135deg, var(--surface-dark), var(--bg-dark));
+    background: var(--surface-dark);
 }
 
 .typing-indicator::before {
@@ -2535,7 +2545,7 @@ h1, h2, h3, h4, h5, h6 {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    background: rgba(255,255,255,0.1);
     animation: typing-shimmer 2s infinite;
 }
 
@@ -2689,7 +2699,7 @@ h1, h2, h3, h4, h5, h6 {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    background: rgba(255,255,255,0.3);
     animation: title-shine 3s infinite;
 }
 
@@ -2772,7 +2782,7 @@ h1, h2, h3, h4, h5, h6 {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+    background: var(--accent-color);
     opacity: 0;
     transition: all 0.3s ease;
 }
@@ -2964,8 +2974,7 @@ h1, h2, h3, h4, h5, h6 {
     left: -2px;
     right: -2px;
     bottom: -2px;
-    background: linear-gradient(45deg, var(--primary-color), var(--secondary-color), var(--accent-color), var(--error-color));
-    background-size: 400% 400%;
+    background: var(--primary-color);
     animation: extreme-gradient 3s ease infinite;
     z-index: -1;
 }
@@ -3009,7 +3018,7 @@ h1, h2, h3, h4, h5, h6 {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    background: rgba(255,255,255,0.4);
     transition: left 0.5s ease;
 }
 
