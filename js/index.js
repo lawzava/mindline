@@ -470,15 +470,22 @@ function handleSyncRequest(message, peerId) {
   const peerLastSync = message.lastSync;
   const peerMessageCount = message.messageCount;
 
+  console.log(`📨 Handling sync request from ${peerId} for room ${roomId}, peerLastSync: ${peerLastSync}, peerMessageCount: ${peerMessageCount}`);
+
   const roomHistory = AppState.chatHistory.get(roomId);
   if (!roomHistory) {
+    console.log(`❌ No room history found for ${roomId}`);
     return;
   }
+
+  console.log(`📚 Local room history has ${roomHistory.messages.length} messages, lastSync: ${roomHistory.lastSync}`);
 
   // Find messages that peer might be missing (newer than their lastSync)
   const missingMessages = roomHistory.messages.filter(msg =>
     msg.timestamp > peerLastSync
   );
+
+  console.log(`🔍 Found ${missingMessages.length} missing messages for peer ${peerId}`);
 
 
   if (missingMessages.length > 0) {
@@ -490,9 +497,14 @@ function handleSyncRequest(message, peerId) {
       timestamp: Date.now()
     };
 
+    console.log(`📤 Sending sync response with ${missingMessages.length} messages to ${peerId}`);
     if (AppState.p2pConnection) {
       AppState.p2pConnection.sendToPeer(peerId, syncResponse);
+    } else {
+      console.log(`❌ No P2P connection to send sync response`);
     }
+  } else {
+    console.log(`✅ Peer ${peerId} is already up to date`);
   }
 }
 
@@ -505,8 +517,10 @@ function handleSyncResponse(message, peerId) {
   const roomId = message.roomId;
   const newMessages = message.messages || [];
 
+  console.log(`📥 Received sync response from ${peerId} for room ${roomId} with ${newMessages.length} messages`);
 
   if (newMessages.length === 0) {
+    console.log(`📭 No new messages in sync response from ${peerId}`);
     return;
   }
 
