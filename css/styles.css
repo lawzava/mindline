@@ -2347,91 +2347,37 @@ h1, h2, h3, h4, h5, h6 {
     }
 }
 
-/* Touch improvements */
+/* Touch improvements - Simple approach */
 @media (hover: none) and (pointer: coarse) {
-    /* Completely disable hover effects on touch devices */
-    .neo-btn:hover,
-    .neo-btn-primary:hover,
-    .neo-btn-secondary:hover,
-    .neo-btn-success:hover,
-    .neo-btn-warning:hover,
-    .neo-btn-hero:hover,
-    .neo-btn-compact:hover,
-    .neo-btn-nuclear:hover {
+    /* Completely disable all hover effects on touch devices */
+    *:hover {
         transform: none !important;
-        box-shadow: var(--medium-shadow) var(--shadow-color) !important;
+        box-shadow: inherit !important;
         border-width: inherit !important;
         scale: 1 !important;
+        background: inherit !important;
     }
 
-    /* Disable hover pseudo-elements */
-    .neo-btn:hover::before,
-    .neo-btn-primary:hover::before,
-    .neo-btn-nuclear:hover::before {
+    /* Disable all hover pseudo-elements */
+    *:hover::before,
+    *:hover::after {
         left: -100% !important;
         opacity: 0 !important;
+        animation: none !important;
     }
 
-    .neo-card:hover,
-    .neo-card-hero:hover,
-    .neo-card-compact:hover,
-    .neo-card-elevated:hover {
-        transform: none !important;
-        box-shadow: var(--large-shadow) var(--shadow-color) !important;
-        border-width: inherit !important;
-        scale: 1 !important;
-    }
-
-    .neo-input:hover,
-    .neo-input-hero:hover {
-        transform: none !important;
-        box-shadow: var(--small-shadow) var(--shadow-color) !important;
-        border-width: inherit !important;
-        scale: 1 !important;
-    }
-
-    /* Better active states for touch with quick reset */
+    /* Only allow very subtle active states */
     .neo-btn:active {
-        transform: scale(0.95) !important;
-        transition: transform 0.1s ease !important;
+        opacity: 0.8 !important;
+        transition: opacity 0.1s ease !important;
     }
 
     .neo-card:active {
-        transform: scale(0.98) !important;
-        transition: transform 0.1s ease !important;
-    }
-
-    /* Ensure transitions reset quickly after touch */
-    .neo-btn,
-    .neo-btn-primary,
-    .neo-btn-secondary,
-    .neo-btn-hero,
-    .neo-btn-nuclear {
-        transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+        opacity: 0.9 !important;
+        transition: opacity 0.1s ease !important;
     }
 }
 
-/* Additional protection against stuck hover states */
-.touching .neo-btn:hover,
-.touching .neo-btn-primary:hover,
-.touching .neo-btn-secondary:hover,
-.touching .neo-btn-success:hover,
-.touching .neo-btn-warning:hover,
-.touching .neo-btn-hero:hover,
-.touching .neo-btn-compact:hover,
-.touching .neo-btn-nuclear:hover {
-    transform: none !important;
-    box-shadow: var(--medium-shadow) var(--shadow-color) !important;
-    border-width: inherit !important;
-    scale: 1 !important;
-}
-
-.touching .neo-btn:hover::before,
-.touching .neo-btn-primary:hover::before,
-.touching .neo-btn-nuclear:hover::before {
-    left: -100% !important;
-    opacity: 0 !important;
-}
 
 /* High DPI/Retina display optimizations */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
