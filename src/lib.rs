@@ -5,6 +5,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 
+// Include sanitizer module
+mod sanitizer;
+use sanitizer::{with_sanitizer, InputSanitizer};
+
 // Configure the WASM crate
 #[wasm_bindgen]
 extern "C" {
@@ -843,4 +847,131 @@ pub fn update_url_with_room(room_id: &str) -> Result<(), JsValue> {
 
     console_log!("URL updated with room ID: {}", room_id);
     Ok(())
+}
+
+// ========== Phase 2: Input Sanitization and Validation ==========
+
+#[wasm_bindgen]
+pub fn validate_room_id(room_id: &str) -> JsValue {
+    match with_sanitizer(|s| s.validate_room_id(room_id)) {
+        Ok(Some(valid_id)) => JsValue::from_str(&valid_id),
+        Ok(None) => JsValue::NULL,
+        Err(e) => {
+            console_log!("Error validating room ID: {:?}", e);
+            JsValue::NULL
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn validate_username(username: &str) -> JsValue {
+    match with_sanitizer(|s| s.validate_username(username)) {
+        Ok(Some(valid_name)) => JsValue::from_str(&valid_name),
+        Ok(None) => JsValue::NULL,
+        Err(e) => {
+            console_log!("Error validating username: {:?}", e);
+            JsValue::NULL
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn validate_message(message: &str) -> JsValue {
+    match with_sanitizer(|s| s.validate_message(message)) {
+        Ok(Some(valid_message)) => JsValue::from_str(&valid_message),
+        Ok(None) => JsValue::NULL,
+        Err(e) => {
+            console_log!("Error validating message: {:?}", e);
+            JsValue::NULL
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn sanitize_html_content(html: &str) -> String {
+    with_sanitizer(|s| s.sanitize_html(html))
+        .unwrap_or_else(|_| html.to_string())
+}
+
+#[wasm_bindgen]
+pub fn validate_url_param(param: &str) -> JsValue {
+    match with_sanitizer(|s| s.validate_url_param(param)) {
+        Ok(Some(valid_param)) => JsValue::from_str(&valid_param),
+        Ok(None) => JsValue::NULL,
+        Err(e) => {
+            console_log!("Error validating URL param: {:?}", e);
+            JsValue::NULL
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn generate_secure_room_id() -> Result<String, JsValue> {
+    with_sanitizer(|s| s.generate_secure_room_id())?
+}
+
+#[wasm_bindgen]
+pub fn check_rate_limit(key: &str, max_attempts: u32, window_ms: u32) -> bool {
+    // We need a special version for rate limiting since it requires mutable access
+    use sanitizer::SANITIZER;
+    SANITIZER.with(|s| {
+        let mut sanitizer_ref = s.borrow_mut();
+        if sanitizer_ref.is_none() {
+            if let Ok(new_sanitizer) = InputSanitizer::new() {
+                *sanitizer_ref = Some(new_sanitizer);
+            } else {
+                return false;
+            }
+        }
+
+        sanitizer_ref
+            .as_mut()
+            .unwrap()
+            .check_rate_limit(key, max_attempts, window_ms)
+            .unwrap_or(false)
+    })
+}
+
+#[wasm_bindgen]
+pub fn validate_file(file_name: &str, file_size: f64, mime_type: &str) -> bool {
+    with_sanitizer(|s| s.validate_file(file_name, file_size as u64, mime_type))
+        .unwrap_or(false)
+}
+
+#[wasm_bindgen]
+pub fn detect_attack_patterns(input: &str) -> JsValue {
+    let patterns = with_sanitizer(|s| s.detect_attack_patterns(input))
+        .unwrap_or_default();
+    serde_wasm_bindgen::to_value(&patterns).unwrap_or(JsValue::NULL)
+}
+
+#[wasm_bindgen]
+pub fn validate_json_input(json_str: &str, max_size: u32) -> JsValue {
+    match with_sanitizer(|s| s.validate_json(json_str, max_size as usize)) {
+        Ok(Some(valid_json)) => JsValue::from_str(&valid_json),
+        Ok(None) => JsValue::NULL,
+        Err(_) => JsValue::NULL,
+    }
+}
+
+// Utility function for batch validation
+#[wasm_bindgen]
+pub fn validate_input_batch(input_type: &str, values: &JsValue) -> JsValue {
+    let values: Vec<String> = serde_wasm_bindgen::from_value(values.clone())
+        .unwrap_or_default();
+
+    let results: Vec<Option<String>> = values
+        .iter()
+        .map(|value| {
+            match input_type {
+                "room_id" => with_sanitizer(|s| s.validate_room_id(value)).unwrap_or(None),
+                "username" => with_sanitizer(|s| s.validate_username(value)).unwrap_or(None),
+                "message" => with_sanitizer(|s| s.validate_message(value)).unwrap_or(None),
+                "url_param" => with_sanitizer(|s| s.validate_url_param(value)).unwrap_or(None),
+                _ => None,
+            }
+        })
+        .collect();
+
+    serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
 }
