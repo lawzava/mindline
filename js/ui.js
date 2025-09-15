@@ -24,7 +24,7 @@ function updateDebugOutput(message) {
 }
 
 /**
- * Display a message in the chat area
+ * Display a message in the chat area with enhanced styling
  * @param {string} message - Message content
  * @param {boolean} isMe - Whether the message is from the current user
  * @param {string} senderName - Name of the sender
@@ -40,31 +40,56 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
     welcomeMessage.style.display = 'none';
   }
 
+  // Create message container
+  const messageContainer = document.createElement('div');
+  messageContainer.className = 'message-container mb-4';
+
+  // Create the message bubble
   const messageElement = document.createElement('div');
+
   // Use provided timestamp or current time as fallback
   const timestamp = messageTimestamp
     ? new Date(messageTimestamp).toLocaleTimeString()
     : new Date().toLocaleTimeString();
 
   if (isMe) {
-    messageElement.className = 'ml-auto max-w-[75%] mb-4 neo-message-bubble bg-primary/20 dark:bg-primary-dark/30';
+    messageElement.className = 'neo-message-bubble sent';
+    messageContainer.style.display = 'flex';
+    messageContainer.style.justifyContent = 'flex-end';
   } else {
-    messageElement.className = 'mr-auto max-w-[75%] mb-4 neo-message-bubble bg-gray-100 dark:bg-gray-800';
+    messageElement.className = 'neo-message-bubble received';
+    messageContainer.style.display = 'flex';
+    messageContainer.style.justifyContent = 'flex-start';
   }
 
-  // Create message structure
+  // Create enhanced message structure
   const senderDiv = document.createElement('div');
-  senderDiv.className = 'text-xs font-bold text-gray-600 dark:text-gray-300 mb-1';
-  senderDiv.textContent = `${senderName} • ${timestamp}`;
+  senderDiv.className = 'message-sender';
+  senderDiv.textContent = senderName;
 
   const contentDiv = document.createElement('div');
-  contentDiv.className = 'text-sm';
+  contentDiv.className = 'message-content';
   contentDiv.textContent = message;
 
+  const timestampDiv = document.createElement('div');
+  timestampDiv.className = 'message-timestamp';
+  timestampDiv.textContent = timestamp;
+
+  // Add status indicator for sent messages
+  if (isMe) {
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'message-status';
+    statusDiv.textContent = 'sent';
+    messageElement.appendChild(statusDiv);
+  }
+
+  // Assemble message
   messageElement.appendChild(senderDiv);
   messageElement.appendChild(contentDiv);
+  messageElement.appendChild(timestampDiv);
 
-  chatArea.appendChild(messageElement);
+  messageContainer.appendChild(messageElement);
+  chatArea.appendChild(messageContainer);
 
   if (shouldScroll) {
     scrollChatToBottom('smooth', 100);
@@ -245,7 +270,7 @@ export function displayChatHistory(messages) {
 }
 
 /**
- * Update draft messages display
+ * Update draft messages display with enhanced styling
  * @param {Map} draftMessages - Map of user ID to draft message
  * @param {string} currentUserId - Current user's ID
  */
@@ -263,21 +288,47 @@ export function updateDraftsDisplay(draftMessages, currentUserId) {
     if (userId !== currentUserId && draft.content && draft.content.trim()) {
       hasDrafts = true;
 
-      const draftElement = document.createElement('div');
-      draftElement.className = 'text-xs text-gray-600 dark:text-gray-400 mb-1 italic';
-      draftElement.innerHTML = `
-        <span class="font-semibold">${draft.sender || 'Someone'}</span> is typing:
-        <span class="text-gray-500 dark:text-gray-500">${draft.content}</span>
-      `;
+      // Create enhanced typing indicator
+      const typingIndicator = document.createElement('div');
+      typingIndicator.className = 'typing-indicator';
 
-      draftsArea.appendChild(draftElement);
+      // User name
+      const userSpan = document.createElement('span');
+      userSpan.className = 'typing-user';
+      userSpan.textContent = draft.sender || 'Someone';
+
+      // Typing dots
+      const dotsContainer = document.createElement('div');
+      dotsContainer.className = 'typing-dots-container';
+
+      for (let i = 0; i < 3; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'typing-dot';
+        dotsContainer.appendChild(dot);
+      }
+
+      // Live preview of what they're typing
+      const preview = document.createElement('span');
+      preview.className = 'typing-preview';
+      preview.textContent = draft.content;
+
+      // Assemble the indicator
+      typingIndicator.appendChild(userSpan);
+      typingIndicator.appendChild(dotsContainer);
+      if (draft.content.length > 0) {
+        typingIndicator.appendChild(preview);
+      }
+
+      draftsArea.appendChild(typingIndicator);
     }
   });
 
-  // Show/hide the drafts area
+  // Show/hide the drafts area with smooth animation
   if (hasDrafts) {
     draftsArea.style.display = 'block';
-    scrollChatToBottom('smooth', 50);
+    // Trigger reflow to ensure display change is applied
+    draftsArea.offsetHeight;
+    scrollChatToBottom('smooth', 100);
   } else {
     draftsArea.style.display = 'none';
   }
