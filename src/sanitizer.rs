@@ -7,8 +7,6 @@ use web_sys::Storage;
 
 #[derive(Debug, Clone)]
 pub struct InputSanitizer {
-    room_id_regex: Regex,
-    username_regex: Regex,
     dangerous_html_regex: Regex,
     javascript_regex: Regex,
     rate_limits: HashMap<String, RateLimitData>,
@@ -23,10 +21,6 @@ struct RateLimitData {
 impl InputSanitizer {
     pub fn new() -> Result<Self, JsValue> {
         Ok(Self {
-            room_id_regex: Regex::new(r"^[a-zA-Z0-9_-]{8,64}$")
-                .map_err(|e| JsValue::from_str(&format!("Failed to create room ID regex: {}", e)))?,
-            username_regex: Regex::new(r"^[a-zA-Z0-9 _-]{1,32}$")
-                .map_err(|e| JsValue::from_str(&format!("Failed to create username regex: {}", e)))?,
             dangerous_html_regex: Regex::new(
                 r"(?i)<script|on\w+\s*=|javascript:|vbscript:|data:|<iframe|<object|<embed|<form"
             ).map_err(|e| JsValue::from_str(&format!("Failed to create HTML regex: {}", e)))?,
@@ -48,21 +42,17 @@ impl InputSanitizer {
             .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
             .collect();
 
-        // Check length constraints (allow UUIDs which are 36 chars)
-        if sanitized.len() < 8 || sanitized.len() > 64 {
+        // Check length constraints - allow shorter room IDs (minimum 3 chars) and UUIDs
+        if sanitized.len() < 3 || sanitized.len() > 64 {
             return None;
         }
 
-        // Check if it's a valid UUID format (36 chars with hyphens) or regular room ID
-        if sanitized.len() == 36 && sanitized.chars().filter(|&c| c == '-').count() == 4 {
-            // UUID format: 8-4-4-4-12
-            Some(sanitized)
-        } else if self.room_id_regex.is_match(&sanitized) {
-            // Regular room ID format
-            Some(sanitized)
-        } else {
-            None
-        }
+        // Accept any room ID that contains only safe characters and is the right length
+        // This includes:
+        // - Simple names like "testroom"
+        // - UUIDs like "4c43d349-8677-458e-9e9d-e7fff57f75a4"
+        // - Custom IDs like "room-123"
+        Some(sanitized)
     }
 
     /// Validate and sanitize username
