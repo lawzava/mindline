@@ -2349,7 +2349,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Touch improvements - Comprehensive button fix */
 @media (hover: none) and (pointer: coarse) {
-    /* Only disable hover effects on buttons, not inputs */
+    /* Only disable hover transform effects on buttons, preserve styling */
     .neo-btn:hover,
     .neo-btn-primary:hover,
     .neo-btn-secondary:hover,
@@ -2359,9 +2359,8 @@ h1, h2, h3, h4, h5, h6 {
     .neo-btn-compact:hover,
     .neo-btn-nuclear:hover {
         transform: none !important;
-        box-shadow: inherit !important;
-        border-width: inherit !important;
         scale: 1 !important;
+        /* Keep original shadows and borders, just disable transforms */
     }
 
     /* Disable button hover pseudo-elements only */
@@ -2383,10 +2382,8 @@ h1, h2, h3, h4, h5, h6 {
 .touch-device .neo-btn-compact:hover,
 .touch-device .neo-btn-nuclear:hover {
     transform: none !important;
-    box-shadow: inherit !important;
-    border-width: inherit !important;
     scale: 1 !important;
-    background: inherit !important;
+    /* Preserve background and borders - only disable transforms */
 }
 
 .touch-device .neo-btn:hover::before,

@@ -1854,9 +1854,12 @@ function toggleTheme() {
   const isDark = document.documentElement.classList.contains('dark');
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
 
-  // Update icon visibility
+  // Update icon visibility for both desktop and mobile
   const sunIcon = document.getElementById('sunIcon');
   const moonIcon = document.getElementById('moonIcon');
+  const sunIconMobile = document.getElementById('sunIconMobile');
+  const moonIconMobile = document.getElementById('moonIconMobile');
+
   if (sunIcon && moonIcon) {
     if (isDark) {
       moonIcon.classList.add('hidden');
@@ -1864,6 +1867,16 @@ function toggleTheme() {
     } else {
       sunIcon.classList.add('hidden');
       moonIcon.classList.remove('hidden');
+    }
+  }
+
+  if (sunIconMobile && moonIconMobile) {
+    if (isDark) {
+      moonIconMobile.classList.add('hidden');
+      sunIconMobile.classList.remove('hidden');
+    } else {
+      sunIconMobile.classList.add('hidden');
+      moonIconMobile.classList.remove('hidden');
     }
   }
 }
@@ -1885,10 +1898,13 @@ function initializeTheme() {
     document.body.classList.remove('dark');
   }
 
-  // Update icon visibility based on current theme
+  // Update icon visibility based on current theme for both desktop and mobile
   const isDark = document.documentElement.classList.contains('dark');
   const sunIcon = document.getElementById('sunIcon');
   const moonIcon = document.getElementById('moonIcon');
+  const sunIconMobile = document.getElementById('sunIconMobile');
+  const moonIconMobile = document.getElementById('moonIconMobile');
+
   if (sunIcon && moonIcon) {
     if (isDark) {
       moonIcon.classList.add('hidden');
@@ -1896,6 +1912,16 @@ function initializeTheme() {
     } else {
       sunIcon.classList.add('hidden');
       moonIcon.classList.remove('hidden');
+    }
+  }
+
+  if (sunIconMobile && moonIconMobile) {
+    if (isDark) {
+      moonIconMobile.classList.add('hidden');
+      sunIconMobile.classList.remove('hidden');
+    } else {
+      sunIconMobile.classList.add('hidden');
+      moonIconMobile.classList.remove('hidden');
     }
   }
 }
