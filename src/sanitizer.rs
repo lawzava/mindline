@@ -48,13 +48,17 @@ impl InputSanitizer {
             .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
             .collect();
 
-        // Check length constraints
+        // Check length constraints (allow UUIDs which are 36 chars)
         if sanitized.len() < 8 || sanitized.len() > 64 {
             return None;
         }
 
-        // Validate against regex
-        if self.room_id_regex.is_match(&sanitized) {
+        // Check if it's a valid UUID format (36 chars with hyphens) or regular room ID
+        if sanitized.len() == 36 && sanitized.chars().filter(|&c| c == '-').count() == 4 {
+            // UUID format: 8-4-4-4-12
+            Some(sanitized)
+        } else if self.room_id_regex.is_match(&sanitized) {
+            // Regular room ID format
             Some(sanitized)
         } else {
             None
