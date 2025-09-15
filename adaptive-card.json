@@ -1,0 +1,80 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {
+      "type": "Container",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "Mindline Chat Status",
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "Accent"
+        },
+        {
+          "type": "ColumnSet",
+          "columns": [
+            {
+              "type": "Column",
+              "width": "auto",
+              "items": [
+                {
+                  "type": "Image",
+                  "url": "/icons/icon-72x72.png",
+                  "size": "Small",
+                  "style": "Person"
+                }
+              ]
+            },
+            {
+              "type": "Column",
+              "width": "stretch",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "${currentRoom}",
+                  "weight": "Bolder"
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "${activeUsers} active users",
+                  "size": "Small",
+                  "color": "Good"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Container",
+          "items": [
+            {
+              "type": "TextBlock",
+              "text": "Latest: ${lastMessage.text}",
+              "size": "Small",
+              "maxLines": 2,
+              "wrap": true
+            },
+            {
+              "type": "TextBlock",
+              "text": "from ${lastMessage.from}",
+              "size": "Small",
+              "color": "Attention",
+              "spacing": "None"
+            }
+          ],
+          "style": "emphasis"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.OpenUrl",
+      "title": "Open Chat",
+      "url": "/"
+    }
+  ]
+}

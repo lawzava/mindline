@@ -98,5 +98,33 @@
       "text": "text",
       "url": "url"
     }
-  }
+  },
+  "widgets": [
+    {
+      "name": "Chat Status",
+      "short_name": "Status",
+      "description": "View current room status and recent messages",
+      "tag": "chat-status",
+      "template": "chat-status-template",
+      "ms_ac_template": "adaptive-card.json",
+      "data": "/widgets/chat-status",
+      "type": "application/json",
+      "screenshots": [
+        {
+          "src": "/screenshots/widget-chat-status.png",
+          "sizes": "400x200",
+          "label": "Chat status widget showing room activity"
+        }
+      ],
+      "icons": [
+        {
+          "src": "/icons/icon-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ],
+      "auth": false,
+      "update": 300000
+    }
+  ]
 }
