@@ -51,22 +51,74 @@ module.exports = (env = {}) => ({
     ],
     mode: env.production || env.cloudflare ? 'production' : 'development',
     optimization: {
+        // Enable tree shaking
+        usedExports: true,
+        sideEffects: false,
+
+        // Minimize in production
+        minimize: env.production || env.cloudflare,
+
+        // Advanced code splitting
         splitChunks: {
             chunks: 'all',
+            minSize: 20000,
+            maxSize: 244000,
             cacheGroups: {
                 vendor: {
                     test: /[\\/]node_modules[\\/]/,
                     name: 'vendors',
                     chunks: 'all',
+                    priority: 10,
                 },
+                common: {
+                    name: 'common',
+                    minChunks: 2,
+                    chunks: 'all',
+                    priority: 5,
+                    reuseExistingChunk: true,
+                },
+                // Split debug utilities into separate chunk
+                debug: {
+                    test: /[\\/]js[\\/](logger|sanitizer)\.js$/,
+                    name: 'debug-utils',
+                    chunks: 'all',
+                    priority: 8,
+                }
             },
+        },
+
+        // Runtime chunk for better caching
+        runtimeChunk: {
+            name: 'runtime'
         }
     },
+    // Performance hints
+    performance: {
+        hints: env.production || env.cloudflare ? 'warning' : false,
+        maxEntrypointSize: 400000, // 400KB
+        maxAssetSize: 200000, // 200KB
+    },
+
+    // Resolve optimizations
+    resolve: {
+        // Speed up resolution
+        modules: ['node_modules'],
+        extensions: ['.js', '.wasm'],
+
+        // Create aliases for cleaner imports
+        alias: {
+            '@': path.resolve(__dirname, 'js'),
+            '@css': path.resolve(__dirname, 'css'),
+        }
+    },
+
     devServer: {
         static: {
             directory: path.join(__dirname, 'dist'),
         },
         compress: true,
         port: 8080,
+        hot: true, // Enable hot module replacement
+        historyApiFallback: true, // Handle SPAs
     },
 });
