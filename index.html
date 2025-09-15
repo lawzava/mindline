@@ -2,8 +2,66 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
         <title>Mindline - Secure P2P Real Time Chat</title>
+
+        <!-- PWA Meta Tags -->
+        <meta name="application-name" content="Mindline">
+        <meta name="description" content="End-to-end encrypted peer-to-peer real-time chat with transparent typing">
+        <meta name="keywords" content="chat, p2p, encryption, real-time, messaging, privacy">
+        <meta name="author" content="Mindline Team">
+        <meta name="robots" content="index, follow">
+
+        <!-- PWA Manifest -->
+        <link rel="manifest" href="/manifest.json">
+
+        <!-- iOS PWA Meta Tags -->
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="default">
+        <meta name="apple-mobile-web-app-title" content="Mindline">
+        <meta name="format-detection" content="telephone=no">
+
+        <!-- iOS Icons -->
+        <link rel="apple-touch-icon" href="/icons/icon-152x152.png">
+        <link rel="apple-touch-icon" sizes="72x72" href="/icons/icon-72x72.png">
+        <link rel="apple-touch-icon" sizes="96x96" href="/icons/icon-96x96.png">
+        <link rel="apple-touch-icon" sizes="128x128" href="/icons/icon-128x128.png">
+        <link rel="apple-touch-icon" sizes="144x144" href="/icons/icon-144x144.png">
+        <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png">
+        <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.png">
+        <link rel="apple-touch-icon" sizes="384x384" href="/icons/icon-384x384.png">
+        <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512x512.png">
+
+        <!-- iOS Splash Screens -->
+        <link rel="apple-touch-startup-image" href="/icons/icon-512x512.png">
+
+        <!-- Standard Favicon -->
+        <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png">
+        <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png">
+        <link rel="shortcut icon" href="/favicon.ico">
+
+        <!-- Android/Chrome PWA Meta Tags -->
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="theme-color" content="#5E81AC">
+        <meta name="background-color" content="#ffffff">
+
+        <!-- Microsoft Tiles -->
+        <meta name="msapplication-TileColor" content="#5E81AC">
+        <meta name="msapplication-TileImage" content="/icons/icon-144x144.png">
+
+        <!-- Open Graph / Social Media -->
+        <meta property="og:type" content="website">
+        <meta property="og:title" content="Mindline - Secure P2P Chat">
+        <meta property="og:description" content="End-to-end encrypted peer-to-peer real-time chat with transparent typing">
+        <meta property="og:image" content="/icons/icon-512x512.png">
+        <meta property="og:url" content="https://mindline.app">
+        <meta property="og:site_name" content="Mindline">
+
+        <!-- Twitter Cards -->
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:title" content="Mindline - Secure P2P Chat">
+        <meta name="twitter:description" content="End-to-end encrypted peer-to-peer real-time chat with transparent typing">
+        <meta name="twitter:image" content="/icons/icon-512x512.png">
         <!-- Security Headers -->
         <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss: ws:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';">
         <meta http-equiv="X-Content-Type-Options" content="nosniff">
@@ -404,6 +462,213 @@
 
         // Initialize sync when DOM is ready
         document.addEventListener('DOMContentLoaded', syncUsernameInputs);
+
+        // PWA Service Worker Registration and Install Prompt
+        let deferredPrompt;
+        let installPromptShown = false;
+
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('SW registered: ', registration);
+
+                        // Check for updates
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // New content is available
+                                    showUpdateNotification();
+                                }
+                            });
+                        });
+                    })
+                    .catch(registrationError => {
+                        console.log('SW registration failed: ', registrationError);
+                    });
+            });
+        }
+
+        // Listen for beforeinstallprompt event (Chrome/Edge)
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+
+            // Show install prompt after a short delay if not already shown
+            if (!installPromptShown && !localStorage.getItem('installPromptDismissed')) {
+                setTimeout(() => {
+                    showInstallPrompt();
+                }, 3000);
+            }
+        });
+
+        // Listen for app installation
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA was installed');
+            deferredPrompt = null;
+            hideInstallPrompt();
+            localStorage.setItem('appInstalled', 'true');
+        });
+
+        // Show install prompt
+        function showInstallPrompt() {
+            if (installPromptShown || localStorage.getItem('appInstalled') || localStorage.getItem('installPromptDismissed')) {
+                return;
+            }
+
+            installPromptShown = true;
+
+            const installPrompt = document.createElement('div');
+            installPrompt.id = 'installPrompt';
+            installPrompt.className = 'install-prompt';
+            installPrompt.innerHTML = `
+                <div class="install-prompt-content">
+                    <div class="install-prompt-header">
+                        <svg class="install-prompt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7,10 12,15 17,10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <h3>Install Mindline</h3>
+                    </div>
+                    <p>Add to your home screen for the best mobile experience!</p>
+                    <div class="install-prompt-actions">
+                        <button id="installBtn" class="neo-btn neo-btn-primary">Install App</button>
+                        <button id="dismissBtn" class="neo-btn">Maybe Later</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(installPrompt);
+
+            // Add event listeners
+            document.getElementById('installBtn').addEventListener('click', installApp);
+            document.getElementById('dismissBtn').addEventListener('click', dismissInstallPrompt);
+
+            // Show with animation
+            setTimeout(() => {
+                installPrompt.classList.add('show');
+            }, 100);
+        }
+
+        // Install the app
+        function installApp() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted install prompt');
+                    } else {
+                        console.log('User dismissed install prompt');
+                    }
+                    deferredPrompt = null;
+                    hideInstallPrompt();
+                });
+            } else {
+                // Fallback for iOS Safari
+                showIOSInstallInstructions();
+            }
+        }
+
+        // Dismiss install prompt
+        function dismissInstallPrompt() {
+            localStorage.setItem('installPromptDismissed', Date.now().toString());
+            hideInstallPrompt();
+        }
+
+        // Hide install prompt
+        function hideInstallPrompt() {
+            const prompt = document.getElementById('installPrompt');
+            if (prompt) {
+                prompt.classList.remove('show');
+                setTimeout(() => {
+                    prompt.remove();
+                }, 300);
+            }
+        }
+
+        // Show iOS install instructions
+        function showIOSInstallInstructions() {
+            if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                const iosPrompt = document.createElement('div');
+                iosPrompt.id = 'iosInstallPrompt';
+                iosPrompt.className = 'install-prompt ios-prompt';
+                iosPrompt.innerHTML = `
+                    <div class="install-prompt-content">
+                        <div class="install-prompt-header">
+                            <svg class="install-prompt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <circle cx="9" cy="9" r="2"></circle>
+                                <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                            </svg>
+                            <h3>Install on iOS</h3>
+                        </div>
+                        <div class="ios-instructions">
+                            <p>To install this app on your iOS device:</p>
+                            <ol>
+                                <li>Tap the Share button <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg></li>
+                                <li>Scroll down and tap "Add to Home Screen"</li>
+                                <li>Tap "Add" to confirm</li>
+                            </ol>
+                        </div>
+                        <button id="iosCloseBtn" class="neo-btn">Got it!</button>
+                    </div>
+                `;
+
+                document.body.appendChild(iosPrompt);
+
+                document.getElementById('iosCloseBtn').addEventListener('click', () => {
+                    iosPrompt.classList.remove('show');
+                    setTimeout(() => {
+                        iosPrompt.remove();
+                    }, 300);
+                });
+
+                setTimeout(() => {
+                    iosPrompt.classList.add('show');
+                }, 100);
+            }
+        }
+
+        // Show update notification
+        function showUpdateNotification() {
+            const updateNotification = document.createElement('div');
+            updateNotification.className = 'update-notification';
+            updateNotification.innerHTML = `
+                <div class="update-content">
+                    <span>New version available!</span>
+                    <button id="updateBtn" class="neo-btn neo-btn-secondary">Update</button>
+                </div>
+            `;
+
+            document.body.appendChild(updateNotification);
+
+            document.getElementById('updateBtn').addEventListener('click', () => {
+                window.location.reload();
+            });
+
+            setTimeout(() => {
+                updateNotification.classList.add('show');
+            }, 100);
+        }
+
+        // Auto-show install prompt on mobile after interaction
+        let interactionCount = 0;
+        function trackInteraction() {
+            interactionCount++;
+            if (interactionCount >= 3 && !installPromptShown && !localStorage.getItem('installPromptDismissed') && !localStorage.getItem('appInstalled')) {
+                // Check if mobile device
+                if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                    showInstallPrompt();
+                }
+            }
+        }
+
+        // Add interaction listeners
+        document.addEventListener('click', trackInteraction);
+        document.addEventListener('touchstart', trackInteraction);
     </script>
     </body>
 </html>
