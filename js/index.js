@@ -830,19 +830,19 @@ async function joinRoom(roomId) {
  */
 async function attemptReconnect() {
   const roomId = getCurrentRoomId();
-  if (!roomId || AppState.isReconnecting) {
+  if (!roomId || IndexState.isReconnecting) {
     return;
   }
 
-  AppState.isReconnecting = true;
-  AppState.reconnectAttempts++;
+  IndexState.isReconnecting = true;
+  IndexState.reconnectAttempts++;
 
-  log(`Reconnection attempt ${AppState.reconnectAttempts}/${AppState.maxReconnectAttempts}...`);
+  log(`Reconnection attempt ${IndexState.reconnectAttempts}/${IndexState.maxReconnectAttempts}...`);
 
   // Update status to show reconnecting
   const statusElement = document.getElementById('connectionStatus');
   if (statusElement) {
-    statusElement.textContent = `Reconnecting... (${AppState.reconnectAttempts}/${AppState.maxReconnectAttempts})`;
+    statusElement.textContent = `Reconnecting... (${IndexState.reconnectAttempts}/${IndexState.maxReconnectAttempts})`;
     statusElement.className = 'block w-full px-3 py-2 text-xs font-bold uppercase border-2 border-black dark:border-white tracking-wider text-center status-reconnecting';
   }
 
@@ -854,38 +854,38 @@ async function attemptReconnect() {
     }
 
     // Wait a bit before trying to reconnect (exponential backoff)
-    const delay = Math.min(2000 * Math.pow(1.5, AppState.reconnectAttempts - 1), 10000);
+    const delay = Math.min(2000 * Math.pow(1.5, IndexState.reconnectAttempts - 1), 10000);
     await new Promise(resolve => setTimeout(resolve, delay));
 
     // Try to reinitialize P2P connection
     await initializeP2P(roomId);
 
     // If successful, reset reconnection state
-    AppState.reconnectAttempts = 0;
-    AppState.isReconnecting = false;
-    if (AppState.reconnectInterval) {
-      clearInterval(AppState.reconnectInterval);
-      AppState.reconnectInterval = null;
+    IndexState.reconnectAttempts = 0;
+    IndexState.isReconnecting = false;
+    if (IndexState.reconnectInterval) {
+      clearInterval(IndexState.reconnectInterval);
+      IndexState.reconnectInterval = null;
     }
 
     updateConnectionStatus('connected');
     log('Reconnection successful!');
   } catch (error) {
     console.error('Reconnection failed:', error);
-    AppState.isReconnecting = false;
+    IndexState.isReconnecting = false;
 
-    if (AppState.reconnectAttempts >= AppState.maxReconnectAttempts) {
+    if (IndexState.reconnectAttempts >= IndexState.maxReconnectAttempts) {
       // Give up after max attempts
-      log(`Reconnection failed after ${AppState.maxReconnectAttempts} attempts`);
+      log(`Reconnection failed after ${IndexState.maxReconnectAttempts} attempts`);
       updateConnectionStatus('failed');
 
-      if (AppState.reconnectInterval) {
-        clearInterval(AppState.reconnectInterval);
-        AppState.reconnectInterval = null;
+      if (IndexState.reconnectInterval) {
+        clearInterval(IndexState.reconnectInterval);
+        IndexState.reconnectInterval = null;
       }
     } else {
       // Schedule next attempt
-      log(`Reconnection attempt ${AppState.reconnectAttempts} failed, will retry...`);
+      log(`Reconnection attempt ${IndexState.reconnectAttempts} failed, will retry...`);
       updateConnectionStatus('reconnecting');
     }
   }
@@ -941,10 +941,10 @@ async function initializeP2P(roomId) {
     // Clear draft message for disconnected peer
     AppState.draftMessages.delete(peerId);
     // Clear timeout for disconnected peer
-    const existingTimeout = AppState.draftTimeouts.get(peerId);
+    const existingTimeout = IndexState.draftTimeouts.get(peerId);
     if (existingTimeout) {
       clearTimeout(existingTimeout);
-      AppState.draftTimeouts.delete(peerId);
+      IndexState.draftTimeouts.delete(peerId);
     }
     // Update draft messages display
     updateDraftMessages();
@@ -958,11 +958,11 @@ async function initializeP2P(roomId) {
     updateConnectionStatus('reconnecting');
 
     // Start reconnection if not already trying
-    if (!AppState.isReconnecting && AppState.reconnectAttempts < AppState.maxReconnectAttempts) {
+    if (!IndexState.isReconnecting && IndexState.reconnectAttempts < IndexState.maxReconnectAttempts) {
       // Start first attempt after a short delay, then schedule interval for subsequent attempts
       setTimeout(attemptReconnect, 2000);
-      if (!AppState.reconnectInterval) {
-        AppState.reconnectInterval = setInterval(attemptReconnect, 8000); // Less aggressive - every 8 seconds
+      if (!IndexState.reconnectInterval) {
+        IndexState.reconnectInterval = setInterval(attemptReconnect, 8000); // Less aggressive - every 8 seconds
       }
     }
   });
@@ -976,10 +976,10 @@ async function initializeP2P(roomId) {
     log('Failed to connect to P2P network. Starting reconnection...');
 
     // Start reconnection attempts if not already reconnecting
-    if (!AppState.isReconnecting && AppState.reconnectAttempts < AppState.maxReconnectAttempts) {
+    if (!IndexState.isReconnecting && IndexState.reconnectAttempts < IndexState.maxReconnectAttempts) {
       updateConnectionStatus('reconnecting');
       setTimeout(attemptReconnect, 3000); // Initial attempt after 3 seconds
-      AppState.reconnectInterval = setInterval(attemptReconnect, 8000); // Try every 8 seconds
+      IndexState.reconnectInterval = setInterval(attemptReconnect, 8000); // Try every 8 seconds
     }
   }
 }
@@ -1890,8 +1890,8 @@ function connectNewUIWithWasm() {
         connectedPeers,
         healthRate: `${healthRate}%`,
         draftCount: AppState.draftMessages.size,
-        reconnectAttempts: AppState.reconnectAttempts,
-        isReconnecting: AppState.isReconnecting
+        reconnectAttempts: IndexState.reconnectAttempts,
+        isReconnecting: IndexState.isReconnecting
       };
     }
   };
@@ -1945,7 +1945,7 @@ function handlePeerDraft(message, peerId) {
   });
 
   // Clear any existing timeout for this peer
-  const existingTimeout = AppState.draftTimeouts.get(peerId);
+  const existingTimeout = IndexState.draftTimeouts.get(peerId);
   if (existingTimeout) {
     clearTimeout(existingTimeout);
   }
@@ -1953,11 +1953,11 @@ function handlePeerDraft(message, peerId) {
   // Set a timeout to automatically clear draft after inactivity
   const timeout = setTimeout(() => {
     AppState.draftMessages.delete(peerId);
-    AppState.draftTimeouts.delete(peerId);
+    IndexState.draftTimeouts.delete(peerId);
     updateDraftMessages();
   }, CONSTANTS.TIMEOUT_DRAFT_CLEAR);
 
-  AppState.draftTimeouts.set(peerId, timeout);
+  IndexState.draftTimeouts.set(peerId, timeout);
 
   // Update the draft messages display
   updateDraftMessages();
@@ -1968,10 +1968,10 @@ function clearPeerDraft(peerId) {
   AppState.draftMessages.delete(peerId);
 
   // Clear timeout for this peer
-  const existingTimeout = AppState.draftTimeouts.get(peerId);
+  const existingTimeout = IndexState.draftTimeouts.get(peerId);
   if (existingTimeout) {
     clearTimeout(existingTimeout);
-    AppState.draftTimeouts.delete(peerId);
+    IndexState.draftTimeouts.delete(peerId);
   }
 
   updateDraftMessages();
@@ -2031,8 +2031,8 @@ function updateDraftMessages() {
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
   // Clear reconnection attempts
-  if (AppState.reconnectInterval) {
-    clearInterval(AppState.reconnectInterval);
+  if (IndexState.reconnectInterval) {
+    clearInterval(IndexState.reconnectInterval);
   }
 
   if (AppState.p2pConnection) {
