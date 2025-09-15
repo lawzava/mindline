@@ -1,10 +1,14 @@
 // Environment configuration for Mindline
 const CONFIG = {
-  // Production signaling server (replace with your domain)
-  SIGNALING_SERVER: 'signal.yourdomain.com',
+  // Production signaling server from environment variable or fallback
+  SIGNALING_SERVER: typeof process !== 'undefined' && process.env && process.env.SIGNALING_SERVER
+    ? process.env.SIGNALING_SERVER
+    : 'signal.yourdomain.com',
 
-  // Always use SSL in production
-  USE_SSL: true,
+  // SSL configuration from environment or default to true for production
+  USE_SSL: typeof process !== 'undefined' && process.env && process.env.USE_SSL
+    ? process.env.USE_SSL === 'true'
+    : true,
 
   // WebSocket path
   WEBSOCKET_PATH: '/ws',
