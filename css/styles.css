@@ -135,7 +135,7 @@ body.dark {
 /* Enhanced Message bubble styling */
 .neo-message-bubble {
     border: 3px solid var(--border-color);
-    padding: 1rem 1.25rem;
+    padding: 0.65rem 1rem;
     box-shadow: var(--small-shadow) var(--shadow-color);
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
@@ -309,11 +309,11 @@ body.dark {
 
 /* Hero header for main sections */
 .neo-header-hero {
-    background: linear-gradient(135deg, var(--accent-color), var(--warning-light));
+    background: linear-gradient(135deg, var(--shadow-color), var(--accent-color));
     border-bottom: 6px solid var(--border-color);
-    padding: 1.25rem;
+    padding: 0.75rem;
     font-weight: 900;
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--text-color);
@@ -1475,7 +1475,7 @@ h1, h2, h3, h4, h5, h6 {
 /* Enhanced Chat Messages */
 .message-container {
     position: relative;
-    margin-bottom: 1rem;
+    margin-bottom: 0.65rem;
     animation: message-enter 0.3s ease-out;
 }
 
