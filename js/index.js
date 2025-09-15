@@ -1997,47 +1997,89 @@ function updateDraftMessages() {
     return;
   }
 
-  // Clear existing drafts
-  draftsArea.innerHTML = '';
-
   // Check if we have any drafts to show
   const activeDrafts = Array.from(AppState.draftMessages.values()).filter(draft => draft.content.trim());
 
   if (activeDrafts.length === 0) {
     // Hide draft area when no drafts
     draftsArea.style.display = 'none';
+    draftsArea.innerHTML = '';
     return;
   }
 
   // Show draft area
   draftsArea.style.display = 'block';
 
-  // Add header showing how many people are typing
+  // Create a map of existing draft elements by peer ID
+  const existingDraftElements = new Map();
+  draftsArea.querySelectorAll('[data-peer-id]').forEach(el => {
+    existingDraftElements.set(el.dataset.peerId, el);
+  });
+
+  // Handle header for multiple typists
+  let headerElement = draftsArea.querySelector('.draft-header');
   if (activeDrafts.length > 1) {
-    const headerElement = document.createElement('div');
-    headerElement.className = 'text-xs font-bold text-yellow-700 dark:text-yellow-300 mb-1 px-1';
+    if (!headerElement) {
+      headerElement = document.createElement('div');
+      headerElement.className = 'draft-header text-xs font-bold text-yellow-700 dark:text-yellow-300 mb-1 px-1';
+      draftsArea.insertBefore(headerElement, draftsArea.firstChild);
+    }
     headerElement.textContent = `${activeDrafts.length} people are typing:`;
-    draftsArea.appendChild(headerElement);
+  } else if (headerElement) {
+    headerElement.remove();
   }
 
-  // Display each peer's draft message
+  // Track which peer IDs we've processed
+  const processedPeerIds = new Set();
+
+  // Update or create draft elements for each active draft
   AppState.draftMessages.forEach((draft, peerId) => {
     if (draft.content.trim()) {
-      const draftElement = document.createElement('div');
-      draftElement.className = 'draft-message mb-2 p-2 bg-yellow-100 dark:bg-yellow-900/50 border border-yellow-400 dark:border-yellow-500 rounded opacity-90';
+      processedPeerIds.add(peerId);
 
-      // Add sender name and content in one line for compact display
-      const contentElement = document.createElement('div');
-      contentElement.className = 'text-xs text-gray-800 dark:text-gray-200';
-      contentElement.innerHTML = `<span class="font-bold italic text-yellow-800 dark:text-yellow-200">${draft.senderName} is typing:</span> <span class="italic text-gray-700 dark:text-gray-300">"${draft.content}"</span>`;
-      draftElement.appendChild(contentElement);
+      let draftElement = existingDraftElements.get(peerId);
 
-      draftsArea.appendChild(draftElement);
+      if (!draftElement) {
+        // Create new element only if it doesn't exist
+        draftElement = document.createElement('div');
+        draftElement.className = 'draft-message mb-2 p-2 bg-yellow-100 dark:bg-yellow-900/50 border border-yellow-400 dark:border-yellow-500 rounded opacity-90';
+        draftElement.dataset.peerId = peerId;
+
+        // Add content container
+        const contentElement = document.createElement('div');
+        contentElement.className = 'draft-content text-xs text-gray-800 dark:text-gray-200';
+        draftElement.appendChild(contentElement);
+
+        draftsArea.appendChild(draftElement);
+
+        // Add entrance animation only for new elements
+        draftElement.style.animation = 'draft-entrance 0.3s ease-out';
+      }
+
+      // Update the content (whether new or existing)
+      const contentElement = draftElement.querySelector('.draft-content');
+      if (contentElement) {
+        const newContent = `<span class="font-bold italic text-yellow-800 dark:text-yellow-200">${draft.senderName} is typing:</span> <span class="italic text-gray-700 dark:text-gray-300">"${draft.content}"</span>`;
+        // Only update if content has changed
+        if (contentElement.innerHTML !== newContent) {
+          contentElement.innerHTML = newContent;
+        }
+      }
     }
   });
 
-  // Scroll draft area to bottom if it has overflow
-  draftsArea.scrollTop = draftsArea.scrollHeight;
+  // Remove draft elements for peers who are no longer typing
+  existingDraftElements.forEach((element, peerId) => {
+    if (!processedPeerIds.has(peerId)) {
+      element.style.animation = 'toast-exit 0.3s ease-out';
+      setTimeout(() => element.remove(), 300);
+    }
+  });
+
+  // Smooth scroll draft area to bottom only if needed
+  if (draftsArea.scrollHeight > draftsArea.clientHeight) {
+    draftsArea.scrollTop = draftsArea.scrollHeight;
+  }
 }
 
 // Cleanup on page unload
