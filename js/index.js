@@ -856,12 +856,21 @@ async function attemptReconnect() {
 
   // Update status to show reconnecting
   const statusElement = document.getElementById('connectionStatus');
-  statusElement.textContent = `Reconnecting... (${AppState.reconnectAttempts}/${AppState.maxReconnectAttempts})`;
-  statusElement.className = 'status status-reconnecting';
+  if (statusElement) {
+    statusElement.textContent = `Reconnecting... (${AppState.reconnectAttempts}/${AppState.maxReconnectAttempts})`;
+    statusElement.className = 'block w-full px-3 py-2 text-xs font-bold uppercase border-2 border-black dark:border-white tracking-wider text-center status-reconnecting';
+  }
 
   try {
-    // Wait a bit before trying to reconnect
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Clean up existing connection properly before reconnecting
+    if (AppState.p2pConnection) {
+      AppState.p2pConnection.disconnect();
+      AppState.p2pConnection = null;
+    }
+
+    // Wait a bit before trying to reconnect (exponential backoff)
+    const delay = Math.min(2000 * Math.pow(1.5, AppState.reconnectAttempts - 1), 10000);
+    await new Promise(resolve => setTimeout(resolve, delay));
 
     // Try to reinitialize P2P connection
     await initializeP2P(roomId);
@@ -874,6 +883,7 @@ async function attemptReconnect() {
       AppState.reconnectInterval = null;
     }
 
+    updateConnectionStatus('connected');
     log('Reconnection successful!');
   } catch (error) {
     console.error('Reconnection failed:', error);
@@ -882,8 +892,7 @@ async function attemptReconnect() {
     if (AppState.reconnectAttempts >= AppState.maxReconnectAttempts) {
       // Give up after max attempts
       log(`Reconnection failed after ${AppState.maxReconnectAttempts} attempts`);
-      statusElement.textContent = 'Connection failed';
-      statusElement.className = 'status status-disconnected';
+      updateConnectionStatus('failed');
 
       if (AppState.reconnectInterval) {
         clearInterval(AppState.reconnectInterval);
@@ -892,6 +901,7 @@ async function attemptReconnect() {
     } else {
       // Schedule next attempt
       log(`Reconnection attempt ${AppState.reconnectAttempts} failed, will retry...`);
+      updateConnectionStatus('reconnecting');
     }
   }
 }
@@ -960,13 +970,15 @@ async function initializeP2P(roomId) {
     log(`Connection lost: ${reason}`);
 
     // Update status immediately
-    updateConnectionStatus('failed');
+    updateConnectionStatus('reconnecting');
 
     // Start reconnection if not already trying
     if (!AppState.isReconnecting && AppState.reconnectAttempts < AppState.maxReconnectAttempts) {
-      // Start immediate first attempt, then schedule interval for subsequent attempts
-      setTimeout(attemptReconnect, 1000);
-      AppState.reconnectInterval = setInterval(attemptReconnect, 5000);
+      // Start first attempt after a short delay, then schedule interval for subsequent attempts
+      setTimeout(attemptReconnect, 2000);
+      if (!AppState.reconnectInterval) {
+        AppState.reconnectInterval = setInterval(attemptReconnect, 8000); // Less aggressive - every 8 seconds
+      }
     }
   });
 
@@ -980,7 +992,9 @@ async function initializeP2P(roomId) {
 
     // Start reconnection attempts if not already reconnecting
     if (!AppState.isReconnecting && AppState.reconnectAttempts < AppState.maxReconnectAttempts) {
-      AppState.reconnectInterval = setInterval(attemptReconnect, 5000); // Try every 5 seconds
+      updateConnectionStatus('reconnecting');
+      setTimeout(attemptReconnect, 3000); // Initial attempt after 3 seconds
+      AppState.reconnectInterval = setInterval(attemptReconnect, 8000); // Try every 8 seconds
     }
   }
 }

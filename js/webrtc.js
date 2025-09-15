@@ -270,14 +270,11 @@ export class P2PConnection {
         // Clear any pending reconnection attempts for this peer
       } else if (pc.connectionState === 'failed') {
         console.log(`❌ Connection failed with peer ${peerId}`);
-        // Try to reconnect after a delay
-        setTimeout(() => {
-          if (this.peers.has(peerId)) {
-            console.log(`🔄 Attempting to reconnect to failed peer ${peerId}`);
-            this.removePeer(peerId);
-            this.createPeerConnection(peerId, true);
-          }
-        }, 3000);
+        // Clean up failed connection immediately, let main reconnection logic handle it
+        this.removePeer(peerId);
+        if (this.onPeerDisconnectedCallback) {
+          this.onPeerDisconnectedCallback(peerId);
+        }
       } else if (pc.connectionState === 'disconnected') {
         console.log(`⚠️ Peer ${peerId} disconnected, removing connection`);
         this.removePeer(peerId);
