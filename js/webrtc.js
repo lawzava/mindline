@@ -4,6 +4,12 @@
 
 export class P2PConnection {
   constructor(clientId, roomId, signalServer) {
+    // Validate clientId to prevent corruption
+    if (typeof clientId !== 'string' || clientId.includes(',') || clientId.length < 10) {
+      console.error('🚨 Invalid clientId detected:', clientId, 'type:', typeof clientId);
+      throw new Error(`Invalid clientId: ${clientId}`);
+    }
+
     this.clientId = clientId;
     this.roomId = roomId;
     this.signalServer = signalServer;
@@ -48,7 +54,9 @@ export class P2PConnection {
 
         const wsUrl = `${protocol}//${host}${path}`;
 
-        console.log(`Connecting to signaling server at ${wsUrl}`);
+        console.log(`🔵 P2P CONNECT: Connecting to signaling server at ${wsUrl}`);
+        console.log(`🔵 Client ID: ${this.clientId}`);
+        console.log(`🔵 Room ID: ${this.roomId}`);
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
@@ -62,7 +70,9 @@ export class P2PConnection {
         };
 
         this.ws.onmessage = async (event) => {
+          console.log(`🔵 SIGNALING: Received message:`, event.data);
           const message = JSON.parse(event.data);
+          console.log(`🔵 SIGNALING: Parsed message:`, message);
           await this.handleSignalingMessage(message);
         };
 
@@ -114,7 +124,7 @@ export class P2PConnection {
             } catch (error) {
               console.error(`❌ Failed to connect to existing peer ${peerId}:`, error);
             }
-          }, i * 1000); // 1 second delay between each connection
+          }, i * 2000 + (this.clientId.charCodeAt(0) % 1000)); // 2 second base delay + deterministic offset
         }
 
         // Start periodic mesh checking
@@ -220,16 +230,40 @@ export class P2PConnection {
       }
     };
 
-    // Create data channel with mobile-friendly settings
+    // Only create data channel if we're the initiator to prevent duplicates
     if (createOffer) {
+      console.log(`🔗 Creating data channel for peer ${peerId} (we are initiator)`);
       const dataChannel = pc.createDataChannel('chat', {
         ordered: true,
         maxRetransmits: 3,
         maxRetransmitTime: 3000 // 3 seconds timeout
       });
+      console.log(`📊 Data channel created, initial state: ${dataChannel.readyState}`);
       this.setupDataChannel(dataChannel, peerId);
+    } else {
+      console.log(`⏳ Waiting for data channel from ${peerId} (they are initiator)`);
+    }
 
-      // Create and send offer with error handling
+    // Also listen for incoming data channel from remote peer
+    pc.ondatachannel = (event) => {
+      console.log(`📥 Received data channel from ${peerId}`);
+      console.log(`📊 Data channel state: ${event.channel.readyState}, ordered: ${event.channel.ordered}`);
+      // ALWAYS use the received data channel for bidirectional communication
+      console.log(`🔄 Using received data channel for ${peerId} (replacing any existing)`);
+
+      // Close existing channel if any to prevent conflicts
+      if (this.dataChannels.has(peerId)) {
+        console.log(`🧹 Closing existing data channel for ${peerId}`);
+        const existingChannel = this.dataChannels.get(peerId);
+        existingChannel.close();
+        this.dataChannels.delete(peerId);
+      }
+
+      this.setupDataChannel(event.channel, peerId);
+    };
+
+    // Create and send offer only if we're the initiator
+    if (createOffer) {
       try {
         const offer = await pc.createOffer({
           offerToReceiveAudio: false,
@@ -247,20 +281,16 @@ export class P2PConnection {
         // Set timeout for offer response
         setTimeout(() => {
           if (pc.signalingState === 'have-local-offer') {
-            console.log(`⏰ Offer to ${peerId} timed out`);
+            console.log(`⏰ Offer to ${peerId} timed out - restarting connection`);
+            this.removePeer(peerId);
+            // Retry connection after cleanup
+            setTimeout(() => this.createPeerConnection(peerId, true), 2000);
           }
-        }, 10000); // 10 second timeout
+        }, 15000); // 15 second timeout (more generous)
       } catch (error) {
         console.error(`Failed to create offer for ${peerId}:`, error);
         this.removePeer(peerId);
       }
-    } else {
-      // Wait for data channel from remote peer
-      pc.ondatachannel = (event) => {
-        console.log(`📥 Received data channel from ${peerId}`);
-        console.log(`📊 Data channel state: ${event.channel.readyState}, ordered: ${event.channel.ordered}`);
-        this.setupDataChannel(event.channel, peerId);
-      };
     }
 
     // Handle connection state changes with more detailed logging
@@ -302,6 +332,9 @@ export class P2PConnection {
    * Setup data channel event handlers
    */
   setupDataChannel(dataChannel, peerId) {
+    console.log(`🔧 SETTING UP DATA CHANNEL for ${peerId}`);
+    console.log(`🔧 Data channel state: ${dataChannel.readyState}`);
+
     dataChannel.onopen = () => {
       console.log(`Data channel opened with ${peerId}`);
       this.dataChannels.set(peerId, dataChannel);
@@ -310,28 +343,50 @@ export class P2PConnection {
       }
     };
 
+    console.log(`🔧 ATTACHING onmessage handler for ${peerId}`);
     dataChannel.onmessage = (event) => {
+      console.log(`🔴 LOWEST LEVEL: WebRTC data channel onmessage triggered`);
+      console.log(`🔴 Peer ID: ${peerId}`);
+      console.log(`🔴 Raw event:`, event);
+      console.log(`🔴 Raw event.data:`, event.data);
+      console.log(`🔴 Raw event.data type:`, typeof event.data);
+      console.log(`🔴 Raw event.data length:`, event.data ? event.data.length : 'null');
+
       if (this.onMessageCallback) {
+        console.log(`🔴 onMessageCallback exists:`, this.onMessageCallback);
+        console.log(`🔴 typeof onMessageCallback:`, typeof this.onMessageCallback);
+        console.log(`🔴 Attempting JSON parse...`);
         try {
           const message = JSON.parse(event.data);
-          console.log(`Received message from ${peerId}:`, message);
+          console.log(`📨 PARSED MESSAGE from ${peerId}:`, message);
 
           // Extra debugging for chat messages
           if (message.type === 'chat') {
-            console.log(`🎯 CHAT MESSAGE RECEIVED in WebRTC layer:`, message.id, message.content);
+            console.log(`🎯 CHAT MESSAGE RECEIVED - calling onMessageCallback:`, message.id, message.content);
           }
 
           this.onMessageCallback(message, peerId);
+          console.log(`✅ MESSAGE CALLBACK COMPLETED for ${peerId}`);
         } catch (error) {
-          console.error('Error parsing message:', error, 'Raw data:', event.data);
+          console.error('❌ ERROR PARSING MESSAGE:', error, 'Raw data:', event.data);
         }
       } else {
-        console.warn(`No onMessageCallback registered, dropping message from ${peerId}`);
+        console.error(`❌ NO onMessageCallback REGISTERED - dropping message from ${peerId}`);
       }
     };
 
     dataChannel.onerror = (error) => {
       console.error(`Data channel error with ${peerId}:`, error);
+      console.error(`Error type: ${error.error?.name}, message: ${error.error?.message}`);
+
+      // Don't immediately remove peer for "User-Initiated Abort" errors
+      if (error.error?.name === 'OperationError' && error.error?.message?.includes('User-Initiated Abort')) {
+        console.log(`🔧 Ignoring User-Initiated Abort error for ${peerId} - keeping connection`);
+        return;
+      }
+
+      // Only handle connection failure for serious errors
+      console.log(`🚨 Serious data channel error, handling connection failure for ${peerId}`);
       this.handleConnectionFailure(peerId);
     };
 
@@ -508,12 +563,15 @@ export class P2PConnection {
     let attemptedCount = 0;
 
     console.log(`📡 Broadcasting message type '${message.type}' to ${this.dataChannels.size} channels`);
+    console.log(`🔍 DEBUG: dataChannels.size = ${this.dataChannels.size}`);
 
     this.dataChannels.forEach((channel, peerId) => {
       attemptedCount++;
+      console.log(`📤 ATTEMPTING TO SEND to ${peerId}, channel state: ${channel.readyState}`);
 
       if (channel.readyState === 'open') {
         try {
+          console.log(`📤 SENDING RAW DATA to ${peerId}:`, messageStr);
           channel.send(messageStr);
           deliveredCount++;
           console.log(`✅ Message sent to ${peerId}`);
