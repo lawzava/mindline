@@ -1,9 +1,11 @@
 {
   "name": "Mindline - Secure P2P Chat",
   "short_name": "Mindline",
+  "id": "mindline-secure-p2p-chat",
   "description": "End-to-end encrypted peer-to-peer real-time chat with transparent typing",
   "start_url": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
   "background_color": "#ffffff",
   "theme_color": "#5E81AC",
   "orientation": "portrait-primary",
@@ -37,6 +39,22 @@
       "purpose": "maskable"
     }
   ],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop-chat.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "platform": "wide",
+      "label": "Main chat interface showing secure P2P messaging"
+    },
+    {
+      "src": "/screenshots/mobile-chat.png",
+      "sizes": "375x667",
+      "type": "image/png",
+      "platform": "narrow",
+      "label": "Mobile chat view with typing indicators"
+    }
+  ],
   "prefer_related_applications": false,
   "edge_side_panel": {
     "preferred_width": 400
@@ -68,5 +86,17 @@
         }
       ]
     }
-  ]
+  ],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "share_target": {
+    "action": "/",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }
