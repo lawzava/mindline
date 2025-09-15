@@ -2,12 +2,13 @@ const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 const CopyPlugin = require('copy-webpack-plugin');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 module.exports = (env = {}) => ({
     entry: './js/index.js',
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: env.cloudflare ? '[name].[contenthash].js' : 'index.js',
+        filename: '[name].[contenthash].js', // Always use content hash for cache busting
         clean: true,
         publicPath: '/'
     },
@@ -18,7 +19,10 @@ module.exports = (env = {}) => ({
         rules: [
             {
                 test: /\.css$/,
-                use: ['style-loader', 'css-loader']
+                use: [
+                    env.production || env.cloudflare ? MiniCssExtractPlugin.loader : 'style-loader',
+                    'css-loader'
+                ]
             }
         ]
     },
@@ -36,13 +40,27 @@ module.exports = (env = {}) => ({
                 { from: 'js/env-config.js', to: 'js/env-config.js' },
                 { from: 'js/config.js', to: 'js/config.js' }
             ]
-        })
+        }),
+        // Extract CSS with content hash for cache busting
+        ...(env.production || env.cloudflare ? [
+            new MiniCssExtractPlugin({
+                filename: '[name].[contenthash].css',
+                chunkFilename: '[id].[contenthash].css',
+            })
+        ] : [])
     ],
     mode: env.production || env.cloudflare ? 'production' : 'development',
     optimization: {
-        splitChunks: env.cloudflare ? {
-            chunks: 'all'
-        } : false
+        splitChunks: {
+            chunks: 'all',
+            cacheGroups: {
+                vendor: {
+                    test: /[\\/]node_modules[\\/]/,
+                    name: 'vendors',
+                    chunks: 'all',
+                },
+            },
+        }
     },
     devServer: {
         static: {
