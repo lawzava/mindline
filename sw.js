@@ -81,15 +81,17 @@ self.addEventListener('fetch', event => {
   // Handle navigation requests (HTML pages)
   if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match('/')
+      fetch(request)
         .then(response => {
-          if (response) {
+          // If successful, return the fresh response
+          if (response.ok) {
             return response;
           }
-          return fetch(request);
+          // If failed, try cache as fallback
+          return caches.match('/');
         })
         .catch(() => {
-          // Return cached index page as fallback
+          // Return cached index page as fallback for offline
           return caches.match('/');
         })
     );
