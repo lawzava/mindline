@@ -47,7 +47,7 @@ const IndexState = {
 
 // Additional constants for index.js
 const INDEX_CONSTANTS = {
-  TIMEOUT_DRAFT_CLEAR: 3000 // Clear draft after 3 seconds of inactivity
+  TIMEOUT_DRAFT_CLEAR: 10000 // Clear draft after 10 seconds of inactivity
 };
 
 
@@ -911,6 +911,9 @@ async function initializeP2P(roomId) {
   const existingConnection = getP2PConnection();
   if (existingConnection) {
     existingConnection.disconnect();
+    setP2PConnection(null);
+    // Small delay to ensure cleanup completes
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
 
   // Get user ID
@@ -1738,7 +1741,7 @@ function updateRoomHistoryUI() {
     const timeAgo = formatTimeAgo(room.lastJoined);
 
     return `
-      <div class="flex items-center justify-between p-2 border-2 border-gray-300 dark:border-gray-600 hover:border-black dark:hover:border-white transition-colors ${isCurrentRoom ? 'bg-green-100 dark:bg-green-900 border-green-500 dark:border-green-400' : 'bg-gray-100 dark:bg-gray-800'} cursor-pointer group"
+      <div class="flex items-center justify-between p-2 border-2 border-gray-300 dark:border-gray-600 hover:border-black dark:hover:border-white transition-colors ${isCurrentRoom ? 'bg-success/20 dark:bg-success-dark/20 border-success dark:border-success-dark' : 'bg-gray-100 dark:bg-gray-800'} cursor-pointer group"
            onclick="joinRoomFromHistory('${room.id}')"
            title="Click to join room">
         <div class="flex-1 min-w-0">
@@ -1967,7 +1970,7 @@ function handlePeerDraft(message, peerId) {
     AppState.draftMessages.delete(peerId);
     IndexState.draftTimeouts.delete(peerId);
     updateDraftMessages();
-  }, CONSTANTS.TIMEOUT_DRAFT_CLEAR);
+  }, INDEX_CONSTANTS.TIMEOUT_DRAFT_CLEAR);
 
   IndexState.draftTimeouts.set(peerId, timeout);
 
