@@ -71,12 +71,6 @@
     <body
         class="bg-gray-100 dark:bg-gray-900 text-black dark:text-white min-h-screen">
 
-        <!-- Mobile Sidebar Toggle -->
-        <button id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle sidebar">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-            </svg>
-        </button>
 
         <!-- Sidebar Overlay -->
         <div id="sidebarOverlay" class="sidebar-overlay"></div>
@@ -85,19 +79,20 @@
         <div id="toastContainer" class="toast-container"></div>
 
 
-        <div class="max-w-6xl mx-auto px-4 py-6">
+        <div class="max-w-6xl mx-auto px-2 sm:px-4 py-3 sm:py-6">
             <!-- Header -->
             <header class="neo-card-elevated mb-6">
                 <div class="neo-header-hero">
-                    <div class="flex items-center justify-between w-full">
-                        <div class="flex flex-col">
+                    <!-- Desktop Layout -->
+                    <div class="hidden md:flex items-center justify-between w-full gap-4">
+                        <div class="flex flex-col flex-shrink-0">
                             <h1 class="neo-title-hero">MINDLINE</h1>
                             <p class="neo-subtitle opacity-90">E2E Encrypted P2P Real Time Chat</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <div class="flex flex-col gap-1">
+                        <div class="flex-1 flex justify-center mx-4">
+                            <div class="flex flex-col gap-1 w-full max-w-md">
                                 <!-- Compound input with label inside -->
-                                <div class="neo-input w-48 flex items-center gap-2 px-3 py-2">
+                                <div class="neo-input w-full flex items-center gap-2 px-3 py-2">
                                     <span class="text-xs neo-text-bold text-gray-600 dark:text-gray-400 whitespace-nowrap">Chatting as:</span>
                                     <input type="text" id="userName"
                                         placeholder="Anonymous"
@@ -111,10 +106,11 @@
                                 <!-- Hidden element for user ID storage (required by state.js) -->
                                 <div id="userIdTooltip" class="hidden">Not initialized</div>
                             </div>
-                            <button id="themeToggleBtn"
-                                class="neo-btn neo-hover-bounce focus:outline-none cursor-pointer z-10 relative"
-                                aria-label="Toggle dark mode"
-                                style="position: relative; z-index: 100;">
+                        </div>
+                        <button id="themeToggleBtn"
+                            class="neo-btn neo-hover-bounce focus:outline-none cursor-pointer z-10 relative flex-shrink-0"
+                            aria-label="Toggle dark mode"
+                            style="position: relative; z-index: 100;">
                         <!-- Sun icon for dark mode -->
                         <svg id="sunIcon" class="w-6 h-6 hidden"
                             xmlns="http://www.w3.org/2000/svg"
@@ -122,9 +118,9 @@
                             stroke="currentColor" stroke-width="2"
                             stroke-linecap="round"
                             stroke-linejoin="round"><circle cx="12" cy="12"
-                                r="5"></circle><line x1="12" y1="1" x2="12"
-                                y2="3"></line><line x1="12" y1="21" x2="12"
-                                y2="23"></line><line x1="4.22" y1="4.22"
+                                r="5"></circle><line x1="12" y1="1"
+                                x2="12" y2="3"></line><line x1="12" y1="21"
+                                x2="12" y2="23"></line><line x1="4.22" y1="4.22"
                                 x2="5.64" y2="5.64"></line><line x1="18.36"
                                 y1="18.36" x2="19.78" y2="19.78"></line><line
                                 x1="1" y1="12" x2="3" y2="12"></line><line
@@ -139,8 +135,61 @@
                             stroke="currentColor" stroke-width="2"
                             stroke-linecap="round" stroke-linejoin="round"><path
                                 d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                        </button>
+                    </div>
+
+                    <!-- Mobile Layout -->
+                    <div class="md:hidden flex flex-col gap-4 w-full">
+                        <div class="flex items-center justify-between w-full">
+                            <div class="flex flex-col">
+                                <h1 class="neo-title-hero">MINDLINE</h1>
+                                <p class="neo-subtitle opacity-90">E2E Encrypted P2P Real Time Chat</p>
+                            </div>
+                            <button id="themeToggleBtnMobile"
+                                class="neo-btn neo-hover-bounce focus:outline-none cursor-pointer z-10 relative"
+                                aria-label="Toggle dark mode"
+                                style="position: relative; z-index: 100;">
+                            <!-- Sun icon for dark mode -->
+                            <svg id="sunIconMobile" class="w-6 h-6 hidden"
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"><circle cx="12" cy="12"
+                                    r="5"></circle><line x1="12" y1="1" x2="12"
+                                    y2="3"></line><line x1="12" y1="21" x2="12"
+                                    y2="23"></line><line x1="4.22" y1="4.22"
+                                    x2="5.64" y2="5.64"></line><line x1="18.36"
+                                    y1="18.36" x2="19.78" y2="19.78"></line><line
+                                    x1="1" y1="12" x2="3" y2="12"></line><line
+                                    x1="21" y1="12" x2="23" y2="12"></line><line
+                                    x1="4.22" y1="19.78" x2="5.64"
+                                    y2="18.36"></line><line x1="18.36" y1="5.64"
+                                    x2="19.78" y2="4.22"></line></svg>
+                            <!-- Moon icon for light mode -->
+                            <svg id="moonIconMobile" class="w-6 h-6"
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round"><path
+                                    d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
                             </button>
                         </div>
+                        <!-- Username input on new line for mobile -->
+                        <div class="w-full">
+                            <div class="neo-input w-full flex items-center gap-2 px-3 py-2">
+                                <span class="text-xs neo-text-bold text-gray-600 dark:text-gray-400 whitespace-nowrap">Chatting as:</span>
+                                <input type="text" id="userNameMobile"
+                                    placeholder="Anonymous"
+                                    value=""
+                                    class="bg-transparent border-none outline-none flex-1 text-sm font-medium"
+                                    autocomplete="off"
+                                    data-lpignore="true"
+                                    data-1p-ignore="true">
+                            </div>
+                            <div id="initStatusMobile" class="text-xs text-gray-500 dark:text-gray-400 hidden mt-1">Initializing...</div>
+                        </div>
+                    </div>
                     </div>
                 </div>
             </header>
@@ -186,16 +235,16 @@
                 </div>
 
                 <!-- Input area - always pinned at bottom -->
-                <div class="border-t border-gray-200 dark:border-gray-700 p-4">
-                    <div class="flex gap-3">
+                <div class="border-t border-gray-200 dark:border-gray-700 p-2 sm:p-4">
+                    <div class="flex gap-2 sm:gap-3">
                         <input type="text" id="messageInput"
                             placeholder="Others see this as you type..."
-                            class="neo-input-hero flex-1"
+                            class="neo-input-hero flex-1 text-sm sm:text-lg"
                             autocomplete="off"
                             data-lpignore="true"
                             data-1p-ignore="true">
                         <button id="sendBtn"
-                            class="neo-btn-hero neo-btn-primary neo-hover-nuclear"
+                            class="neo-btn-hero neo-btn-primary neo-hover-nuclear flex-shrink-0 px-3 sm:px-6"
                             aria-label="Send message">
                             <svg xmlns="http://www.w3.org/2000/svg"
                                 width="24" height="24"
@@ -292,6 +341,34 @@
         };
 
         // All functionality moved to JavaScript modules
+
+        // Synchronize desktop and mobile username inputs
+        function syncUsernameInputs() {
+            const desktopInput = document.getElementById('userName');
+            const mobileInput = document.getElementById('userNameMobile');
+            const desktopTheme = document.getElementById('themeToggleBtn');
+            const mobileTheme = document.getElementById('themeToggleBtnMobile');
+
+            if (desktopInput && mobileInput) {
+                // Sync values when typing
+                desktopInput.addEventListener('input', (e) => {
+                    mobileInput.value = e.target.value;
+                });
+                mobileInput.addEventListener('input', (e) => {
+                    desktopInput.value = e.target.value;
+                });
+
+                // Sync theme toggle functionality
+                if (desktopTheme && mobileTheme) {
+                    mobileTheme.addEventListener('click', () => {
+                        desktopTheme.click();
+                    });
+                }
+            }
+        }
+
+        // Initialize sync when DOM is ready
+        document.addEventListener('DOMContentLoaded', syncUsernameInputs);
     </script>
     </body>
 </html>
