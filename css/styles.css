@@ -238,6 +238,7 @@ body.dark {
     position: relative;
     transform: translate(0, 0);
     text-shadow: 1px 1px 0px var(--shadow-color);
+    box-shadow: var(--small-shadow) var(--shadow-color);
 }
 
 .neo-input:focus {
@@ -1785,7 +1786,6 @@ h1, h2, h3, h4, h5, h6 {
 
 .neo-text-bold {
     font-weight: 800;
-    text-shadow: 1px 1px 0px var(--shadow-color);
     letter-spacing: 0.02em;
 }
 
