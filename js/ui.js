@@ -75,13 +75,7 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
   timestampDiv.className = 'message-timestamp';
   timestampDiv.textContent = timestamp;
 
-  // Add status indicator for sent messages
-  if (isMe) {
-    const statusDiv = document.createElement('div');
-    statusDiv.className = 'message-status';
-    statusDiv.textContent = 'sent';
-    messageElement.appendChild(statusDiv);
-  }
+  // Status indicator removed
 
   // Assemble message
   messageElement.appendChild(senderDiv);
