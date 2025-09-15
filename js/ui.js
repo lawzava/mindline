@@ -29,8 +29,9 @@ function updateDebugOutput(message) {
  * @param {boolean} isMe - Whether the message is from the current user
  * @param {string} senderName - Name of the sender
  * @param {boolean} shouldScroll - Whether to scroll to bottom
+ * @param {number|Date} messageTimestamp - Timestamp of the message (optional, defaults to current time)
  */
-export function displayMessage(message, isMe = true, senderName = 'You', shouldScroll = true) {
+export function displayMessage(message, isMe = true, senderName = 'You', shouldScroll = true, messageTimestamp = null) {
   const chatArea = document.getElementById('chatArea');
   const welcomeMessage = document.getElementById('welcomeMessage');
 
@@ -40,7 +41,10 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
   }
 
   const messageElement = document.createElement('div');
-  const timestamp = new Date().toLocaleTimeString();
+  // Use provided timestamp or current time as fallback
+  const timestamp = messageTimestamp
+    ? new Date(messageTimestamp).toLocaleTimeString()
+    : new Date().toLocaleTimeString();
 
   if (isMe) {
     messageElement.className = 'ml-auto max-w-[75%] mb-4 p-3 bg-primary/20 dark:bg-primary-dark/30 border-2 border-black dark:border-white shadow-md';
@@ -138,12 +142,7 @@ export function updateConnectionStatus(status = 'disconnected') {
  * @param {string} roomId - Room ID to display
  */
 export function updateRoomDisplay(roomId) {
-  const roomIdInput = document.getElementById('roomIdInput');
-  if (roomIdInput) {
-    roomIdInput.value = roomId;
-  }
-
-  // Update page title
+  // Update page title to show current room
   document.title = `Mindline - Room: ${roomId}`;
 
   logger.debug('Room display updated:', roomId);

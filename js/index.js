@@ -11,7 +11,9 @@ import {
   setCurrentRoomId,
   generateUUID,
   getRoomFromURL,
-  updateURLWithRoom
+  updateURLWithRoom,
+  setP2PConnection,
+  getP2PConnection
 } from './state.js';
 import {
   log,
@@ -177,8 +179,15 @@ async function initializeApp() {
       console.log('No room ID found in URL');
     }
 
+    // Update connection status based on restored room state
     const roomId = getCurrentRoomId();
-    updateConnectionStatus(roomId ? 'connected' : 'disconnected');
+    if (roomId) {
+      // A room was restored, but we need to verify P2P connection
+      const p2pConnection = getP2PConnection();
+      updateConnectionStatus(p2pConnection ? 'connected' : 'connecting');
+    } else {
+      updateConnectionStatus('disconnected');
+    }
 
     // Initialize room history UI (with small delay to ensure DOM is ready)
     setTimeout(() => {
@@ -516,7 +525,7 @@ function handleSyncResponse(message, peerId) {
 
       // Display the message
       const isMe = msg.senderId === getCurrentUserId();
-      displayMessage(msg.content, isMe, msg.sender);
+      displayMessage(msg.content, isMe, msg.sender, true, msg.timestamp);
 
       addedMessages++;
     }
@@ -649,6 +658,7 @@ async function restoreRoomConnection() {
   }
 
   updateRoomDisplay(savedRoomId);
+  setCurrentRoomId(savedRoomId);
 
   try {
     // Try to join the room in WASM
@@ -737,6 +747,7 @@ async function createRoom() {
     // Update UI and localStorage
     updateRoomDisplay(roomId);
     localStorage.setItem('currentRoomId', roomId);
+    setCurrentRoomId(roomId);
 
     // Add to room history
     addRoomToHistory(roomId);
@@ -806,6 +817,7 @@ async function joinRoom(roomId) {
     // Update UI and localStorage
     updateRoomDisplay(roomId);
     localStorage.setItem('currentRoomId', roomId);
+    setCurrentRoomId(roomId);
 
     // Add to room history
     addRoomToHistory(roomId);
@@ -896,8 +908,9 @@ async function attemptReconnect() {
  */
 async function initializeP2P(roomId) {
   // Disconnect existing connection if any
-  if (AppState.p2pConnection) {
-    AppState.p2pConnection.disconnect();
+  const existingConnection = getP2PConnection();
+  if (existingConnection) {
+    existingConnection.disconnect();
   }
 
   // Get user ID
@@ -907,14 +920,15 @@ async function initializeP2P(roomId) {
   }
 
   // Create new P2P connection
-  AppState.p2pConnection = new P2PConnection(userId, roomId, null);
+  const p2pConnection = new P2PConnection(userId, roomId, null);
+  setP2PConnection(p2pConnection);
 
   // Set up message handlers
-  AppState.p2pConnection.onMessage((message, peerId) => {
+  p2pConnection.onMessage((message, peerId) => {
     handleIncomingP2PMessage(message, peerId);
   });
 
-  AppState.p2pConnection.onPeerConnected((peerId) => {
+  p2pConnection.onPeerConnected((peerId) => {
     log(`Peer connected: ${peerId}`);
     updatePeerCount();
 
@@ -932,11 +946,11 @@ async function initializeP2P(roomId) {
         senderName: userName,
         timestamp: Date.now()
       };
-      AppState.p2pConnection.broadcast(connectMessage);
+      getP2PConnection()?.broadcast(connectMessage);
     }, 1000); // Shorter delay for better UX
   });
 
-  AppState.p2pConnection.onPeerDisconnected((peerId) => {
+  p2pConnection.onPeerDisconnected((peerId) => {
     log(`Peer disconnected: ${peerId}`);
     // Clear draft message for disconnected peer
     AppState.draftMessages.delete(peerId);
@@ -1197,7 +1211,7 @@ function sendMessage() {
     // Display the message in chat
     console.log(`🖥️ Displaying message in chat UI`);
     try {
-      displayMessage(message, true, userName);
+      displayMessage(message, true, userName, true, messageObj.timestamp);
       console.log(`✅ Message displayed in UI successfully`);
     } catch (displayError) {
       console.error(`❌ Failed to display message in UI:`, displayError);
@@ -1440,7 +1454,8 @@ function handleDraftMessage() {
   const content = messageInput.value;
 
   try {
-    if (AppState.p2pConnection) {
+    const p2pConnection = getP2PConnection();
+    if (p2pConnection) {
       if (content.trim()) {
         // Send draft content to peers
         const draftMessage = {
@@ -1451,7 +1466,7 @@ function handleDraftMessage() {
           timestamp: Date.now()
         };
 
-        AppState.p2pConnection.broadcast(draftMessage);
+        p2pConnection.broadcast(draftMessage);
       } else {
         // Send clear draft message when input is empty
         const clearMessage = {
@@ -1460,7 +1475,7 @@ function handleDraftMessage() {
           timestamp: Date.now()
         };
 
-        AppState.p2pConnection.broadcast(clearMessage);
+        p2pConnection.broadcast(clearMessage);
       }
     } else {
       console.warn('No P2P connection available for draft messages');
@@ -1723,7 +1738,7 @@ function updateRoomHistoryUI() {
     const timeAgo = formatTimeAgo(room.lastJoined);
 
     return `
-      <div class="flex items-center justify-between p-2 border-2 border-gray-300 dark:border-gray-600 hover:border-black dark:hover:border-white transition-colors ${isCurrentRoom ? 'bg-gray-200 dark:bg-gray-700' : 'bg-gray-100 dark:bg-gray-800'} cursor-pointer group"
+      <div class="flex items-center justify-between p-2 border-2 border-gray-300 dark:border-gray-600 hover:border-black dark:hover:border-white transition-colors ${isCurrentRoom ? 'bg-green-100 dark:bg-green-900 border-green-500 dark:border-green-400' : 'bg-gray-100 dark:bg-gray-800'} cursor-pointer group"
            onclick="joinRoomFromHistory('${room.id}')"
            title="Click to join room">
         <div class="flex-1 min-w-0">
@@ -1731,9 +1746,6 @@ function updateRoomHistoryUI() {
           <div class="text-xs text-gray-500 dark:text-gray-400">${timeAgo}</div>
         </div>
         <div class="flex items-center gap-1">
-          ${isCurrentRoom ? `
-            <span class="text-xs text-success dark:text-success-dark font-bold mr-2">CURRENT</span>
-          ` : ''}
           <button onclick="event.stopPropagation(); shareRoomById('${room.id}')"
                   class="opacity-0 group-hover:opacity-100 p-1 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-opacity"
                   title="Share room link">
@@ -1913,7 +1925,7 @@ function connectNewUIWithWasm() {
 
 // Display received message from P2P
 function displayReceivedMessage(messageObj) {
-  displayMessage(messageObj.content, false, messageObj.sender);
+  displayMessage(messageObj.content, false, messageObj.sender, true, messageObj.timestamp);
 
   // Ensure chat scrolls to show new message from peer
   scrollChatToBottom('smooth', 50);
