@@ -230,7 +230,7 @@ export function displayChatHistory(messages) {
     // Display all messages
     messages.forEach(message => {
       const isMe = message.senderId === getCurrentUserId();
-      displayMessage(message.content, isMe, message.sender, false); // false = don't scroll yet
+      displayMessage(message.content, isMe, message.sender, false, message.timestamp); // false = don't scroll yet, pass timestamp
     });
 
     // Scroll to bottom after all messages are displayed
