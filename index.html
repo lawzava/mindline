@@ -70,21 +70,51 @@
     </head>
     <body
         class="bg-gray-100 dark:bg-gray-900 text-black dark:text-white min-h-screen">
+
+        <!-- Mobile Sidebar Toggle -->
+        <button id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle sidebar">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+        </button>
+
+        <!-- Sidebar Overlay -->
+        <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+        <!-- Toast Container -->
+        <div id="toastContainer" class="toast-container"></div>
+
+
         <div class="max-w-6xl mx-auto px-4 py-6">
             <!-- Header -->
-            <header class="neo-card mb-6">
-                <div class="neo-header">
-                    <div class="flex flex-col">
-                        <h1
-                            class="text-3xl font-bold tracking-tight">MINDLINE</h1>
-                        <p
-                            class="text-sm text-secondary dark:text-secondary-dark font-medium">Secure
-                            P2P Real Time Chat</p>
-                    </div>
-                    <button id="themeToggleBtn"
-                        class="p-2 focus:outline-none cursor-pointer z-10 relative"
-                        aria-label="Toggle dark mode"
-                        style="position: relative; z-index: 100;">
+            <header class="neo-card-elevated mb-6">
+                <div class="neo-header-hero">
+                    <div class="flex items-center justify-between w-full">
+                        <div class="flex flex-col">
+                            <h1 class="neo-title-hero">MINDLINE</h1>
+                            <p class="neo-subtitle opacity-90">E2E Encrypted P2P Real Time Chat</p>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="flex flex-col gap-1">
+                                <!-- Compound input with label inside -->
+                                <div class="neo-input w-48 flex items-center gap-2 px-3 py-2">
+                                    <span class="text-xs neo-text-bold text-gray-600 dark:text-gray-400 whitespace-nowrap">Chatting as:</span>
+                                    <input type="text" id="userName"
+                                        placeholder="Anonymous"
+                                        value=""
+                                        class="bg-transparent border-none outline-none flex-1 text-sm font-medium"
+                                        autocomplete="off"
+                                        data-lpignore="true"
+                                        data-1p-ignore="true">
+                                </div>
+                                <div id="initStatus" class="text-xs text-gray-500 dark:text-gray-400 hidden">Initializing...</div>
+                                <!-- Hidden element for user ID storage (required by state.js) -->
+                                <div id="userIdTooltip" class="hidden">Not initialized</div>
+                            </div>
+                            <button id="themeToggleBtn"
+                                class="neo-btn neo-hover-bounce focus:outline-none cursor-pointer z-10 relative"
+                                aria-label="Toggle dark mode"
+                                style="position: relative; z-index: 100;">
                         <!-- Sun icon for dark mode -->
                         <svg id="sunIcon" class="w-6 h-6 hidden"
                             xmlns="http://www.w3.org/2000/svg"
@@ -109,148 +139,122 @@
                             stroke="currentColor" stroke-width="2"
                             stroke-linecap="round" stroke-linejoin="round"><path
                                 d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-                    </button>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </header>
 
-            <!-- Main content -->
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <!-- Sidebar -->
-                <div class="lg:col-span-4 flex flex-col gap-6">
-                    <!-- User Setup Card -->
-                    <div class="neo-card">
-                        <div class="neo-header">
-                            <h2 class="text-xl uppercase tracking-wider">USER
-                                SETUP</h2>
-                        </div>
-                        <div class="p-4">
-                            <div class="mb-4 relative">
-                                <label for="userName"
-                                    class="font-semibold mb-2 flex items-center gap-2">
-                                    Your Name
-                                    <!-- Info icon with tooltip -->
-                                    <div class="relative inline-block group">
-                                        <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 cursor-help" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        <!-- Tooltip -->
-                                        <div class="absolute left-0 bottom-full mb-2 w-64 p-2 bg-black dark:bg-white text-white dark:text-black text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                                            <div class="font-semibold mb-1">User ID:</div>
-                                            <div id="userIdTooltip" class="font-mono break-all">Not initialized</div>
-                                            <div class="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-black dark:border-t-white"></div>
-                                        </div>
-                                    </div>
-                                </label>
-                                <input type="text" id="userName"
-                                    placeholder="Enter your name"
-                                    value="" class="neo-input"
-                                    autocomplete="off"
-                                    data-lpignore="true"
-                                    data-1p-ignore="true">
-                                <div id="initStatus" class="text-xs text-gray-500 dark:text-gray-400 mt-1 hidden">Initializing...</div>
+            <!-- Chat Section (Main Content) -->
+            <div class="chat-container neo-card-hero h-[calc(100vh-200px)] min-h-[600px] flex flex-col mb-6">
+                <!-- Chat messages container with fixed height and scroll -->
+                <div class="flex-1 min-h-0 p-4 flex flex-col">
+                    <div id="chatArea"
+                        class="flex-1 overflow-y-auto pr-2 -mr-2">
+                        <!-- Welcome message -->
+                        <div id="welcomeMessage" class="empty-state">
+                            <div class="empty-state-icon">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="empty-state-title">🚫 No Hidden Drafts</h3>
+                            <p class="empty-state-description">
+                                Join or create a room to experience radical transparency.
+                                <br><br>
+                                <strong>⚡ Live Transparency:</strong> Others see exactly what you're typing in real-time. No time to hide thoughts or craft perfect responses. Just authentic communication.
+                            </p>
+                            <div class="empty-state-action">
+                                <button class="neo-btn neo-btn-primary neo-hover-extreme" onclick="document.getElementById('roomIdInput').focus()">
+                                    Join Room
+                                </button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Room Management Card -->
-                    <div class="neo-card">
-                        <div class="neo-header">
-                            <h2
-                                class="text-xl uppercase tracking-wider">JOIN ROOM</h2>
-                        </div>
-                        <div class="p-4">
-                            <div class="mb-4">
-                                <label for="roomIdInput"
-                                    class="block font-semibold mb-2">Room
-                                    ID</label>
-                                <input type="text" id="roomIdInput"
-                                    placeholder="Enter room ID (min 8 chars)"
-                                    class="neo-input">
-                                <p
-                                    class="text-xs text-error dark:text-error-dark mt-1 font-medium">⚠️ Anyone who guesses your room ID can join. Use something hard to guess!</p>
-                                <p
-                                    class="text-xs text-success dark:text-success-dark mt-1">💡 Leave empty to auto-generate a secure room ID</p>
-                            </div>
-                            <div class="flex flex-col sm:flex-row gap-2">
-                                <button id="joinRoomBtn"
-                                    class="neo-btn neo-btn-primary w-full">Join
-                                    Room</button>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- Draft messages area -->
+                    <div id="draftsArea" class="draft-messages-area bg-gray-50 dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-lg p-2 mb-2 min-h-[20px] max-h-[100px] overflow-y-auto" style="display: none;"></div>
 
-                    <!-- Room History Card -->
-                    <div class="neo-card">
-                        <div class="neo-header">
-                            <h2 class="text-xl uppercase tracking-wider">RECENT ROOMS</h2>
+                    <!-- Debug Panel -->
+                    <div id="debugPanel" class="bg-yellow-100 dark:bg-yellow-900 border-2 border-yellow-500 rounded-lg p-2 mb-2 text-xs" style="display: none;">
+                        <div class="flex justify-between items-center mb-2">
+                            <strong class="text-yellow-800 dark:text-yellow-200">🐛 Debug Info</strong>
+                            <button id="clearDebugBtn" class="text-yellow-800 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-800 px-2 py-1 rounded">Clear</button>
                         </div>
-                        <div class="p-4">
-                            <!-- Connection Status Section -->
-                            <div id="connectionSection" class="hidden mb-4">
-                                <div id="connectionStatus"
-                                    class="block w-full px-3 py-2 text-xs font-bold uppercase border-2 border-black dark:border-white tracking-wider text-center status-disconnected">Disconnected</div>
-                            </div>
-                            <div id="roomHistoryList" class="space-y-2">
-                                <div class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                                    No recent rooms
-                                </div>
-                            </div>
-                        </div>
+                        <div id="debugContent" class="max-h-[200px] overflow-y-auto font-mono text-yellow-800 dark:text-yellow-200 whitespace-pre-wrap"></div>
                     </div>
                 </div>
 
-                <!-- Chat Section -->
-                <div class="lg:col-span-8">
-                    <div
-                        class="neo-card h-[calc(100vh-150px)] min-h-[500px] flex flex-col">
-                        <div class="neo-header">
-                            <h2
-                                class="text-xl uppercase tracking-wider">CHAT</h2>
-                            <button id="debugToggleBtn" class="text-xs bg-yellow-500 hover:bg-yellow-400 text-black px-2 py-1 rounded font-mono" title="Toggle Debug Panel" style="display: none;">🐛 Debug</button>
-                        </div>
-                        <div class="flex-1 p-4 flex flex-col" style="height: 600px;">
-                            <!-- Chat messages container -->
-                            <div id="chatArea"
-                                class="flex-1 bg-gray-100 dark:bg-gray-800 border-2 border-black dark:border-white p-4 overflow-y-auto mb-2 relative min-h-0">
-                                <!-- Welcome message -->
-                                <div id="welcomeMessage"
-                                    class="text-center py-8 text-gray-500 dark:text-gray-400">
-                                    <h3 class="text-lg font-bold mb-2">🚫 No Hidden Drafts</h3>
-                                    <p class="italic mb-4">Join or create a room to experience radical transparency</p>
-                                    <p class="text-sm bg-accent/20 dark:bg-accent-dark/30 border-2 border-dashed border-accent dark:border-accent-dark p-3 rounded-lg mx-4">
-                                        <strong>⚡ Live Transparency:</strong> Others see exactly what you're typing in real-time. No time to hide thoughts or craft perfect responses. Just authentic communication.
-                                    </p>
-                                </div>
-                            </div>
+                <!-- Input area - always pinned at bottom -->
+                <div class="border-t border-gray-200 dark:border-gray-700 p-4">
+                    <div class="flex gap-3">
+                        <input type="text" id="messageInput"
+                            placeholder="Others see this as you type..."
+                            class="neo-input-hero flex-1"
+                            autocomplete="off"
+                            data-lpignore="true"
+                            data-1p-ignore="true">
+                        <button id="sendBtn"
+                            class="neo-btn-hero neo-btn-primary neo-hover-nuclear"
+                            aria-label="Send message">
+                            <svg xmlns="http://www.w3.org/2000/svg"
+                                width="24" height="24"
+                                viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2.5"
+                                stroke-linecap="round"
+                                stroke-linejoin="round">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                            <span class="sr-only">Send message</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-                            <!-- Draft messages area - positioned between chat and input -->
-                            <div id="draftsArea" class="draft-messages-area bg-gray-50 dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-lg p-2 mb-2 min-h-[20px] max-h-[100px] overflow-y-auto" style="display: none;"></div>
-
-                            <!-- Debug Panel -->
-                            <div id="debugPanel" class="bg-yellow-100 dark:bg-yellow-900 border-2 border-yellow-500 rounded-lg p-2 mb-2 text-xs" style="display: none;">
-                                <div class="flex justify-between items-center mb-2">
-                                    <strong class="text-yellow-800 dark:text-yellow-200">🐛 Debug Info</strong>
-                                    <button id="clearDebugBtn" class="text-yellow-800 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-800 px-2 py-1 rounded">Clear</button>
-                                </div>
-                                <div id="debugContent" class="max-h-[200px] overflow-y-auto font-mono text-yellow-800 dark:text-yellow-200 whitespace-pre-wrap"></div>
-                            </div>
+            <!-- Configuration Sections (Below Chat) -->
+            <div class="w-full">
+                <!-- Rooms Card -->
+                <div class="neo-card neo-hover-mega">
+                    <div class="neo-header">
+                        <h2 class="neo-subtitle">ROOMS</h2>
+                    </div>
+                    <div class="p-4">
+                        <!-- Room ID Input Section -->
+                        <div class="mb-6">
                             <div class="flex gap-2">
-                                <input type="text" id="messageInput"
-                                    placeholder="Others see this as you type..."
+                                <input type="text" id="roomIdInput"
+                                    placeholder="Enter room ID (min 8 chars)"
                                     class="neo-input flex-1">
-                                <button id="sendBtn"
-                                    class="neo-btn neo-btn-primary"
-                                    aria-label="Send message">
-                                    <svg xmlns="http://www.w3.org/2000/svg"
-                                        width="20" height="20"
-                                        viewBox="0 0 24 24" fill="none"
-                                        stroke="currentColor" stroke-width="2"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"><line x1="22"
-                                            y1="2" x2="11"
-                                            y2="13"></line><polygon
-                                            points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                                </button>
+                                <button id="joinRoomBtn"
+                                    class="neo-btn neo-btn-primary neo-hover-nuclear">JOIN</button>
+                            </div>
+                            <p class="text-xs text-error dark:text-error-dark mt-1 font-medium">⚠️ Anyone who guesses your room ID can join. Use something hard to guess!</p>
+                            <p class="text-xs text-success dark:text-success-dark mt-1">💡 Leave empty to auto-generate a secure room ID</p>
+                        </div>
+
+                        <!-- Connection Status Section -->
+                        <div id="connectionSection" class="hidden mb-4">
+                            <div id="connectionStatus"
+                                class="status-indicator status-disconnected neo-pulse-extreme">
+                                <span class="sr-only">Connection status:</span>
+                                Disconnected
+                            </div>
+                        </div>
+                        <div id="roomHistoryList" class="space-y-2">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                                    </svg>
+                                </div>
+                                <h3 class="empty-state-title">No rooms yet</h3>
+                                <p class="empty-state-description">Join or create your first room to start chatting with radical transparency.</p>
+                                <div class="empty-state-action">
+                                    <button class="neo-btn neo-btn-primary neo-hover-nuclear" onclick="document.getElementById('roomIdInput').focus()">
+                                        Create Room
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -264,36 +268,29 @@
             const statusElement = document.getElementById('connectionStatus');
             if (isConnected) {
                 statusElement.textContent = 'Connected';
-                statusElement.classList.remove('status-disconnected');
-                statusElement.classList.add('status-connected');
+                statusElement.className = 'status-connected';
             } else {
                 statusElement.textContent = 'Disconnected';
-                statusElement.classList.remove('status-connected');
-                statusElement.classList.add('status-disconnected');
+                statusElement.className = 'status-disconnected';
             }
         };
-        
-        // Show typing indicator
-        const showTypingIndicator = (isTyping) => {
-            document.getElementById('typingIndicator').style.display = isTyping ? 'block' : 'none';
-        };
-        
+
         // Display a message
         const displayMessage = (message, isMe = true) => {
             const chatArea = document.getElementById('chatArea');
             const messageElement = document.createElement('div');
-            
+
             if (isMe) {
                 messageElement.className = 'ml-auto max-w-[75%] mb-4 p-3 bg-primary/20 dark:bg-primary-dark/30 border-2 border-black dark:border-white shadow-md';
             } else {
                 messageElement.className = 'mr-auto max-w-[75%] mb-4 p-3 bg-gray-200 dark:bg-gray-700 border-2 border-black dark:border-white shadow-md';
             }
-            
+
             messageElement.textContent = message;
             chatArea.appendChild(messageElement);
             chatArea.scrollTop = chatArea.scrollHeight;
         };
-        
+
         // All functionality moved to JavaScript modules
     </script>
     </body>
