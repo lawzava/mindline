@@ -196,6 +196,11 @@ body.dark {
     background: linear-gradient(135deg, var(--surface-dark), var(--bg-dark));
 }
 
+.dark .neo-message-bubble.sent {
+    background: linear-gradient(135deg, var(--shadow-color), var(--accent-color));
+    border-color: var(--primary-color);
+}
+
 /* Message timestamp styling */
 .message-timestamp {
     font-size: 0.7rem;
@@ -233,25 +238,7 @@ body.dark {
 
 /* Message status indicators */
 .message-status {
-    position: absolute;
-    bottom: -8px;
-    right: 8px;
-    background: var(--success-color);
-    color: white;
-    font-size: 0.6rem;
-    padding: 2px 6px;
-    border-radius: 8px;
-    font-weight: 700;
-    text-transform: uppercase;
-    box-shadow: var(--micro-shadow) var(--shadow-color);
-    opacity: 0;
-    transform: translateY(10px);
-    transition: all 0.3s ease;
-}
-
-.neo-message-bubble:hover .message-status {
-    opacity: 1;
-    transform: translateY(0);
+    display: none;
 }
 
 /* Message animation */
@@ -2484,20 +2471,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .draft-message::before {
-    content: "🔴 LIVE";
-    position: absolute;
-    top: -10px;
-    right: -10px;
-    background: linear-gradient(135deg, #ef4444, #dc2626);
-    color: white;
-    font-size: 0.65rem;
-    font-weight: 800;
-    padding: 4px 8px;
-    border-radius: 6px;
-    border: 2px solid white;
-    z-index: 10;
-    box-shadow: var(--small-shadow) rgba(0,0,0,0.4);
-    animation: live-pulse 1.5s infinite;
+    content: "";
+    display: none;
 }
 
 .draft-message::after {
@@ -2580,6 +2555,11 @@ h1, h2, h3, h4, h5, h6 {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.dark .typing-preview {
+    opacity: 0.9;
+    color: #e5e5e5;
 }
 
 @keyframes draft-shimmer {
