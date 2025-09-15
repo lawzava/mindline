@@ -314,10 +314,18 @@ export class P2PConnection {
         try {
           const message = JSON.parse(event.data);
           console.log(`Received message from ${peerId}:`, message);
+
+          // Extra debugging for chat messages
+          if (message.type === 'chat') {
+            console.log(`🎯 CHAT MESSAGE RECEIVED in WebRTC layer:`, message.id, message.content);
+          }
+
           this.onMessageCallback(message, peerId);
         } catch (error) {
           console.error('Error parsing message:', error, 'Raw data:', event.data);
         }
+      } else {
+        console.warn(`No onMessageCallback registered, dropping message from ${peerId}`);
       }
     };
 
