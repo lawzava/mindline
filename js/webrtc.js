@@ -258,6 +258,7 @@ export class P2PConnection {
       // Wait for data channel from remote peer
       pc.ondatachannel = (event) => {
         console.log(`📥 Received data channel from ${peerId}`);
+        console.log(`📊 Data channel state: ${event.channel.readyState}, ordered: ${event.channel.ordered}`);
         this.setupDataChannel(event.channel, peerId);
       };
     }
@@ -548,12 +549,18 @@ export class P2PConnection {
    */
   sendToPeer(peerId, message) {
     const channel = this.dataChannels.get(peerId);
+    console.log(`🔌 Sending to ${peerId}, channel state: ${channel ? channel.readyState : 'no-channel'}, message type: ${message.type}`);
+
     if (channel && channel.readyState === 'open') {
       try {
-        channel.send(JSON.stringify(message));
+        const messageStr = JSON.stringify(message);
+        console.log(`📤 Actually sending to ${peerId}:`, messageStr.substring(0, 100) + '...');
+        channel.send(messageStr);
       } catch (error) {
         console.error(`Error sending to ${peerId}:`, error);
       }
+    } else {
+      console.warn(`❌ Cannot send to ${peerId}: channel state = ${channel ? channel.readyState : 'no-channel'}`);
     }
   }
 
