@@ -136,28 +136,63 @@ export function setSafeWasm(safeWasm) {
   logger.debug('Safe WASM proxy set');
 }
 
-// URL helper functions
+// URL helper functions - now using WASM
 export function getURLParams() {
   return new URLSearchParams(window.location.search);
 }
 
 export function getRoomFromURL() {
-  const params = getURLParams();
-  const roomId = params.get('r');
-  logger.debug('getRoomFromURL - URL search:', window.location.search);
-  logger.debug('getRoomFromURL - parsed room ID:', roomId);
-  return roomId;
-}
-
-export function updateURLWithRoom(roomId) {
-  if (roomId) {
-    const newUrl = `${window.location.pathname}?r=${encodeURIComponent(roomId)}`;
-    window.history.replaceState(null, '', newUrl);
-    logger.debug('URL updated with room ID:', roomId);
+  if (window.safeWasm && window.safeWasm.get_room_from_url) {
+    const roomId = window.safeWasm.get_room_from_url();
+    logger.debug('getRoomFromURL - WASM result:', roomId);
+    return roomId;
+  } else {
+    // Fallback to JavaScript implementation
+    const params = getURLParams();
+    const roomId = params.get('r');
+    logger.debug('getRoomFromURL - JS fallback, URL search:', window.location.search);
+    logger.debug('getRoomFromURL - JS fallback, parsed room ID:', roomId);
+    return roomId;
   }
 }
 
-// UUID generation
+export function updateURLWithRoom(roomId) {
+  if (window.safeWasm && window.safeWasm.update_url_with_room) {
+    if (roomId) {
+      try {
+        window.safeWasm.update_url_with_room(roomId);
+        logger.debug('URL updated with room ID via WASM:', roomId);
+      } catch (error) {
+        logger.error('WASM URL update failed, using fallback:', error);
+        // Fallback to JavaScript implementation
+        const newUrl = `${window.location.pathname}?r=${encodeURIComponent(roomId)}`;
+        window.history.replaceState(null, '', newUrl);
+        logger.debug('URL updated with room ID via JS fallback:', roomId);
+      }
+    }
+  } else {
+    // Fallback to JavaScript implementation
+    if (roomId) {
+      const newUrl = `${window.location.pathname}?r=${encodeURIComponent(roomId)}`;
+      window.history.replaceState(null, '', newUrl);
+      logger.debug('URL updated with room ID via JS fallback:', roomId);
+    }
+  }
+}
+
+// UUID generation - JavaScript primary for cross-browser stability
 export function generateUUID() {
-  return crypto.randomUUID();
+  // Use JavaScript UUID for maximum browser compatibility
+  // WASM UUID will be re-enabled once cross-browser serialization is resolved
+  try {
+    return crypto.randomUUID();
+  } catch (error) {
+    logger.error('JavaScript UUID generation failed:', error);
+    // Fallback to manual UUID generation
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
 }

@@ -21,6 +21,13 @@ let totalRooms = 0;
 wss.on('connection', (ws) => {
   let currentRoom = null;
   let clientId = null;
+  let isAlive = true;
+
+  // Set up keepalive mechanism
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
 
   ws.on('message', (message) => {
     try {
@@ -151,12 +158,31 @@ const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+// Add keepalive ping mechanism
+const keepaliveInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) {
+      console.log('📡 Terminating dead connection');
+      ws.terminate();
+      return;
+    }
+
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000); // Ping every 30 seconds
+
+wss.on('close', () => {
+  clearInterval(keepaliveInterval);
+});
+
 server.listen(PORT, HOST, () => {
   console.log(`🚀 Mindline Signaling Server`);
   console.log(`   Port: ${PORT}`);
   console.log(`   Host: ${HOST}`);
   console.log(`   Environment: ${NODE_ENV}`);
   console.log(`   WebSocket Path: /ws`);
+  console.log(`💓 Keepalive enabled (30s interval)`);
   console.log(`   Ready for connections!`);
 });
 
