@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
 
 module.exports = (env = {}) => ({
     entry: './js/index.js',
@@ -24,6 +25,10 @@ module.exports = (env = {}) => ({
         new HtmlWebpackPlugin({
             template: './index.html',
             minify: env.production || env.cloudflare
+        }),
+        new webpack.DefinePlugin({
+            'process.env.SIGNALING_SERVER': JSON.stringify(process.env.SIGNALING_SERVER || 'localhost:3000'),
+            'process.env.USE_SSL': JSON.stringify(process.env.USE_SSL || 'false')
         })
     ],
     mode: env.production || env.cloudflare ? 'production' : 'development',
