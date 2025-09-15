@@ -79,63 +79,74 @@
         <div id="toastContainer" class="toast-container"></div>
 
 
-        <div class="max-w-6xl mx-auto px-4 md:px-8 py-3 md:py-6">
+        <div class="container mx-auto px-4 md:px-8 py-3 md:py-6">
             <!-- Header -->
-            <header class="neo-card-elevated mb-6">
+            <header class="neo-card-elevated mb-6 max-w-5xl mx-auto">
                 <div class="neo-header-hero">
                     <!-- Desktop Layout -->
-                    <div class="hidden md:flex items-center justify-between w-full gap-4">
-                        <div class="flex flex-col flex-shrink-0">
+                    <div class="hidden md:grid md:grid-cols-2 items-center w-full gap-8">
+                        <!-- Left side: Title and subtitle -->
+                        <div class="flex flex-col">
                             <h1 class="neo-title-hero">MINDLINE</h1>
                             <p class="neo-subtitle opacity-90">E2E Encrypted P2P Real Time Chat</p>
                         </div>
-                        <div class="flex-1 flex justify-center mx-4">
-                            <div class="flex flex-col gap-1 w-full max-w-md">
-                                <!-- Compound input with label inside -->
-                                <div class="neo-input w-full flex items-center gap-2 px-3 py-2">
-                                    <span class="text-xs neo-text-bold text-gray-600 dark:text-gray-400 whitespace-nowrap">Chatting as:</span>
-                                    <input type="text" id="userName"
-                                        placeholder="Anonymous"
-                                        value=""
-                                        class="bg-transparent border-none outline-none flex-1 text-sm font-medium"
-                                        autocomplete="off"
-                                        data-lpignore="true"
-                                        data-1p-ignore="true">
-                                </div>
-                                <div id="initStatus" class="text-xs text-gray-500 dark:text-gray-400 hidden">Initializing...</div>
-                                <!-- Hidden element for user ID storage (required by state.js) -->
-                                <div id="userIdTooltip" class="hidden">Not initialized</div>
+
+                        <!-- Right side: Aligned controls -->
+                        <div class="flex flex-col gap-2 items-stretch">
+                            <!-- Top row: Chatting as input -->
+                            <div class="neo-input flex items-center gap-2 px-3 py-2">
+                                <span class="text-xs neo-text-bold text-gray-600 dark:text-gray-400 whitespace-nowrap">Chatting as:</span>
+                                <input type="text" id="userName"
+                                    placeholder="Anonymous"
+                                    value=""
+                                    class="bg-transparent border-none outline-none flex-1 text-sm font-medium"
+                                    autocomplete="off"
+                                    data-lpignore="true"
+                                    data-1p-ignore="true">
                             </div>
+
+                            <!-- Bottom row: Action buttons -->
+                            <div class="flex gap-2 justify-between items-center">
+                                <!-- Left side: Space for future buttons -->
+                                <div class="flex gap-2">
+                                    <!-- Future action buttons will go here -->
+                                </div>
+
+                                <!-- Right side: Theme toggle -->
+                                <button id="themeToggleBtn"
+                                    class="neo-btn neo-hover-bounce focus:outline-none cursor-pointer"
+                                    aria-label="Toggle dark mode">
+                                    <!-- Sun icon for dark mode -->
+                                    <svg id="sunIcon" class="w-5 h-5 hidden"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        viewBox="0 0 24 24" fill="none"
+                                        stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"><circle cx="12" cy="12"
+                                            r="5"></circle><line x1="12" y1="1"
+                                            x2="12" y2="3"></line><line x1="12" y1="21"
+                                            x2="12" y2="23"></line><line x1="4.22" y1="4.22"
+                                            x2="5.64" y2="5.64"></line><line x1="18.36"
+                                            y1="18.36" x2="19.78" y2="19.78"></line><line
+                                            x1="1" y1="12" x2="3" y2="12"></line><line
+                                            x1="21" y1="12" x2="23" y2="12"></line><line
+                                            x1="4.22" y1="19.78" x2="5.64"
+                                            y2="18.36"></line><line x1="18.36" y1="5.64"
+                                            x2="19.78" y2="4.22"></line></svg>
+                                    <!-- Moon icon for light mode -->
+                                    <svg id="moonIcon" class="w-5 h-5"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        viewBox="0 0 24 24" fill="none"
+                                        stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round"><path
+                                            d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                                </button>
+                            </div>
+
+                            <!-- Hidden elements -->
+                            <div id="initStatus" class="text-xs text-gray-500 dark:text-gray-400 hidden">Initializing...</div>
+                            <div id="userIdTooltip" class="hidden">Not initialized</div>
                         </div>
-                        <button id="themeToggleBtn"
-                            class="neo-btn neo-hover-bounce focus:outline-none cursor-pointer z-10 relative flex-shrink-0"
-                            aria-label="Toggle dark mode"
-                            style="position: relative; z-index: 100;">
-                        <!-- Sun icon for dark mode -->
-                        <svg id="sunIcon" class="w-6 h-6 hidden"
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"><circle cx="12" cy="12"
-                                r="5"></circle><line x1="12" y1="1"
-                                x2="12" y2="3"></line><line x1="12" y1="21"
-                                x2="12" y2="23"></line><line x1="4.22" y1="4.22"
-                                x2="5.64" y2="5.64"></line><line x1="18.36"
-                                y1="18.36" x2="19.78" y2="19.78"></line><line
-                                x1="1" y1="12" x2="3" y2="12"></line><line
-                                x1="21" y1="12" x2="23" y2="12"></line><line
-                                x1="4.22" y1="19.78" x2="5.64"
-                                y2="18.36"></line><line x1="18.36" y1="5.64"
-                                x2="19.78" y2="4.22"></line></svg>
-                        <!-- Moon icon for light mode -->
-                        <svg id="moonIcon" class="w-6 h-6"
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round"><path
-                                d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-                        </button>
                     </div>
 
                     <!-- Mobile Layout -->
@@ -195,7 +206,7 @@
             </header>
 
             <!-- Chat Section (Main Content) -->
-            <div class="chat-container neo-card-hero h-[calc(100vh-200px)] min-h-[600px] flex flex-col mb-6">
+            <div class="chat-container neo-card-elevated h-[calc(100vh-200px)] min-h-[600px] flex flex-col mb-6 max-w-5xl mx-auto">
                 <!-- Chat messages container with fixed height and scroll -->
                 <div class="flex-1 min-h-0 p-4 md:p-8 flex flex-col">
                     <div id="chatArea"
@@ -262,9 +273,9 @@
             </div>
 
             <!-- Configuration Sections (Below Chat) -->
-            <div class="w-full">
+            <div class="w-full max-w-5xl mx-auto">
                 <!-- Rooms Card -->
-                <div class="neo-card neo-hover-mega">
+                <div class="neo-card-elevated neo-hover-mega">
                     <div class="neo-header">
                         <h2 class="neo-subtitle">ROOMS</h2>
                     </div>
