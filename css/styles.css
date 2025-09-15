@@ -269,11 +269,9 @@ body.dark {
     font-size: 1.25rem;
     font-weight: 800;
     background: var(--input-bg);
-    text-shadow: 1px 1px 0px var(--shadow-color);
 }
 
 .neo-input-hero:focus {
-    box-shadow: var(--small-shadow) var(--shadow-color);
     transform: translate(-2px, -2px);
     border-color: var(--primary-color);
     border-width: 7px;
