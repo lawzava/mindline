@@ -48,9 +48,16 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
   const messageElement = document.createElement('div');
 
   // Use provided timestamp or current time as fallback
-  const timestamp = messageTimestamp
-    ? new Date(messageTimestamp).toLocaleTimeString()
-    : new Date().toLocaleTimeString();
+  const messageDate = messageTimestamp ? new Date(messageTimestamp) : new Date();
+  const now = new Date();
+
+  // Check if message is from today
+  const isToday = messageDate.toDateString() === now.toDateString();
+
+  const timestamp = isToday
+    ? messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : messageDate.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
+      messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   if (isMe) {
     messageElement.className = 'neo-message-bubble sent';
