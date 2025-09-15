@@ -9,6 +9,7 @@ export class P2PConnection {
     this.signalServer = signalServer;
     this.peers = new Map(); // peerId -> RTCPeerConnection
     this.dataChannels = new Map(); // peerId -> RTCDataChannel
+    this.pendingCandidates = new Map(); // peerId -> Array of ICE candidates waiting for remote description
     this.onMessageCallback = null;
     this.onPeerConnectedCallback = null;
     this.onPeerDisconnectedCallback = null;
@@ -365,9 +366,12 @@ export class P2PConnection {
         pc = this.peers.get(peerId);
       }
 
-      // Only set remote description if we're in the right state
+      // Handle offer based on current signaling state
       if (pc.signalingState === 'stable' || pc.signalingState === 'have-remote-offer') {
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+        // Process any queued ICE candidates now that we have remote description
+        await this.processQueuedCandidates(peerId);
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -377,6 +381,35 @@ export class P2PConnection {
           targetId: peerId,
           data: answer
         });
+      } else if (pc.signalingState === 'have-local-offer') {
+        // Handle offer collision - use deterministic tie-breaking
+        console.log(`Offer collision detected with peer ${peerId}`);
+
+        // Compare client IDs lexicographically to determine who should back down
+        if (this.clientId > peerId) {
+          // We have higher priority, ignore their offer
+          console.log(`Ignoring offer from ${peerId} (we have priority)`);
+          return;
+        } else {
+          // They have higher priority, we need to restart
+          console.log(`Restarting connection for ${peerId} (they have priority)`);
+
+          // Rollback to stable state and accept their offer
+          await pc.setLocalDescription({type: 'rollback'});
+          await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+          // Process any queued ICE candidates now that we have remote description
+          await this.processQueuedCandidates(peerId);
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          this.sendSignalingMessage({
+            type: 'answer',
+            targetId: peerId,
+            data: answer
+          });
+        }
       } else {
         console.warn(`Cannot handle offer in state ${pc.signalingState} for peer ${peerId}`);
       }
@@ -395,6 +428,9 @@ export class P2PConnection {
       if (pc.signalingState === 'have-local-offer') {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
+
+          // Process any queued ICE candidates now that we have remote description
+          await this.processQueuedCandidates(peerId);
         } catch (error) {
           console.error(`Error setting remote answer for ${peerId}:`, error);
           console.log('Current signaling state:', pc.signalingState);
@@ -414,10 +450,43 @@ export class P2PConnection {
     const pc = this.peers.get(peerId);
     if (pc) {
       try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        // Check if we have a remote description
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } else {
+          // Queue the candidate for later when remote description is set
+          console.log(`Queueing ICE candidate for ${peerId} (no remote description yet)`);
+          if (!this.pendingCandidates.has(peerId)) {
+            this.pendingCandidates.set(peerId, []);
+          }
+          this.pendingCandidates.get(peerId).push(candidate);
+        }
       } catch (error) {
         console.error('Error adding ICE candidate:', error);
       }
+    }
+  }
+
+  /**
+   * Process queued ICE candidates after setting remote description
+   */
+  async processQueuedCandidates(peerId) {
+    const pc = this.peers.get(peerId);
+    const candidates = this.pendingCandidates.get(peerId);
+
+    if (pc && candidates && candidates.length > 0) {
+      console.log(`Processing ${candidates.length} queued ICE candidates for ${peerId}`);
+
+      for (const candidate of candidates) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (error) {
+          console.error('Error adding queued ICE candidate:', error);
+        }
+      }
+
+      // Clear the queue
+      this.pendingCandidates.delete(peerId);
     }
   }
 
@@ -504,6 +573,9 @@ export class P2PConnection {
       pc.close();
       this.peers.delete(peerId);
     }
+
+    // Clean up any pending ICE candidates
+    this.pendingCandidates.delete(peerId);
 
     if (this.onPeerDisconnectedCallback) {
       this.onPeerDisconnectedCallback(peerId);
