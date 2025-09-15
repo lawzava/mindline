@@ -825,18 +825,36 @@
         document.addEventListener('click', trackInteraction);
         document.addEventListener('touchstart', trackInteraction);
 
-        // Fix mobile hover state issues - Simple approach
+        // Fix mobile hover state issues - Button-specific approach
         function setupMobileTouchHandlers() {
             // Only apply on touch devices
             if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-                // Simple: just force blur all interactive elements after any touch
+                // Add touch-device class to body for CSS targeting
+                document.body.classList.add('touch-device');
+
+                // Track button touches to prevent stuck hover states
+                document.addEventListener('touchstart', function(e) {
+                    const target = e.target;
+                    const button = target.classList.contains('neo-btn') ? target :
+                                 target.closest('.neo-btn');
+
+                    if (button) {
+                        button.classList.add('touch-active');
+                    }
+                });
+
                 document.addEventListener('touchend', function(e) {
-                    // Small delay to allow click event to fire first
-                    setTimeout(() => {
-                        if (document.activeElement) {
-                            document.activeElement.blur();
-                        }
-                    }, 50);
+                    const target = e.target;
+                    const button = target.classList.contains('neo-btn') ? target :
+                                 target.closest('.neo-btn');
+
+                    if (button) {
+                        // Remove touch-active class and blur after a short delay
+                        setTimeout(() => {
+                            button.classList.remove('touch-active');
+                            button.blur();
+                        }, 100);
+                    }
                 });
             }
         }

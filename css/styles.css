@@ -2347,35 +2347,60 @@ h1, h2, h3, h4, h5, h6 {
     }
 }
 
-/* Touch improvements - Simple approach */
+/* Touch improvements - Comprehensive button fix */
 @media (hover: none) and (pointer: coarse) {
-    /* Completely disable all hover effects on touch devices */
-    *:hover {
+    /* Only disable hover effects on buttons, not inputs */
+    .neo-btn:hover,
+    .neo-btn-primary:hover,
+    .neo-btn-secondary:hover,
+    .neo-btn-success:hover,
+    .neo-btn-warning:hover,
+    .neo-btn-hero:hover,
+    .neo-btn-compact:hover,
+    .neo-btn-nuclear:hover {
         transform: none !important;
         box-shadow: inherit !important;
         border-width: inherit !important;
         scale: 1 !important;
-        background: inherit !important;
     }
 
-    /* Disable all hover pseudo-elements */
-    *:hover::before,
-    *:hover::after {
+    /* Disable button hover pseudo-elements only */
+    .neo-btn:hover::before,
+    .neo-btn-primary:hover::before,
+    .neo-btn-nuclear:hover::before {
         left: -100% !important;
         opacity: 0 !important;
-        animation: none !important;
     }
+}
 
-    /* Only allow very subtle active states */
-    .neo-btn:active {
-        opacity: 0.8 !important;
-        transition: opacity 0.1s ease !important;
-    }
+/* Additional touch device overrides using class-based detection */
+.touch-device .neo-btn:hover,
+.touch-device .neo-btn-primary:hover,
+.touch-device .neo-btn-secondary:hover,
+.touch-device .neo-btn-success:hover,
+.touch-device .neo-btn-warning:hover,
+.touch-device .neo-btn-hero:hover,
+.touch-device .neo-btn-compact:hover,
+.touch-device .neo-btn-nuclear:hover {
+    transform: none !important;
+    box-shadow: inherit !important;
+    border-width: inherit !important;
+    scale: 1 !important;
+    background: inherit !important;
+}
 
-    .neo-card:active {
-        opacity: 0.9 !important;
-        transition: opacity 0.1s ease !important;
-    }
+.touch-device .neo-btn:hover::before,
+.touch-device .neo-btn-primary:hover::before,
+.touch-device .neo-btn-nuclear:hover::before {
+    left: -100% !important;
+    opacity: 0 !important;
+    animation: none !important;
+}
+
+/* Touch active state - only visible during actual touch */
+.touch-active {
+    opacity: 0.7 !important;
+    transition: opacity 0.1s ease !important;
 }
 
 
