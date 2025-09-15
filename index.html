@@ -464,15 +464,26 @@
         document.addEventListener('DOMContentLoaded', syncUsernameInputs);
 
         // PWA Service Worker Registration and Install Prompt
-        let deferredPrompt;
+        let deferredPrompt = null;
         let installPromptShown = false;
+
+        // Debug PWA capabilities
+        function debugPWACapabilities() {
+            console.log('🔍 PWA Debug Info:');
+            console.log('- Service Worker supported:', 'serviceWorker' in navigator);
+            console.log('- Standalone mode:', window.matchMedia('(display-mode: standalone)').matches);
+            console.log('- User agent:', navigator.userAgent);
+            console.log('- App installed:', localStorage.getItem('appInstalled'));
+            console.log('- Install dismissed:', localStorage.getItem('installPromptDismissed'));
+            console.log('- Deferred prompt available:', !!deferredPrompt);
+        }
 
         // Register service worker
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js')
                     .then(registration => {
-                        console.log('SW registered: ', registration);
+                        console.log('✅ SW registered: ', registration);
 
                         // Check for updates
                         registration.addEventListener('updatefound', () => {
@@ -486,30 +497,42 @@
                         });
                     })
                     .catch(registrationError => {
-                        console.log('SW registration failed: ', registrationError);
+                        console.log('❌ SW registration failed: ', registrationError);
                     });
             });
         }
 
         // Listen for beforeinstallprompt event (Chrome/Edge)
         window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('🎯 beforeinstallprompt event fired');
             e.preventDefault();
             deferredPrompt = e;
 
             // Show install prompt after a short delay if not already shown
             if (!installPromptShown && !localStorage.getItem('installPromptDismissed')) {
+                console.log('⏰ Scheduling install prompt...');
                 setTimeout(() => {
                     showInstallPrompt();
                 }, 3000);
+            } else {
+                console.log('⏭️ Install prompt skipped:', {
+                    alreadyShown: installPromptShown,
+                    dismissed: !!localStorage.getItem('installPromptDismissed')
+                });
             }
         });
 
         // Listen for app installation
         window.addEventListener('appinstalled', () => {
-            console.log('PWA was installed');
+            console.log('🎉 PWA was installed');
             deferredPrompt = null;
             hideInstallPrompt();
             localStorage.setItem('appInstalled', 'true');
+        });
+
+        // Debug capabilities on page load
+        window.addEventListener('load', () => {
+            setTimeout(debugPWACapabilities, 1000);
         });
 
         // Show install prompt
@@ -555,20 +578,38 @@
 
         // Install the app
         function installApp() {
+            console.log('🚀 Install button clicked');
+            console.log('- Deferred prompt available:', !!deferredPrompt);
+            console.log('- User agent:', navigator.userAgent);
+
             if (deferredPrompt) {
+                console.log('📱 Showing native install prompt...');
                 deferredPrompt.prompt();
                 deferredPrompt.userChoice.then((choiceResult) => {
+                    console.log('✅ User choice:', choiceResult.outcome);
                     if (choiceResult.outcome === 'accepted') {
-                        console.log('User accepted install prompt');
+                        console.log('🎉 User accepted install prompt');
+                        localStorage.setItem('appInstalled', 'true');
                     } else {
-                        console.log('User dismissed install prompt');
+                        console.log('❌ User dismissed install prompt');
                     }
                     deferredPrompt = null;
                     hideInstallPrompt();
+                }).catch(error => {
+                    console.error('❌ Install prompt error:', error);
+                    // Still hide the prompt even if there was an error
+                    hideInstallPrompt();
                 });
             } else {
-                // Fallback for iOS Safari
-                showIOSInstallInstructions();
+                console.log('📋 No deferred prompt - showing manual instructions');
+                // Check if iOS
+                if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                    console.log('🍎 iOS detected - showing iOS instructions');
+                    showIOSInstallInstructions();
+                } else {
+                    console.log('🤖 Android/other - showing generic instructions');
+                    showGenericInstallInstructions();
+                }
             }
         }
 
@@ -591,45 +632,91 @@
 
         // Show iOS install instructions
         function showIOSInstallInstructions() {
-            if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-                const iosPrompt = document.createElement('div');
-                iosPrompt.id = 'iosInstallPrompt';
-                iosPrompt.className = 'install-prompt ios-prompt';
-                iosPrompt.innerHTML = `
-                    <div class="install-prompt-content">
-                        <div class="install-prompt-header">
-                            <svg class="install-prompt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                                <circle cx="9" cy="9" r="2"></circle>
-                                <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
-                            </svg>
-                            <h3>Install on iOS</h3>
-                        </div>
-                        <div class="ios-instructions">
-                            <p>To install this app on your iOS device:</p>
-                            <ol>
-                                <li>Tap the Share button <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg></li>
-                                <li>Scroll down and tap "Add to Home Screen"</li>
-                                <li>Tap "Add" to confirm</li>
-                            </ol>
-                        </div>
-                        <button id="iosCloseBtn" class="neo-btn">Got it!</button>
+            hideInstallPrompt(); // Hide the current prompt first
+
+            const iosPrompt = document.createElement('div');
+            iosPrompt.id = 'iosInstallPrompt';
+            iosPrompt.className = 'install-prompt ios-prompt';
+            iosPrompt.innerHTML = `
+                <div class="install-prompt-content">
+                    <div class="install-prompt-header">
+                        <svg class="install-prompt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="9" cy="9" r="2"></circle>
+                            <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                        </svg>
+                        <h3>Install on iOS</h3>
                     </div>
-                `;
+                    <div class="ios-instructions">
+                        <p>To install this app on your iOS device:</p>
+                        <ol>
+                            <li>Tap the Share button <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg></li>
+                            <li>Scroll down and tap "Add to Home Screen"</li>
+                            <li>Tap "Add" to confirm</li>
+                        </ol>
+                    </div>
+                    <button id="iosCloseBtn" class="neo-btn">Got it!</button>
+                </div>
+            `;
 
-                document.body.appendChild(iosPrompt);
+            document.body.appendChild(iosPrompt);
 
-                document.getElementById('iosCloseBtn').addEventListener('click', () => {
-                    iosPrompt.classList.remove('show');
-                    setTimeout(() => {
-                        iosPrompt.remove();
-                    }, 300);
-                });
-
+            document.getElementById('iosCloseBtn').addEventListener('click', () => {
+                iosPrompt.classList.remove('show');
                 setTimeout(() => {
-                    iosPrompt.classList.add('show');
-                }, 100);
-            }
+                    iosPrompt.remove();
+                }, 300);
+            });
+
+            setTimeout(() => {
+                iosPrompt.classList.add('show');
+            }, 100);
+        }
+
+        // Show generic install instructions for non-iOS devices
+        function showGenericInstallInstructions() {
+            hideInstallPrompt(); // Hide the current prompt first
+
+            const genericPrompt = document.createElement('div');
+            genericPrompt.id = 'genericInstallPrompt';
+            genericPrompt.className = 'install-prompt generic-prompt';
+            genericPrompt.innerHTML = `
+                <div class="install-prompt-content">
+                    <div class="install-prompt-header">
+                        <svg class="install-prompt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7,10 12,15 17,10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <h3>Install App</h3>
+                    </div>
+                    <div class="generic-instructions">
+                        <p>To install this app:</p>
+                        <ul>
+                            <li><strong>Chrome/Edge:</strong> Look for the install icon in the address bar, or use the menu → "Install Mindline"</li>
+                            <li><strong>Firefox:</strong> Look for the install banner or check the menu</li>
+                            <li><strong>Mobile:</strong> Use your browser's "Add to Home Screen" option</li>
+                        </ul>
+                        <p style="font-size: 0.875rem; opacity: 0.8; margin-top: 1rem;">
+                            If you don't see install options, your browser might not support PWA installation yet.
+                        </p>
+                    </div>
+                    <button id="genericCloseBtn" class="neo-btn">Got it!</button>
+                </div>
+            `;
+
+            document.body.appendChild(genericPrompt);
+
+            document.getElementById('genericCloseBtn').addEventListener('click', () => {
+                genericPrompt.classList.remove('show');
+                setTimeout(() => {
+                    genericPrompt.remove();
+                }, 300);
+            });
+
+            setTimeout(() => {
+                genericPrompt.classList.add('show');
+            }, 100);
         }
 
         // Show update notification
@@ -658,17 +745,51 @@
         let interactionCount = 0;
         function trackInteraction() {
             interactionCount++;
+            console.log(`👆 User interaction #${interactionCount}`);
+
             if (interactionCount >= 3 && !installPromptShown && !localStorage.getItem('installPromptDismissed') && !localStorage.getItem('appInstalled')) {
                 // Check if mobile device
                 if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                    console.log('📱 Mobile detected, showing install prompt after interactions');
                     showInstallPrompt();
+                } else {
+                    console.log('🖥️ Desktop detected, install prompt can be triggered manually');
                 }
             }
         }
 
+        // Manual install prompt trigger (for testing and desktop)
+        function triggerInstallPrompt() {
+            console.log('🔧 Manual install prompt triggered');
+            if (!installPromptShown && !localStorage.getItem('appInstalled')) {
+                showInstallPrompt();
+            } else {
+                console.log('Install prompt already shown or app already installed');
+            }
+        }
+
+        // Global function for testing in console
+        window.testInstall = triggerInstallPrompt;
+        window.debugPWA = debugPWACapabilities;
+        window.clearInstallData = () => {
+            localStorage.removeItem('installPromptDismissed');
+            localStorage.removeItem('appInstalled');
+            installPromptShown = false;
+            console.log('🧹 Install data cleared - refresh page to test again');
+        };
+
         // Add interaction listeners
         document.addEventListener('click', trackInteraction);
         document.addEventListener('touchstart', trackInteraction);
+
+        // Add keyboard shortcut for testing (Ctrl+Shift+I)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+                e.preventDefault();
+                console.log('⌨️ Install shortcut triggered');
+                triggerInstallPrompt();
+            }
+        });
     </script>
     </body>
 </html>
