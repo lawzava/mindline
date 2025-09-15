@@ -4,7 +4,7 @@
     <!-- Security: hexagonal perimeter -->
     <polygon points="448.000,256.000 352.000,422.277 160.000,422.277 64.000,256.000 160.000,89.723 352.000,89.723" stroke="#5E81AC" stroke-width="24.064" fill="none"/>
     <!-- Connection: encrypted link between peers -->
-    <line x1="186.88" y1="218.624" x2="325.12" y2="293.376" stroke="#88C0D0" stroke-width="24.064"/>
+    <line x1="186.88" y1="218.624" x2="325.12" y2="293.376" stroke="#5E81AC" stroke-width="24.064"/>
     <!-- Peers: two nodes -->
     <circle cx="186.88" cy="218.624" r="24.064" fill="#5E81AC" stroke="none"/>
     <circle cx="325.12" cy="293.376" r="24.064" fill="#5E81AC" stroke="none"/>
