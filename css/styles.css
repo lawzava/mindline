@@ -232,7 +232,7 @@ body.dark {
 }
 
 .status-reconnecting {
-    background-color: var(--accent-color);
+    background-color: #EBCB8B; /* Nord13 - yellowish for both themes */
     color: black;
     border-color: var(--border-color);
     padding: 0.5rem 1rem;
