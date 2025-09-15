@@ -47,9 +47,9 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
     : new Date().toLocaleTimeString();
 
   if (isMe) {
-    messageElement.className = 'ml-auto max-w-[75%] mb-4 p-3 bg-primary/20 dark:bg-primary-dark/30 border-2 border-black dark:border-white shadow-md';
+    messageElement.className = 'ml-auto max-w-[75%] mb-4 neo-message-bubble bg-primary/20 dark:bg-primary-dark/30';
   } else {
-    messageElement.className = 'mr-auto max-w-[75%] mb-4 p-3 bg-gray-200 dark:bg-gray-700 border-2 border-black dark:border-white shadow-md';
+    messageElement.className = 'mr-auto max-w-[75%] mb-4 neo-message-bubble bg-gray-100 dark:bg-gray-800';
   }
 
   // Create message structure
@@ -109,28 +109,28 @@ export function updateConnectionStatus(status = 'disconnected') {
     connectionSection.classList.remove('hidden');
   }
 
-  // Remove all status classes
-  statusElement.className = 'block w-full px-3 py-2 text-xs font-bold uppercase border-2 border-black dark:border-white tracking-wider text-center';
+  // Remove all status classes and set base classes
+  statusElement.className = 'status-indicator';
 
   switch (status) {
     case 'connecting':
-      statusElement.textContent = 'Connecting...';
+      statusElement.innerHTML = '<span class="sr-only">Connection status:</span>Connecting...';
       statusElement.classList.add('status-connecting');
       break;
     case 'connected':
-      statusElement.textContent = 'Connected';
+      statusElement.innerHTML = '<span class="sr-only">Connection status:</span>Connected';
       statusElement.classList.add('status-connected');
       break;
     case 'reconnecting':
-      statusElement.textContent = 'Reconnecting...';
+      statusElement.innerHTML = '<span class="sr-only">Connection status:</span>Reconnecting...';
       statusElement.classList.add('status-reconnecting');
       break;
     case 'failed':
-      statusElement.textContent = 'Connection Failed';
+      statusElement.innerHTML = '<span class="sr-only">Connection status:</span>Connection Failed';
       statusElement.classList.add('status-failed');
       break;
     default:
-      statusElement.textContent = 'Disconnected';
+      statusElement.innerHTML = '<span class="sr-only">Connection status:</span>Disconnected';
       statusElement.classList.add('status-disconnected');
   }
 
