@@ -359,21 +359,7 @@
                     themeToggleBtn.click();
                 }
             });
-    }); 
-
-    function initTheme() {
-        const savedTheme = localStorage.getItem('theme');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        
-        if (savedTheme === 'dark' || (savedTheme === null && prefersDark)) {
-            document.body.classList.add('dark');
-            document.getElementById('moonIcon').classList.add('hidden');
-            document.getElementById('sunIcon').classList.remove('hidden');
-        } else {
-            document.getElementById('sunIcon').classList.add('hidden');
-            document.getElementById('moonIcon').classList.remove('hidden');
-        }
-}
+    });
     </script>
     </body>
 </html>

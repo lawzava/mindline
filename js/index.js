@@ -51,7 +51,10 @@ function getURLParams() {
  */
 function getRoomFromURL() {
   const params = getURLParams();
-  return params.get('r');
+  const roomId = params.get('r');
+  console.log('getRoomFromURL - URL search:', window.location.search);
+  console.log('getRoomFromURL - parsed room ID:', roomId);
+  return roomId;
 }
 
 /**
@@ -156,19 +159,30 @@ async function initializeApp() {
 
     // Check for room ID in URL and auto-join if present
     const urlRoomId = getRoomFromURL();
+    console.log('URL Room ID detected:', urlRoomId);
+
     if (urlRoomId) {
+      console.log('Attempting to auto-join room from URL:', urlRoomId);
+
       // Ensure user is initialized before joining room
       await ensureUserInitialized();
+      console.log('User initialized for URL room join');
 
       // Auto-join the room
       try {
+        console.log('Calling joinRoom with URL room ID:', urlRoomId);
         await joinRoom(urlRoomId);
+        console.log('Successfully joined room from URL');
+
         // Clean up URL after successful join (optional)
         const newURL = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
         window.history.replaceState({}, document.title, newURL);
       } catch (error) {
         console.error('Failed to auto-join room from URL:', error);
+        log(`Failed to auto-join room from URL: ${error.message}`);
       }
+    } else {
+      console.log('No room ID found in URL');
     }
 
     const roomId = getCurrentRoomId();
@@ -774,6 +788,8 @@ async function createRoom() {
  * @returns {string|null} The room ID or null if failed
  */
 async function joinRoom(roomId) {
+  console.log('joinRoom called with roomId:', roomId);
+
   if (!roomId) {
     log('Please enter a room ID to join');
     return null;
@@ -781,9 +797,12 @@ async function joinRoom(roomId) {
 
   // Basic ID validation
   if (!isValidRoomId(roomId)) {
+    console.log('Room ID validation failed:', roomId);
     log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
     return null;
   }
+
+  console.log('Room ID validation passed:', roomId);
 
   try {
     // Show connecting status
@@ -1167,58 +1186,92 @@ function updateConnectionStatusLegacy(isConnected) {
  */
 function setupEventHandlers() {
   // Theme toggle functionality
-  document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
-  
+  const themeToggleBtn = document.getElementById('themeToggleBtn');
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener('click', toggleTheme);
+  } else {
+    console.warn('themeToggleBtn element not found');
+  }
+
   // Auto-initialize user on name change
   let initDebounceTimeout = null;
-  document.getElementById('userName').addEventListener('input', (event) => {
-    const userName = event.target.value.trim();
+  const userNameInput = document.getElementById('userName');
+  if (userNameInput) {
+    userNameInput.addEventListener('input', (event) => {
+      const userName = event.target.value.trim();
 
-    // Clear existing timeout
-    if (initDebounceTimeout) {
-      clearTimeout(initDebounceTimeout);
-    }
-
-    // Debounce the initialization to avoid too many re-inits
-    initDebounceTimeout = setTimeout(() => {
-      if (userName) {
-        handleInitializeUser(userName);
+      // Clear existing timeout
+      if (initDebounceTimeout) {
+        clearTimeout(initDebounceTimeout);
       }
-    }, 500); // Wait 500ms after user stops typing
-  });
-  
+
+      // Debounce the initialization to avoid too many re-inits
+      initDebounceTimeout = setTimeout(() => {
+        if (userName) {
+          handleInitializeUser(userName);
+        }
+      }, 500); // Wait 500ms after user stops typing
+    });
+  } else {
+    console.warn('userName element not found');
+  }
+
   // Room management
-  document.getElementById('joinRoomBtn').addEventListener('click', async () => {
-    let roomId = document.getElementById('roomIdInput').value.trim();
+  const joinRoomBtn = document.getElementById('joinRoomBtn');
+  if (joinRoomBtn) {
+    joinRoomBtn.addEventListener('click', async () => {
+      let roomId = document.getElementById('roomIdInput').value.trim();
 
-    // Generate UUID if room ID is empty
-    if (!roomId) {
-      roomId = generateUUID();
-    }
+      // Generate UUID if room ID is empty
+      if (!roomId) {
+        roomId = generateUUID();
+      }
 
-    try {
-      await joinRoom(roomId);
-      // Clear the input only after successfully joining
-      document.getElementById('roomIdInput').value = '';
-    } catch (error) {
-      console.error('Failed to join room:', error);
-      // Don't clear input if join failed
-    }
-  });
-  
+      try {
+        await joinRoom(roomId);
+        // Clear the input only after successfully joining
+        const roomIdInput = document.getElementById('roomIdInput');
+        if (roomIdInput) {
+          roomIdInput.value = '';
+        }
+      } catch (error) {
+        console.error('Failed to join room:', error);
+        // Don't clear input if join failed
+      }
+    });
+  } else {
+    console.warn('joinRoomBtn element not found');
+  }
+
   // Message sending
-  document.getElementById('sendBtn').addEventListener('click', sendMessage);
-  document.getElementById('messageInput').addEventListener('keydown', event => {
-    if (event.key === 'Enter') {
-      sendMessage();
-    }
-  });
-  
-  // Real-time draft messages
-  document.getElementById('messageInput').addEventListener('input', handleDraftMessage);
+  const sendBtn = document.getElementById('sendBtn');
+  if (sendBtn) {
+    sendBtn.addEventListener('click', sendMessage);
+  } else {
+    console.warn('sendBtn element not found');
+  }
+
+  const messageInput = document.getElementById('messageInput');
+  if (messageInput) {
+    messageInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        sendMessage();
+      }
+    });
+
+    // Real-time draft messages
+    messageInput.addEventListener('input', handleDraftMessage);
+  } else {
+    console.warn('messageInput element not found');
+  }
 
   // Share room functionality
-  document.getElementById('shareRoomBtn').addEventListener('click', shareCurrentRoom);
+  const shareRoomBtn = document.getElementById('shareRoomBtn');
+  if (shareRoomBtn) {
+    shareRoomBtn.addEventListener('click', shareCurrentRoom);
+  } else {
+    console.warn('shareRoomBtn element not found');
+  }
 
   // Debug controls removed for production
 }
