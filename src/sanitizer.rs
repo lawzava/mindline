@@ -3,7 +3,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
-use web_sys::Storage;
 
 #[derive(Debug, Clone)]
 pub struct InputSanitizer {
