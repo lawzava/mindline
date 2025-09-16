@@ -21,7 +21,8 @@ module.exports = (env = {}) => ({
                 test: /\.css$/,
                 use: [
                     !!(env.production || env.cloudflare) ? MiniCssExtractPlugin.loader : 'style-loader',
-                    'css-loader'
+                    'css-loader',
+                    'postcss-loader'
                 ]
             }
         ]
