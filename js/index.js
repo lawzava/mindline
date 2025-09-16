@@ -855,8 +855,8 @@ async function joinRoom(roomId) {
     return null;
   }
 
-  // Sanitize and validate room ID
-  const sanitizedRoomId = window.safeWasm.validate_room_id(roomId);
+  // Sanitize and validate room ID - call WASM directly to bypass safe wrapper
+  const sanitizedRoomId = IndexState.wasmModule.validate_room_id(roomId);
   console.log('DEBUG: Original roomId:', roomId);
   console.log('DEBUG: Sanitized roomId:', sanitizedRoomId);
   console.log('DEBUG: Type of sanitizedRoomId:', typeof sanitizedRoomId);
