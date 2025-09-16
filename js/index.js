@@ -855,26 +855,12 @@ async function joinRoom(roomId) {
     return null;
   }
 
-  // Temporary JavaScript-based validation to fix room joining
-  // TODO: Fix WASM parameter passing issue in future update
-  console.log('DEBUG: Original roomId:', roomId);
-  console.log('DEBUG: Type of original roomId:', typeof roomId);
+  // Sanitize and validate room ID using WASM
+  const sanitizedRoomId = window.safeWasm.validate_room_id(roomId);
 
-  // Simple JavaScript validation as fallback
-  const roomIdString = String(roomId || '').trim();
-
-  // Basic validation: alphanumeric, hyphens, underscores, 3-64 chars
-  const sanitizedRoomId = roomIdString
-    .split('')
-    .filter(c => /[a-zA-Z0-9_-]/.test(c))
-    .join('');
-
-  console.log('DEBUG: Sanitized roomId (JS fallback):', sanitizedRoomId);
-  console.log('DEBUG: Type of sanitizedRoomId:', typeof sanitizedRoomId);
-
-  if (!sanitizedRoomId || sanitizedRoomId.length < 3 || sanitizedRoomId.length > 64) {
+  if (!sanitizedRoomId || sanitizedRoomId.length === 0) {
     logger.warn('Room ID validation failed:', roomId);
-    log(`Room ID must be 3-64 alphanumeric characters (can include dashes and underscores)`);
+    log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
     return null;
   }
 
@@ -1211,8 +1197,8 @@ function sendMessage() {
 
   debugLog(`📝 Raw message input: "${rawMessage}"`);
 
-  // JavaScript fallback validation for message (same WASM pointer issue)
-  const message = String(rawMessage || '').trim().substring(0, 2000);
+  // Sanitize and validate the message using WASM
+  const message = window.safeWasm.validate_message(rawMessage);
 
   if (!message || message.length === 0) {
     debugLog(`❌ Invalid or empty message, aborting send`);
@@ -1244,10 +1230,8 @@ function sendMessage() {
     // Generate message ID on client side
     const messageId = generateUUID();
     const rawUserName = document.getElementById('userName').value || 'Anonymous';
-    // JavaScript fallback validation for username (same WASM pointer issue)
-    const userName = String(rawUserName || '').trim()
-      .split('').filter(c => /[a-zA-Z0-9 _-]/.test(c)).join('')
-      .substring(0, 32) || 'Anonymous';
+    // Sanitize and validate username using WASM
+    const userName = window.safeWasm.validate_username(rawUserName) || 'Anonymous';
 
     console.log(`📝 Sending message: userId=${userId}, userName=${userName}, messageId=${messageId}, roomId=${roomId}`);
 
