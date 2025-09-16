@@ -139,9 +139,24 @@ async function initializeApp() {
     await loadWasmModule();
     createSafeWasmProxies();
 
+    // Initialize Rust logger
+    const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const debugEnabled = localStorage.getItem('debugEnabled') === 'true';
+
+    if (window.safeWasm && window.safeWasm.initialize_logger) {
+      window.safeWasm.initialize_logger(isDevelopment, debugEnabled);
+      log("Rust logger initialized");
+    }
 
     // Restore user state
     await restoreUserState();
+
+    // Set initial log context
+    const userId = getCurrentUserId();
+    let roomId = getCurrentRoomId();
+    if (window.safeWasm && window.safeWasm.set_log_context) {
+      window.safeWasm.set_log_context(userId, roomId, 'core');
+    }
 
     // Connect UI elements
     connectNewUIWithWasm();
@@ -181,7 +196,7 @@ async function initializeApp() {
     }
 
     // Update connection status based on restored room state
-    const roomId = getCurrentRoomId();
+    roomId = getCurrentRoomId(); // Re-use existing roomId variable
     if (roomId) {
       // A room was restored, but we need to verify P2P connection
       const p2pConnection = getP2PConnection();
@@ -337,10 +352,43 @@ function createSafeWasmProxies() {
     cleanup_stale_peers: function(timeoutMinutes) {
       // Not implemented in Rust, return 0 for now
       return 0;
-    }
+    },
+
+    // Phase 5: Logging System Functions
+    initialize_logger: safeWasmCall('initialize_logger', ['isDevelopment', 'debugEnabled'],
+      { isDevelopment: Boolean, debugEnabled: Boolean }),
+    set_log_context: safeWasmCall('set_log_context', ['userId', 'roomId', 'component']),
+
+    log_debug: safeWasmCall('log_debug', ['component', 'message']),
+    log_info: safeWasmCall('log_info', ['component', 'message']),
+    log_warn: safeWasmCall('log_warn', ['component', 'message']),
+    log_error: safeWasmCall('log_error', ['component', 'message']),
+    log_with_data: safeWasmCall('log_with_data', ['level', 'component', 'message', 'data']),
+
+    start_performance_timer: safeWasmCall('start_performance_timer', ['label']),
+    end_performance_timer: safeWasmCall('end_performance_timer', ['label']),
+    start_log_group: safeWasmCall('start_log_group', ['label']),
+    end_log_group: safeWasmCall('end_log_group', []),
+    log_table: safeWasmCall('log_table', ['data']),
+
+    get_log_entries: safeWasmCall('get_log_entries', ['filterJson']),
+    clear_log_buffer: safeWasmCall('clear_log_buffer', []),
+    export_logs_json: safeWasmCall('export_logs_json', ['filterJson']),
+    export_recent_logs_json: safeWasmCall('export_recent_logs_json', ['count'], { count: Number }),
+    get_log_statistics: safeWasmCall('get_log_statistics', []),
+
+    enable_debug_logging: safeWasmCall('enable_debug_logging', []),
+    disable_debug_logging: safeWasmCall('disable_debug_logging', []),
+    configure_logger: safeWasmCall('configure_logger', ['maxEntries', 'consoleOutput', 'bufferLogs', 'autoExportErrors'],
+      { maxEntries: Number, consoleOutput: Boolean, bufferLogs: Boolean, autoExportErrors: Boolean }),
+
+    search_logs: safeWasmCall('search_logs', ['query', 'limit'], { limit: Number }),
+    get_logs_by_component: safeWasmCall('get_logs_by_component', ['component', 'limit'], { limit: Number }),
+    get_error_summary: safeWasmCall('get_error_summary', ['lastNMinutes'], { lastNMinutes: Number }),
+    create_debug_report: safeWasmCall('create_debug_report', [])
   };
 
-  log("Safe WASM function proxies created");
+  log("Safe WASM function proxies created with logging support");
 }
 
 /**
