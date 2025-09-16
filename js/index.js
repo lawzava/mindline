@@ -436,8 +436,10 @@ function safeWasmCall(funcName, paramNames, paramTransforms = {}) {
         const safeArg = transform(arg);
 
         // Validate required parameters (allow optional parameters for new functions)
+        // For set_log_context, all parameters are optional (Option<String> in Rust)
         if (safeArg === "" && paramName !== 'content' && paramName !== 'signalData' &&
-            paramName !== 'displayName' && paramName !== 'senderName' && paramName !== 'isTyping') {
+            paramName !== 'displayName' && paramName !== 'senderName' && paramName !== 'isTyping' &&
+            funcName !== 'set_log_context') {
           throw new Error(`${paramName} cannot be empty`);
         }
 
