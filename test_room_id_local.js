@@ -79,7 +79,33 @@ async function testRoomIdValidation() {
     console.log('\n❌ WASM binary not found. Run npm run build-wasm first.');
   }
 
-  console.log('\n🌐 To test WASM functions in browser, visit:');
+  console.log('\n🌐 Testing URL room detection:');
+
+  // Test URL room parsing logic
+  function parseRoomFromURL(url) {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.searchParams.get('r');
+    } catch (error) {
+      console.log('❌ URL parsing failed:', error.message);
+      return null;
+    }
+  }
+
+  const testUrls = [
+    'http://localhost:8080/?r=testroom',
+    'http://localhost:8080/?r=room-123',
+    'http://localhost:8080/?r=cd87b151-0660-4b20-84fb-f2a36d2e12d1',
+    'http://localhost:8080/',
+    'http://localhost:8080/?other=param'
+  ];
+
+  testUrls.forEach(url => {
+    const roomId = parseRoomFromURL(url);
+    console.log(`URL: ${url} → Room: "${roomId || 'none'}"`);
+  });
+
+  console.log('\n💡 To test WASM functions in browser, visit:');
   console.log('   http://localhost:8080/test_room_id.html');
   console.log('\n💡 If WASM returns arrays instead of strings, the issue is in wasm-bindgen compilation.');
 }
