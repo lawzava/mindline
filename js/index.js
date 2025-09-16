@@ -855,15 +855,26 @@ async function joinRoom(roomId) {
     return null;
   }
 
-  // Sanitize and validate room ID - call WASM directly to bypass safe wrapper
-  const sanitizedRoomId = IndexState.wasmModule.validate_room_id(roomId);
+  // Temporary JavaScript-based validation to fix room joining
+  // TODO: Fix WASM parameter passing issue in future update
   console.log('DEBUG: Original roomId:', roomId);
-  console.log('DEBUG: Sanitized roomId:', sanitizedRoomId);
+  console.log('DEBUG: Type of original roomId:', typeof roomId);
+
+  // Simple JavaScript validation as fallback
+  const roomIdString = String(roomId || '').trim();
+
+  // Basic validation: alphanumeric, hyphens, underscores, 3-64 chars
+  const sanitizedRoomId = roomIdString
+    .split('')
+    .filter(c => /[a-zA-Z0-9_-]/.test(c))
+    .join('');
+
+  console.log('DEBUG: Sanitized roomId (JS fallback):', sanitizedRoomId);
   console.log('DEBUG: Type of sanitizedRoomId:', typeof sanitizedRoomId);
 
-  if (!sanitizedRoomId || sanitizedRoomId.length === 0) {
+  if (!sanitizedRoomId || sanitizedRoomId.length < 3 || sanitizedRoomId.length > 64) {
     logger.warn('Room ID validation failed:', roomId);
-    log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
+    log(`Room ID must be 3-64 alphanumeric characters (can include dashes and underscores)`);
     return null;
   }
 
