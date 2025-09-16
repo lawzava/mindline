@@ -852,34 +852,37 @@ pub fn update_url_with_room(room_id: &str) -> Result<(), JsValue> {
 // ========== Phase 2: Input Sanitization and Validation ==========
 
 #[wasm_bindgen]
-pub fn validate_room_id(room_id: &str) -> Option<String> {
+pub fn validate_room_id(room_id: &str) -> String {
     match with_sanitizer(|s| s.validate_room_id(room_id)) {
-        Ok(result) => result,
+        Ok(Some(valid_id)) => valid_id,
+        Ok(None) => String::new(), // Return empty string for invalid input
         Err(e) => {
             console_log!("Error validating room ID: {:?}", e);
-            None
+            String::new()
         }
     }
 }
 
 #[wasm_bindgen]
-pub fn validate_username(username: &str) -> Option<String> {
+pub fn validate_username(username: &str) -> String {
     match with_sanitizer(|s| s.validate_username(username)) {
-        Ok(result) => result,
+        Ok(Some(valid_name)) => valid_name,
+        Ok(None) => String::new(),
         Err(e) => {
             console_log!("Error validating username: {:?}", e);
-            None
+            String::new()
         }
     }
 }
 
 #[wasm_bindgen]
-pub fn validate_message(message: &str) -> Option<String> {
+pub fn validate_message(message: &str) -> String {
     match with_sanitizer(|s| s.validate_message(message)) {
-        Ok(result) => result,
+        Ok(Some(valid_message)) => valid_message,
+        Ok(None) => String::new(),
         Err(e) => {
             console_log!("Error validating message: {:?}", e);
-            None
+            String::new()
         }
     }
 }
