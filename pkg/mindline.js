@@ -512,69 +512,57 @@ export function update_url_with_room(room_id) {
 }
 
 /**
- * @param {any} room_id
+ * @param {string} room_id
  * @returns {string}
  */
 export function validate_room_id(room_id) {
     let deferred2_0;
     let deferred2_1;
     try {
-        const ret = wasm.validate_room_id(room_id);
-        var ptr1 = ret[0];
-        var len1 = ret[1];
-        if (ret[3]) {
-            ptr1 = 0; len1 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred2_0 = ptr1;
-        deferred2_1 = len1;
-        return getStringFromWasm0(ptr1, len1);
+        const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.validate_room_id(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
     } finally {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
 
 /**
- * @param {any} username
+ * @param {string} username
  * @returns {string}
  */
 export function validate_username(username) {
     let deferred2_0;
     let deferred2_1;
     try {
-        const ret = wasm.validate_username(username);
-        var ptr1 = ret[0];
-        var len1 = ret[1];
-        if (ret[3]) {
-            ptr1 = 0; len1 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred2_0 = ptr1;
-        deferred2_1 = len1;
-        return getStringFromWasm0(ptr1, len1);
+        const ptr0 = passStringToWasm0(username, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.validate_username(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
     } finally {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
 
 /**
- * @param {any} message
+ * @param {string} message
  * @returns {string}
  */
 export function validate_message(message) {
     let deferred2_0;
     let deferred2_1;
     try {
-        const ret = wasm.validate_message(message);
-        var ptr1 = ret[0];
-        var len1 = ret[1];
-        if (ret[3]) {
-            ptr1 = 0; len1 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred2_0 = ptr1;
-        deferred2_1 = len1;
-        return getStringFromWasm0(ptr1, len1);
+        const ptr0 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.validate_message(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
     } finally {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
