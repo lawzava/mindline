@@ -7,7 +7,7 @@
     "build-wasm": "wasm-pack build --target web",
     "build": "npm run build-wasm && webpack",
     "build:production": "npm run build-wasm && webpack --mode production",
-    "build:cloudflare": "npm run build-wasm && webpack --mode production --env cloudflare=true && node scripts/inject-env.js",
+    "build:cloudflare": "./cloud_build.sh",
     "start": "webpack serve",
     "start-local": "webpack serve --port 8088",
     "logging": "node logging-server.js",
@@ -41,6 +41,7 @@
     "mini-css-extract-plugin": "^2.9.4",
     "sharp": "^0.34.3",
     "style-loader": "^4.0.0",
+    "wasm-pack": "^0.13.1",
     "webpack": "^5.75.0",
     "webpack-cli": "^5.0.0",
     "webpack-dev-server": "^5.2.2"
