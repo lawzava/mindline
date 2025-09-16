@@ -403,7 +403,7 @@ export function updateDraftsDisplay(draftMessages, currentUserId) {
       // User name
       const userSpan = document.createElement('span');
       userSpan.className = 'typing-user';
-      userSpan.textContent = draft.sender || 'Someone';
+      userSpan.textContent = draft.senderName || draft.sender || 'Someone';
 
       // Typing dots
       const dotsContainer = document.createElement('div');

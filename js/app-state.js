@@ -19,7 +19,7 @@ export const IndexState = {
 
 // Additional constants for the app
 export const INDEX_CONSTANTS = {
-  TIMEOUT_DRAFT_CLEAR: 10000 // Clear draft after 10 seconds of inactivity
+  TIMEOUT_DRAFT_CLEAR: 3000 // Clear draft after 3 seconds of inactivity
 };
 
 /**

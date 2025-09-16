@@ -146,19 +146,18 @@ async function restoreRoomConnection() {
   const savedRoomId = localStorage.getItem('currentRoomId');
   if (savedRoomId) {
     try {
-      setCurrentRoomId(savedRoomId);
-      log(`Restored room connection: ${savedRoomId}`);
+      logger.info('Attempting to restore room connection:', savedRoomId);
 
-      // Load chat history for the restored room
-      const { loadChatHistory } = await import('./message-manager.js');
-      const messages = loadChatHistory(savedRoomId);
+      // Actually join the room to establish P2P connection
+      const { joinRoom } = await import('./room-manager.js');
+      await joinRoom(savedRoomId);
 
-      if (messages && messages.length > 0) {
-        const { displayChatHistory } = await import('./ui.js');
-        displayChatHistory(messages);
-      }
+      logger.info('Successfully restored room connection:', savedRoomId);
     } catch (error) {
       logger.error('Error restoring room connection:', error);
+      // Clear saved room ID if connection fails
+      localStorage.removeItem('currentRoomId');
+      setCurrentRoomId(null);
     }
   }
 }
