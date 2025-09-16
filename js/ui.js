@@ -11,17 +11,9 @@ import logger from './logger.js';
  */
 export function log(message) {
   logger.info(message);
-  updateDebugOutput(`${new Date().toLocaleTimeString()} - ${message}`);
 }
 
-/**
- * Update debug output area
- * @param {string} message - Message to display
- */
-function updateDebugOutput(message) {
-  // Debug output removed for production - using logger instead
-  logger.debug('Debug:', message);
-}
+// Note: Debug output functionality removed - using logger instead
 
 /**
  * Display a message in the chat area with enhanced styling

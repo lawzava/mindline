@@ -188,13 +188,6 @@ impl P2PNetworkState {
         self.peers.get_mut(peer_id)
     }
 
-    pub fn get_or_create_peer(&mut self, peer_id: &str, role: PeerRole) -> &mut PeerConnection {
-        self.peers.entry(peer_id.to_string()).or_insert_with(|| {
-            console_log!("Creating new peer connection: {} (role: {:?})", peer_id, role);
-            PeerConnection::new(peer_id.to_string(), role)
-        })
-    }
-
     pub fn should_initiate_connection(&self, peer_id: &str) -> bool {
         match self.connection_strategy {
             ConnectionStrategy::FullMesh => {
@@ -223,31 +216,6 @@ impl P2PNetworkState {
             .filter(|(_, peer)| peer.connection_state == ConnectionState::Connected)
             .map(|(id, _)| id.clone())
             .collect()
-    }
-
-    pub fn get_connection_candidates(&self) -> Vec<String> {
-        match self.connection_strategy {
-            ConnectionStrategy::FullMesh => {
-                // Connect to all known peers
-                self.all_known_peers
-                    .iter()
-                    .filter(|id| *id != &self.client_id)
-                    .cloned()
-                    .collect()
-            },
-            ConnectionStrategy::Selective => {
-                // Select best peers based on quality and latency
-                let mut candidates: Vec<_> = self.peers
-                    .iter()
-                    .filter(|(_, peer)| peer.connection_quality > 0.5)
-                    .map(|(id, peer)| (id.clone(), peer.connection_quality))
-                    .collect();
-
-                candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-                candidates.into_iter().take(5).map(|(id, _)| id).collect()
-            },
-            _ => self.get_connected_peers(),
-        }
     }
 
     pub fn needs_mesh_repair(&self) -> bool {
