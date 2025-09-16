@@ -338,6 +338,21 @@ export class P2PConnection {
     dataChannel.onopen = () => {
       console.log(`Data channel opened with ${peerId}`);
       this.dataChannels.set(peerId, dataChannel);
+
+      // Register peer with Rust P2P coordination
+      if (window.safeWasm && window.safeWasm.add_peer) {
+        try {
+          console.log(`🎯 Registering peer ${peerId} with Rust P2P manager`);
+          window.safeWasm.add_peer(peerId, 'Connected');
+          // Set default quality for now
+          if (window.safeWasm.update_peer_metrics) {
+            window.safeWasm.update_peer_metrics(peerId, 50, 1.0); // 50ms latency, 1.0 quality
+          }
+        } catch (e) {
+          console.error(`Failed to register peer ${peerId} with Rust:`, e);
+        }
+      }
+
       if (this.onPeerConnectedCallback) {
         this.onPeerConnectedCallback(peerId);
       }
@@ -559,26 +574,81 @@ export class P2PConnection {
    */
   broadcast(message) {
     const messageStr = JSON.stringify(message);
+    const messageSize = new Blob([messageStr]).size;
     let deliveredCount = 0;
     let attemptedCount = 0;
 
-    console.log(`📡 Broadcasting message type '${message.type}' to ${this.dataChannels.size} channels`);
-    console.log(`🔍 DEBUG: dataChannels.size = ${this.dataChannels.size}`);
+    // Get optimal peers for broadcast from Rust if available
+    let targetPeers = [];
+    if (window.safeWasm && window.safeWasm.get_best_peers_for_broadcast) {
+      try {
+        const bestPeers = window.safeWasm.get_best_peers_for_broadcast(10);
+        if (bestPeers && bestPeers.length > 0) {
+          targetPeers = bestPeers;
+          console.log(`📡 Broadcasting to ${targetPeers.length} optimal peers selected by Rust`);
+        }
+      } catch (e) {
+        console.warn('Failed to get optimal peers from Rust:', e);
+      }
+    }
 
-    this.dataChannels.forEach((channel, peerId) => {
+    // Fallback to all peers if Rust optimization not available
+    if (targetPeers.length === 0) {
+      targetPeers = Array.from(this.dataChannels.keys());
+      console.log(`📡 Broadcasting message type '${message.type}' to ${targetPeers.length} channels`);
+    }
+
+    for (const peerId of targetPeers) {
+      const channel = this.dataChannels.get(peerId);
+      if (!channel) continue;
+
       attemptedCount++;
       console.log(`📤 ATTEMPTING TO SEND to ${peerId}, channel state: ${channel.readyState}`);
 
       if (channel.readyState === 'open') {
-        try {
-          console.log(`📤 SENDING RAW DATA to ${peerId}:`, messageStr);
-          channel.send(messageStr);
-          deliveredCount++;
-          console.log(`✅ Message sent to ${peerId}`);
-        } catch (error) {
-          console.error(`❌ Error sending to ${peerId}:`, error);
-          // Try to reconnect if send fails
-          this.handleConnectionFailure(peerId);
+        // Check if we should send to this peer based on message priority
+        const priority = message.priority || 5; // Default medium priority
+        let shouldSend = true;
+
+        if (window.safeWasm && window.safeWasm.should_send_to_peer) {
+          try {
+            shouldSend = window.safeWasm.should_send_to_peer(peerId, priority);
+            console.log(`🔍 Rust P2P check for ${peerId}: shouldSend=${shouldSend}, priority=${priority}`);
+          } catch (e) {
+            console.warn(`⚠️ Rust P2P check failed for ${peerId}:`, e);
+            shouldSend = true; // Default to sending if check fails
+          }
+        }
+
+        if (shouldSend) {
+          try {
+            console.log(`📤 SENDING RAW DATA to ${peerId}:`, messageStr);
+            channel.send(messageStr);
+            deliveredCount++;
+            console.log(`✅ Message sent to ${peerId}`);
+
+            // Record successful send in Rust
+            if (window.safeWasm && window.safeWasm.record_peer_message_sent) {
+              try {
+                window.safeWasm.record_peer_message_sent(peerId, messageSize);
+              } catch (e) {
+                // Non-critical, continue
+              }
+            }
+          } catch (error) {
+            console.error(`❌ Error sending to ${peerId}:`, error);
+            // Try to reconnect if send fails
+            this.handleConnectionFailure(peerId);
+
+            // Report failure to Rust
+            if (window.safeWasm && window.safeWasm.handle_connection_failure) {
+              try {
+                window.safeWasm.handle_connection_failure(peerId);
+              } catch (e) {
+                // Non-critical
+              }
+            }
+          }
         }
       } else {
         console.warn(`⚠️ Channel to ${peerId} not open: ${channel.readyState}`);
@@ -590,7 +660,7 @@ export class P2PConnection {
           });
         }
       }
-    });
+    }
 
     console.log(`📊 Broadcast result: ${deliveredCount}/${attemptedCount} delivered`);
 
@@ -720,6 +790,37 @@ export class P2PConnection {
   }
 
   /**
+   * Execute connection plan from Rust P2P manager
+   */
+  async executeConnectionPlan(plan) {
+    if (!plan || !Array.isArray(plan)) {
+      console.warn('Invalid connection plan:', plan);
+      return;
+    }
+
+    for (const decision of plan) {
+      if (decision && decision.should_connect) {
+        const delay = decision.delay_ms || 500;
+        console.log(`📋 Scheduled connection to ${decision.peer_id || 'unknown'} (priority: ${decision.priority}, delay: ${delay}ms)`);
+
+        setTimeout(async () => {
+          try {
+            const peerId = decision.peer_id || decision.peerId; // Handle both naming conventions
+            if (peerId) {
+              await this.createPeerConnection(peerId, true);
+            }
+          } catch (error) {
+            console.error(`Failed to execute connection plan for peer:`, error);
+            if (window.safeWasm && window.safeWasm.handle_connection_failure && decision.peer_id) {
+              window.safeWasm.handle_connection_failure(decision.peer_id);
+            }
+          }
+        }, delay);
+      }
+    }
+  }
+
+  /**
    * Start periodic mesh monitoring
    */
   startMeshMonitoring() {
@@ -730,10 +831,42 @@ export class P2PConnection {
 
     // Check mesh every 10 seconds
     this.meshCheckInterval = setInterval(() => {
-      const expectedPeers = Array.from(this.allKnownPeers);
-      if (expectedPeers.length > 0) {
-        console.log('🔍 Periodic mesh check...');
-        this.ensureFullMesh(expectedPeers);
+      // Use Rust mesh repair if available
+      if (window.safeWasm && window.safeWasm.needs_mesh_repair) {
+        try {
+          if (window.safeWasm.needs_mesh_repair()) {
+            console.log('🔍 Rust: Mesh repair needed, getting repair plan...');
+            const repairPlan = window.safeWasm.get_mesh_repair_plan();
+            this.executeConnectionPlan(repairPlan);
+          }
+
+          // Clean up stale peers
+          const removedCount = window.safeWasm.cleanup_stale_peers(5); // 5 minute timeout
+          if (removedCount > 0) {
+            console.log(`🧹 Cleaned up ${removedCount} stale peers`);
+          }
+
+          // Log network stats
+          const stats = window.safeWasm.get_p2p_network_stats();
+          if (stats) {
+            console.log('📊 Network stats:', stats);
+          }
+        } catch (error) {
+          console.warn('Failed to use Rust mesh monitoring:', error);
+          // Fallback to JS mesh checking
+          const expectedPeers = Array.from(this.allKnownPeers);
+          if (expectedPeers.length > 0) {
+            console.log('🔍 JS Fallback: Periodic mesh check...');
+            this.ensureFullMesh(expectedPeers);
+          }
+        }
+      } else {
+        // Original JS mesh checking
+        const expectedPeers = Array.from(this.allKnownPeers);
+        if (expectedPeers.length > 0) {
+          console.log('🔍 Periodic mesh check...');
+          this.ensureFullMesh(expectedPeers);
+        }
       }
     }, 10000);
   }

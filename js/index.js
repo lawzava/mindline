@@ -305,9 +305,41 @@ function createSafeWasmProxies() {
     create_sync_request: safeWasmCall('create_sync_request', ['roomId', 'lastSync', 'messageCount']),
     handle_sync_request: safeWasmCall('handle_sync_request', ['requestData']),
     save_room_messages_to_storage: safeWasmCall('save_room_messages_to_storage', ['roomId']),
-    load_room_messages_from_storage: safeWasmCall('load_room_messages_from_storage', ['roomId'])
+    load_room_messages_from_storage: safeWasmCall('load_room_messages_from_storage', ['roomId']),
+
+    // Phase 4: P2P Network Coordination Functions
+    initialize_p2p_manager: safeWasmCall('initialize_p2p_manager', ['clientId', 'roomId']),
+    add_known_peer: safeWasmCall('add_known_peer', ['peerId']),
+    remove_peer_from_network: safeWasmCall('remove_peer_from_network', ['peerId']),
+    update_peer_connection_state: safeWasmCall('update_peer_connection_state', ['peerId', 'state']),
+    should_initiate_connection_to_peer: safeWasmCall('should_initiate_connection_to_peer', ['peerId']),
+    get_connection_decision: safeWasmCall('get_connection_decision', ['peerId']),
+    get_connected_peer_list: safeWasmCall('get_connected_peer_list', []),
+    record_peer_message_sent: safeWasmCall('record_peer_message_sent', ['peerId', 'sizeBytes'], { sizeBytes: Number }),
+    record_peer_message_received: safeWasmCall('record_peer_message_received', ['peerId', 'sizeBytes'], { sizeBytes: Number }),
+    update_peer_latency: safeWasmCall('update_peer_latency', ['peerId', 'latencyMs'], { latencyMs: Number }),
+    needs_mesh_repair: safeWasmCall('needs_mesh_repair', []),
+    get_mesh_repair_plan: safeWasmCall('get_mesh_repair_plan', []),
+    get_p2p_network_stats: safeWasmCall('get_p2p_network_stats', []),
+    handle_connection_failure: safeWasmCall('handle_connection_failure', ['peerId']),
+    set_connection_strategy: safeWasmCall('set_connection_strategy', ['strategy']),
+    get_best_peers_for_broadcast: safeWasmCall('get_best_peers_for_broadcast', ['maxPeers'], { maxPeers: Number }),
+    // Aliases for functions called in webrtc.js
+    add_peer: safeWasmCall('add_known_peer', ['peerId']),
+    update_peer_metrics: function(peerId, latency, quality) {
+      // Since we don't have a direct quality metric, just update latency
+      return this.update_peer_latency(peerId, latency);
+    },
+    should_send_to_peer: function(peerId, priority) {
+      // For now, always return true since this function isn't exported from Rust
+      return true;
+    },
+    cleanup_stale_peers: function(timeoutMinutes) {
+      // Not implemented in Rust, return 0 for now
+      return 0;
+    }
   };
-  
+
   log("Safe WASM function proxies created");
 }
 
@@ -1086,6 +1118,16 @@ async function initializeP2P(roomId) {
 
   // Ensure userId is a string (safety check)
   const userIdString = Array.isArray(userId) ? userId.join(',') : String(userId);
+
+  // Initialize Rust P2P manager
+  try {
+    if (window.safeWasm && window.safeWasm.initialize_p2p_manager) {
+      window.safeWasm.initialize_p2p_manager(userIdString, roomId);
+      console.log(`✅ Rust P2P manager initialized for user ${userIdString} in room ${roomId}`);
+    }
+  } catch (error) {
+    console.warn('Failed to initialize Rust P2P manager:', error);
+  }
 
   // Create new P2P connection
   console.log(`🔧 initializeP2P: Creating P2PConnection for user ${userIdString} in room ${roomId}`);
