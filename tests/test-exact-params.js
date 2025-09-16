@@ -8,8 +8,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Load WASM module
-const wasmPath = path.join(__dirname, 'pkg', 'mindline_bg.wasm');
-const wasmModule = require('./pkg/mindline.js');
+const wasmPath = path.join(__dirname, '..', 'pkg', 'mindline_bg.wasm');
+const wasmModule = require('../pkg/mindline.js');
 
 // Read and initialize WASM
 const wasmBytes = fs.readFileSync(wasmPath);

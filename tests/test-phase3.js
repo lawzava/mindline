@@ -60,8 +60,8 @@ function assertNotNull(value, message) {
 async function loadWasmModule() {
   try {
     // Load the WASM module
-    const wasmPath = path.join(__dirname, 'pkg', 'mindline_bg.wasm');
-    const wasmModule = await import('./pkg/mindline.js');
+    const wasmPath = path.join(__dirname, '..', 'pkg', 'mindline_bg.wasm');
+    const wasmModule = await import('../pkg/mindline.js');
 
     // Initialize the WASM module
     const wasmBytes = fs.readFileSync(wasmPath);

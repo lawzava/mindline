@@ -107,18 +107,6 @@ impl EnhancedMessage {
         }
     }
 
-    pub fn mark_sent(&mut self) {
-        self.status = MessageStatus::Sent;
-    }
-
-    pub fn mark_delivered(&mut self) {
-        self.status = MessageStatus::Delivered;
-    }
-
-    pub fn mark_failed(&mut self) {
-        self.status = MessageStatus::Failed;
-    }
-
     pub fn edit_content(&mut self, new_content: String) {
         self.original_content = Some(self.content.clone());
         self.content = new_content;
@@ -143,17 +131,6 @@ impl EnhancedMessage {
         if !reaction.users.contains(&user_id.to_string()) {
             reaction.users.push(user_id.to_string());
             reaction.count = reaction.users.len();
-        }
-    }
-
-    pub fn remove_reaction(&mut self, emoji: &str, user_id: &str) {
-        if let Some(reaction) = self.reactions.get_mut(emoji) {
-            reaction.users.retain(|id| id != user_id);
-            reaction.count = reaction.users.len();
-
-            if reaction.count == 0 {
-                self.reactions.remove(emoji);
-            }
         }
     }
 
@@ -276,12 +253,6 @@ impl RoomMessageState {
         true
     }
 
-    pub fn get_message(&self, message_id: &str) -> Option<&EnhancedMessage> {
-        self.messages
-            .iter()
-            .find(|m| m.id == message_id)
-    }
-
     pub fn get_message_mut(&mut self, message_id: &str) -> Option<&mut EnhancedMessage> {
         self.messages
             .iter_mut()
@@ -333,14 +304,6 @@ impl RoomMessageState {
         }
     }
 
-    pub fn mark_all_read(&mut self) {
-        #[cfg(not(test))]
-        let now = js_sys::Date::now() as u64;
-        #[cfg(test)]
-        let now = 3000u64;
-        self.last_read_timestamp = now;
-        self.unread_count = 0;
-    }
 
     pub fn add_typing_user(&mut self, user_id: String) {
         self.typing_users.insert(user_id);
@@ -350,9 +313,6 @@ impl RoomMessageState {
         self.typing_users.remove(user_id);
     }
 
-    pub fn clear_typing_users(&mut self) {
-        self.typing_users.clear();
-    }
 }
 
 pub struct MessageManager {
