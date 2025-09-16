@@ -71,7 +71,7 @@ async function testRoomIdValidation() {
   }
 
   // Check WASM binary exists
-  const wasmPath = path.join(__dirname, 'pkg', 'mindline_bg.wasm');
+  const wasmPath = path.join(__dirname, '..', 'pkg', 'mindline_bg.wasm');
   if (fs.existsSync(wasmPath)) {
     const stats = fs.statSync(wasmPath);
     console.log(`\n✅ WASM binary exists: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
