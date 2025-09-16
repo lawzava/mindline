@@ -205,6 +205,9 @@ function handleChatMessage(message, peerId) {
   // Display the message
   displayMessage(content, false, displayName, true, timestamp, messageObj);
 
+  // Clear the typing indicator for this peer since they sent a message
+  clearPeerDraft(peerId);
+
   debugLog(`Chat message from ${displayName}: ${content}`);
 }
 
@@ -350,6 +353,12 @@ export function disconnectP2P() {
 export function handlePeerDraft(message, peerId) {
 
   const senderName = message.senderName || message.senderId || peerId;
+
+  // If content is empty, clear the draft
+  if (!message.content || message.content.length === 0) {
+    clearPeerDraft(peerId);
+    return;
+  }
 
   // Store the draft message
   AppState.draftMessages.set(peerId, {
