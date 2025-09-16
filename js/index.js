@@ -857,6 +857,10 @@ async function joinRoom(roomId) {
 
   // Sanitize and validate room ID
   const sanitizedRoomId = window.safeWasm.validate_room_id(roomId);
+  console.log('DEBUG: Original roomId:', roomId);
+  console.log('DEBUG: Sanitized roomId:', sanitizedRoomId);
+  console.log('DEBUG: Type of sanitizedRoomId:', typeof sanitizedRoomId);
+
   if (!sanitizedRoomId) {
     logger.warn('Room ID validation failed:', roomId);
     log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
