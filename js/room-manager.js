@@ -79,6 +79,12 @@ export async function createRoom() {
     // Update connection status
     updateConnectionStatus('connected');
 
+    // Show share room button
+    const shareRoomBtn = document.getElementById('shareRoomBtn');
+    if (shareRoomBtn) {
+      shareRoomBtn.classList.remove('hidden');
+    }
+
     // Scroll to bottom after room creation
     scrollChatToBottom('auto', 200);
 
@@ -147,6 +153,12 @@ export async function joinRoom(roomId) {
 
     // Update connection status
     updateConnectionStatus('connected');
+
+    // Show share room button
+    const shareRoomBtn = document.getElementById('shareRoomBtn');
+    if (shareRoomBtn) {
+      shareRoomBtn.classList.remove('hidden');
+    }
 
     // Scroll to bottom after joining room
     scrollChatToBottom('auto', 200);

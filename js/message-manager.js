@@ -444,6 +444,22 @@ export function sendMessage() {
     // Clear input
     clearMessageInput();
 
+    // Send empty typing indicator to clear it for other peers
+    if (AppState.p2pConnection) {
+      const clearTypingMessage = {
+        type: 'typing',
+        content: '',
+        senderId: userId,
+        senderName: userName,
+        timestamp: Date.now()
+      };
+      try {
+        AppState.p2pConnection.broadcast(clearTypingMessage);
+      } catch (error) {
+        logger.debug('Failed to clear typing indicator:', error);
+      }
+    }
+
     debugLog(`✅ ========== SENDMESSAGE COMPLETED ==========`);
 
   } catch (error) {
