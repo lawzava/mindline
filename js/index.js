@@ -863,12 +863,13 @@ async function joinRoom(roomId) {
     return null;
   }
 
-  // Rate limiting check
-  if (!window.safeWasm.check_rate_limit(`join_room_${sanitizedRoomId}`, 5, 30000)) {
-    logger.warn('Rate limit exceeded for room join:', sanitizedRoomId);
-    log('Too many join attempts. Please wait before trying again.');
-    return null;
-  }
+  // Rate limiting check (temporarily disabled to prevent runtime errors)
+  // TODO: Implement rate limiting server-side or fix WASM parameter marshalling
+  // if (!window.safeWasm.check_rate_limit(`join_room_${sanitizedRoomId}`, 5, 30000)) {
+  //   logger.warn('Rate limit exceeded for room join:', sanitizedRoomId);
+  //   log('Too many join attempts. Please wait before trying again.');
+  //   return null;
+  // }
 
   logger.info('Room ID validation passed:', sanitizedRoomId);
 
