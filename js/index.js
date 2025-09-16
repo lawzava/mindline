@@ -855,8 +855,9 @@ async function joinRoom(roomId) {
     return null;
   }
 
-  // Sanitize and validate room ID using direct WASM call
-  const sanitizedRoomId = IndexState.wasmModule.validate_room_id(roomId);
+  // Use pure JavaScript validation until WASM serialization is fixed
+  const sanitizedRoomId = String(roomId || '').trim()
+    .split('').filter(c => /[a-zA-Z0-9_-]/.test(c)).join('');
 
   if (!sanitizedRoomId || sanitizedRoomId.length === 0) {
     logger.warn('Room ID validation failed:', roomId);
@@ -1197,8 +1198,8 @@ function sendMessage() {
 
   debugLog(`📝 Raw message input: "${rawMessage}"`);
 
-  // Sanitize and validate the message using direct WASM call
-  const message = IndexState.wasmModule.validate_message(rawMessage);
+  // Use pure JavaScript validation until WASM serialization is fixed
+  const message = String(rawMessage || '').trim().substring(0, 2000);
 
   if (!message || message.length === 0) {
     debugLog(`❌ Invalid or empty message, aborting send`);
@@ -1230,8 +1231,10 @@ function sendMessage() {
     // Generate message ID on client side
     const messageId = generateUUID();
     const rawUserName = document.getElementById('userName').value || 'Anonymous';
-    // Sanitize and validate username using direct WASM call
-    const userName = IndexState.wasmModule.validate_username(rawUserName) || 'Anonymous';
+    // Use pure JavaScript validation until WASM serialization is fixed
+    const userName = String(rawUserName || '').trim()
+      .split('').filter(c => /[a-zA-Z0-9 _-]/.test(c)).join('')
+      .substring(0, 32) || 'Anonymous';
 
     console.log(`📝 Sending message: userId=${userId}, userName=${userName}, messageId=${messageId}, roomId=${roomId}`);
 
