@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use wasm_bindgen::prelude::*;
 
-use crate::console_log;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PerformanceMetric {
@@ -96,20 +95,6 @@ impl PerformanceMonitor {
         self.add_metric(metric);
     }
 
-    pub fn record_metric_with_tags(&mut self, name: &str, value: f64, unit: &str, category: MetricCategory, tags: HashMap<String, String>) {
-        let metric = PerformanceMetric {
-            id: format!("{}_{}", name, self.get_high_precision_time() as u64),
-            name: name.to_string(),
-            value,
-            unit: unit.to_string(),
-            timestamp: js_sys::Date::now() as u64,
-            category,
-            tags,
-        };
-
-        self.add_metric(metric);
-    }
-
     pub fn increment_counter(&mut self, name: &str) {
         let count = self.counters.entry(name.to_string()).or_insert(0);
         *count += 1;
@@ -172,32 +157,7 @@ impl PerformanceMonitor {
         }
     }
 
-    pub fn get_metrics(&self, category: Option<MetricCategory>, limit: Option<usize>) -> Vec<PerformanceMetric> {
-        let mut metrics: Vec<PerformanceMetric> = if let Some(cat) = category {
-            self.metrics.iter().filter(|m| m.category == cat).cloned().collect()
-        } else {
-            self.metrics.iter().cloned().collect()
-        };
 
-        metrics.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-        if let Some(limit) = limit {
-            metrics.truncate(limit);
-        }
-
-        metrics
-    }
-
-    pub fn get_samples(&self, limit: Option<usize>) -> Vec<PerformanceSample> {
-        let mut samples: Vec<PerformanceSample> = self.samples.iter().cloned().collect();
-        samples.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-        if let Some(limit) = limit {
-            samples.truncate(limit);
-        }
-
-        samples
-    }
 
     pub fn get_average_metric(&self, name: &str, time_window_ms: u64) -> Option<f64> {
         let cutoff_time = (js_sys::Date::now() as u64).saturating_sub(time_window_ms);

@@ -56,11 +56,6 @@ impl IndexedDBManager {
         }
     }
 
-    pub async fn initialize(&mut self) -> Result<(), JsValue> {
-        console_log!("IndexedDB manager initialized: {}", self.config.database_name);
-        Ok(())
-    }
-
     pub async fn store_message(&mut self, message: &StoredMessage) -> Result<(), JsValue> {
         let room_messages = self.messages.entry(message.room_id.clone()).or_insert_with(Vec::new);
         room_messages.push(message.clone());
@@ -109,12 +104,6 @@ impl IndexedDBManager {
         Ok(rooms)
     }
 
-    pub async fn delete_room(&mut self, room_id: &str) -> Result<(), JsValue> {
-        self.rooms.remove(room_id);
-        self.messages.remove(room_id);
-        console_log!("Room deleted: {}", room_id);
-        Ok(())
-    }
 
     async fn update_room_stats(&mut self, room_id: &str, message_increment: u32) -> Result<(), JsValue> {
         if let Some(room) = self.rooms.get_mut(room_id) {
@@ -138,55 +127,8 @@ impl IndexedDBManager {
         Ok(deleted_count)
     }
 
-    pub async fn export_room_data(&self, room_id: &str) -> Result<String, JsValue> {
-        let room = self.get_room(room_id).await?;
-        let messages = self.get_messages(room_id, None).await?;
 
-        let export_data = serde_json::json!({
-            "room": room,
-            "messages": messages,
-            "exported_at": js_sys::Date::now() as u64,
-            "version": "1.0"
-        });
 
-        Ok(export_data.to_string())
-    }
-
-    pub async fn import_room_data(&mut self, import_data: &str) -> Result<String, JsValue> {
-        let data: serde_json::Value = serde_json::from_str(import_data)
-            .map_err(|_| JsValue::from_str("Invalid import data format"))?;
-
-        if let Some(room_data) = data.get("room") {
-            let room: StoredRoom = serde_json::from_value(room_data.clone())
-                .map_err(|_| JsValue::from_str("Invalid room data"))?;
-            self.store_room(&room).await?;
-
-            if let Some(messages_data) = data.get("messages") {
-                let messages: Vec<StoredMessage> = serde_json::from_value(messages_data.clone())
-                    .map_err(|_| JsValue::from_str("Invalid messages data"))?;
-
-                for message in messages {
-                    self.store_message(&message).await?;
-                }
-            }
-
-            Ok(room.id)
-        } else {
-            Err(JsValue::from_str("No room data found in import"))
-        }
-    }
-
-    pub async fn get_storage_usage(&self) -> Result<StorageUsage, JsValue> {
-        let total_messages: u32 = self.messages.values().map(|v| v.len() as u32).sum();
-        let total_rooms = self.rooms.len() as u32;
-
-        Ok(StorageUsage {
-            total_messages,
-            total_rooms,
-            database_size_mb: 0.0, // Would calculate actual size if available
-            last_cleanup: 0,
-        })
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -1,20 +1,11 @@
 // src/sanitizer.rs
 use regex::Regex;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct InputSanitizer {
     dangerous_html_regex: Regex,
     javascript_regex: Regex,
-    rate_limits: HashMap<String, RateLimitData>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct RateLimitData {
-    attempts: Vec<u64>,
-    window_start: u64,
 }
 
 impl InputSanitizer {
@@ -25,7 +16,6 @@ impl InputSanitizer {
             ).map_err(|e| JsValue::from_str(&format!("Failed to create HTML regex: {}", e)))?,
             javascript_regex: Regex::new(r"(?i)javascript:|data:|vbscript:")
                 .map_err(|e| JsValue::from_str(&format!("Failed to create JS regex: {}", e)))?,
-            rate_limits: HashMap::new(),
         })
     }
 
@@ -198,58 +188,6 @@ impl InputSanitizer {
         allowed_types.contains(&mime_type)
     }
 
-    /// Check rate limiting for a specific action
-    pub fn check_rate_limit(
-        &mut self,
-        key: &str,
-        max_attempts: u32,
-        window_ms: u32
-    ) -> Result<bool, JsValue> {
-        let now = js_sys::Date::now() as u64;
-        let window_start = now.saturating_sub(window_ms as u64);
-
-        // Try to get from localStorage first, then fall back to memory
-        let storage_key = format!("rate_limit_{}", key);
-        let mut rate_data = self.load_rate_limit_from_storage(&storage_key)
-            .unwrap_or_else(|| RateLimitData {
-                attempts: Vec::new(),
-                window_start: now,
-            });
-
-        // Clean old attempts outside the window
-        rate_data.attempts.retain(|&timestamp| timestamp > window_start);
-
-        // Check if limit exceeded
-        if rate_data.attempts.len() >= max_attempts as usize {
-            return Ok(false);
-        }
-
-        // Add current attempt
-        rate_data.attempts.push(now);
-
-        // Save back to storage and memory
-        self.save_rate_limit_to_storage(&storage_key, &rate_data);
-        self.rate_limits.insert(key.to_string(), rate_data);
-
-        Ok(true)
-    }
-
-    fn load_rate_limit_from_storage(&self, key: &str) -> Option<RateLimitData> {
-        let window = web_sys::window()?;
-        let storage = window.local_storage().ok()??;
-        let stored_str = storage.get_item(key).ok()??;
-        serde_json::from_str(&stored_str).ok()
-    }
-
-    fn save_rate_limit_to_storage(&self, key: &str, data: &RateLimitData) {
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                if let Ok(serialized) = serde_json::to_string(data) {
-                    let _ = storage.set_item(key, &serialized);
-                }
-            }
-        }
-    }
 
     /// Detect potential SQL injection patterns (for future database features)
     pub fn detect_sql_injection(&self, input: &str) -> bool {
