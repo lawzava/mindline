@@ -863,27 +863,14 @@ pub fn update_url_with_room(room_id: &str) -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub fn validate_room_id(room_id: &str) -> String {
-    console_log!("WASM validate_room_id called with: {}", room_id);
-
-    // Simple validation without using the sanitizer to isolate the issue
-    if room_id.is_empty() {
-        console_log!("Room ID is empty, returning empty string");
-        return String::new();
+    match with_sanitizer(|s| s.validate_room_id(room_id)) {
+        Ok(Some(valid_id)) => valid_id,
+        Ok(None) => String::new(),
+        Err(e) => {
+            console_log!("Error validating room ID: {:?}", e);
+            String::new()
+        }
     }
-
-    if room_id.len() < 3 || room_id.len() > 64 {
-        console_log!("Room ID length invalid: {}, returning empty string", room_id.len());
-        return String::new();
-    }
-
-    // Simple character validation
-    let sanitized: String = room_id
-        .chars()
-        .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-        .collect();
-
-    console_log!("WASM returning sanitized room ID: {}", sanitized);
-    sanitized
 }
 
 #[wasm_bindgen]
