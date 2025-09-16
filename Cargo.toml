@@ -23,6 +23,7 @@ web-sys = { version = "0.3.64", features = [
     "History",
     "Crypto",
     "Storage",
+    "Performance",
     "RtcPeerConnection",
     "RtcDataChannel",
     "RtcConfiguration",
