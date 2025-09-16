@@ -892,6 +892,217 @@ export function load_room_messages_from_storage(room_id) {
     return ret[0] !== 0;
 }
 
+/**
+ * @param {string} client_id
+ * @param {string} room_id
+ */
+export function initialize_p2p_manager(client_id, room_id) {
+    const ptr0 = passStringToWasm0(client_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.initialize_p2p_manager(ptr0, len0, ptr1, len1);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} peer_id
+ * @returns {boolean}
+ */
+export function add_known_peer(peer_id) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.add_known_peer(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] !== 0;
+}
+
+/**
+ * @param {string} peer_id
+ */
+export function remove_peer_from_network(peer_id) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.remove_peer_from_network(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} peer_id
+ * @param {string} state
+ */
+export function update_peer_connection_state(peer_id, state) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(state, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.update_peer_connection_state(ptr0, len0, ptr1, len1);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} peer_id
+ * @returns {boolean}
+ */
+export function should_initiate_connection_to_peer(peer_id) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.should_initiate_connection_to_peer(ptr0, len0);
+    return ret !== 0;
+}
+
+/**
+ * @param {string} peer_id
+ * @returns {any}
+ */
+export function get_connection_decision(peer_id) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.get_connection_decision(ptr0, len0);
+    return ret;
+}
+
+/**
+ * @returns {any}
+ */
+export function get_connected_peer_list() {
+    const ret = wasm.get_connected_peer_list();
+    return ret;
+}
+
+/**
+ * @param {string} peer_id
+ * @param {number} size_bytes
+ */
+export function record_peer_message_sent(peer_id, size_bytes) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.record_peer_message_sent(ptr0, len0, size_bytes);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} peer_id
+ * @param {number} size_bytes
+ */
+export function record_peer_message_received(peer_id, size_bytes) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.record_peer_message_received(ptr0, len0, size_bytes);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} peer_id
+ * @param {number} latency_ms
+ */
+export function update_peer_latency(peer_id, latency_ms) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.update_peer_latency(ptr0, len0, latency_ms);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @returns {boolean}
+ */
+export function needs_mesh_repair() {
+    const ret = wasm.needs_mesh_repair();
+    return ret !== 0;
+}
+
+/**
+ * @returns {any}
+ */
+export function get_mesh_repair_plan() {
+    const ret = wasm.get_mesh_repair_plan();
+    return ret;
+}
+
+/**
+ * @returns {any}
+ */
+export function get_p2p_network_stats() {
+    const ret = wasm.get_p2p_network_stats();
+    return ret;
+}
+
+/**
+ * @param {string} peer_id
+ * @returns {any}
+ */
+export function handle_connection_failure(peer_id) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.handle_connection_failure(ptr0, len0);
+    return ret;
+}
+
+/**
+ * @param {string} strategy
+ */
+export function set_connection_strategy(strategy) {
+    const ptr0 = passStringToWasm0(strategy, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.set_connection_strategy(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {number} timeout_minutes
+ * @returns {number}
+ */
+export function cleanup_stale_peers(timeout_minutes) {
+    const ret = wasm.cleanup_stale_peers(timeout_minutes);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} max_peers
+ * @returns {any}
+ */
+export function get_best_peers_for_broadcast(max_peers) {
+    const ret = wasm.get_best_peers_for_broadcast(max_peers);
+    return ret;
+}
+
+/**
+ * @param {string} peer_id
+ * @param {number} message_priority
+ * @returns {boolean}
+ */
+export function should_send_to_peer(peer_id, message_priority) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.should_send_to_peer(ptr0, len0, message_priority);
+    return ret !== 0;
+}
+
+/**
+ * @param {number} redundancy_level
+ * @returns {any}
+ */
+export function get_broadcast_plan(redundancy_level) {
+    const ret = wasm.get_broadcast_plan(redundancy_level);
+    return ret;
+}
+
 async function __wbg_load(module, imports) {
     if (typeof Response === 'function' && module instanceof Response) {
         if (typeof WebAssembly.instantiateStreaming === 'function') {
