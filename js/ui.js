@@ -31,7 +31,7 @@ function updateDebugOutput(message) {
  * @param {boolean} shouldScroll - Whether to scroll to bottom
  * @param {number|Date} messageTimestamp - Timestamp of the message (optional, defaults to current time)
  */
-export function displayMessage(message, isMe = true, senderName = 'You', shouldScroll = true, messageTimestamp = null) {
+export function displayMessage(message, isMe = true, senderName = 'You', shouldScroll = true, messageTimestamp = null, messageObj = null) {
   const chatArea = document.getElementById('chatArea');
   const welcomeMessage = document.getElementById('welcomeMessage');
 
@@ -43,6 +43,9 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
   // Create message container
   const messageContainer = document.createElement('div');
   messageContainer.className = 'message-container mb-4';
+  if (messageObj && messageObj.id) {
+    messageContainer.setAttribute('data-message-id', messageObj.id);
+  }
 
   // Create the message bubble
   const messageElement = document.createElement('div');
@@ -76,13 +79,60 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
 
   const contentDiv = document.createElement('div');
   contentDiv.className = 'message-content';
-  contentDiv.textContent = message;
+
+  // Handle enhanced message content
+  let displayContent = message;
+  if (messageObj) {
+    // Check if message is edited
+    if (messageObj.edited) {
+      displayContent = message;
+      const editedLabel = document.createElement('span');
+      editedLabel.className = 'message-edited';
+      editedLabel.textContent = ' (edited)';
+      editedLabel.style.fontSize = '0.8em';
+      editedLabel.style.opacity = '0.7';
+      contentDiv.textContent = displayContent;
+      contentDiv.appendChild(editedLabel);
+    } else if (messageObj.status === 'Deleted') {
+      contentDiv.textContent = '[Message deleted]';
+      contentDiv.style.fontStyle = 'italic';
+      contentDiv.style.opacity = '0.6';
+    } else {
+      contentDiv.textContent = displayContent;
+    }
+  } else {
+    contentDiv.textContent = displayContent;
+  }
 
   const timestampDiv = document.createElement('div');
   timestampDiv.className = 'message-timestamp';
   timestampDiv.textContent = timestamp;
 
-  // Status indicator removed
+  // Add reactions if present
+  if (messageObj && messageObj.reactions && messageObj.reactions.size > 0) {
+    const reactionsDiv = document.createElement('div');
+    reactionsDiv.className = 'message-reactions';
+    reactionsDiv.style.marginTop = '4px';
+    reactionsDiv.style.display = 'flex';
+    reactionsDiv.style.gap = '4px';
+    reactionsDiv.style.flexWrap = 'wrap';
+
+    // Handle Map or object reactions
+    const reactions = messageObj.reactions instanceof Map ? messageObj.reactions : new Map(Object.entries(messageObj.reactions || {}));
+
+    reactions.forEach((data, emoji) => {
+      const reactionSpan = document.createElement('span');
+      reactionSpan.className = 'reaction-badge';
+      reactionSpan.style.background = 'rgba(255,255,255,0.1)';
+      reactionSpan.style.padding = '2px 6px';
+      reactionSpan.style.borderRadius = '12px';
+      reactionSpan.style.fontSize = '0.9em';
+      reactionSpan.textContent = `${emoji} ${data.count || data.users?.length || 1}`;
+      reactionsDiv.appendChild(reactionSpan);
+    });
+
+    messageElement.appendChild(reactionsDiv);
+  }
 
   // Assemble message
   messageElement.appendChild(senderDiv);
@@ -253,10 +303,11 @@ export function displayChatHistory(messages) {
       chatArea.appendChild(welcomeMessage.cloneNode(true));
     }
   } else {
-    // Display all messages
+    // Display all messages with enhanced features
     messages.forEach(message => {
-      const isMe = message.senderId === getCurrentUserId();
-      displayMessage(message.content, isMe, message.sender, false, message.timestamp); // false = don't scroll yet, pass timestamp
+      const isMe = message.senderId === getCurrentUserId() || message.sender_id === getCurrentUserId();
+      const senderName = message.sender || message.sender_name || 'Unknown';
+      displayMessage(message.content, isMe, senderName, false, message.timestamp, message); // Pass full message object
     });
 
     // Scroll to bottom after all messages are displayed

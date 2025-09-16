@@ -9,6 +9,10 @@ use wasm_bindgen::prelude::*;
 mod sanitizer;
 use sanitizer::with_sanitizer;
 
+// Include messages module
+mod messages;
+use messages::{EnhancedMessage, MessageSyncRequest, SyncRequestType, with_message_manager};
+
 // Configure the WASM crate
 #[wasm_bindgen]
 extern "C" {
@@ -270,7 +274,8 @@ fn validate_js_string_param(param: &JsValue, param_name: &str) -> Result<String,
     Ok(value)
 }
 
-// Send a message to the current room
+// DEPRECATED: Use send_message_enhanced instead
+// Send a message to the current room (legacy function - will be removed)
 #[wasm_bindgen]
 pub fn send_message(room_id: &JsValue, content: &JsValue, message_id: &JsValue) -> Result<(), JsValue> {
     let room_id = validate_js_string_param(room_id, "room ID")?;
@@ -368,7 +373,8 @@ pub fn send_typing_indicator(room_id: &JsValue, is_typing: JsValue) -> Result<()
     })
 }
 
-// Get messages from a room
+// DEPRECATED: Use get_room_messages instead
+// Get messages from a room (legacy function - will be removed)
 #[wasm_bindgen]
 pub fn get_messages(room_id: &JsValue) -> JsValue {
     let room_id = match room_id.as_string() {
@@ -981,4 +987,184 @@ pub fn validate_input_batch(input_type: &str, values: &JsValue) -> JsValue {
         .collect();
 
     serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
+}
+
+// ========== Phase 3: Enhanced Message Processing Functions ==========
+
+#[wasm_bindgen]
+pub fn set_message_manager_user(user_id: &str) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.set_current_user(user_id.to_string());
+        console_log!("Message manager user set to: {}", user_id);
+    })
+}
+
+#[wasm_bindgen]
+pub fn send_message_enhanced(
+    room_id: &str,
+    content: &str,
+    message_id: &str,
+) -> Result<JsValue, JsValue> {
+    // Get the sender name from APP_STATE
+    let sender_name = APP_STATE.with(|state| {
+        let state = state.lock().unwrap();
+        state.user_session.as_ref()
+            .map(|session| session.name.clone())
+            .unwrap_or_else(|| "Anonymous".to_string())
+    });
+
+    let message = with_message_manager(|manager| {
+        manager.send_message(room_id, content, message_id, &sender_name)
+    })??;
+
+    serde_wasm_bindgen::to_value(&message)
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
+}
+
+#[wasm_bindgen]
+pub fn receive_message_from_peer(message_data: &JsValue) -> Result<bool, JsValue> {
+    let message: EnhancedMessage = serde_wasm_bindgen::from_value(message_data.clone())
+        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize message: {}", e)))?;
+
+    with_message_manager(|manager| {
+        manager.receive_message(message)
+    })
+}
+
+#[wasm_bindgen]
+pub fn get_room_messages(room_id: &str, limit: Option<u32>) -> JsValue {
+    let messages = with_message_manager(|manager| {
+        manager.get_messages(room_id, limit.map(|l| l as usize))
+    }).unwrap_or_default();
+
+    serde_wasm_bindgen::to_value(&messages).unwrap_or(JsValue::NULL)
+}
+
+#[wasm_bindgen]
+pub fn edit_message(room_id: &str, message_id: &str, new_content: &str) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.edit_message(room_id, message_id, new_content)
+    })?
+}
+
+#[wasm_bindgen]
+pub fn delete_message(room_id: &str, message_id: &str) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.delete_message(room_id, message_id)
+    })?
+}
+
+#[wasm_bindgen]
+pub fn add_message_reaction(
+    room_id: &str,
+    message_id: &str,
+    emoji: &str,
+    user_id: &str,
+) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.add_reaction(room_id, message_id, emoji, user_id)
+    })?
+}
+
+#[wasm_bindgen]
+pub fn handle_typing_indicator(room_id: &str, user_id: &str, is_typing: bool) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.handle_typing_indicator(room_id, user_id, is_typing);
+        Ok(())
+    })?
+}
+
+#[wasm_bindgen]
+pub fn get_typing_users(room_id: &str) -> JsValue {
+    let typing_users = with_message_manager(|manager| {
+        manager.get_typing_users(room_id)
+    }).unwrap_or_default();
+
+    serde_wasm_bindgen::to_value(&typing_users).unwrap_or(JsValue::NULL)
+}
+
+#[wasm_bindgen]
+pub fn get_messages_for_sync(
+    room_id: &str,
+    after_timestamp: f64,
+    limit: u32,
+) -> JsValue {
+    let messages = with_message_manager(|manager| {
+        manager.get_messages_for_sync(room_id, after_timestamp as u64, limit as usize)
+    }).unwrap_or_default();
+
+    serde_wasm_bindgen::to_value(&messages).unwrap_or(JsValue::NULL)
+}
+
+#[wasm_bindgen]
+pub fn get_room_message_stats(room_id: &str) -> JsValue {
+    let stats = with_message_manager(|manager| {
+        manager.get_room_stats(room_id)
+    }).unwrap_or_default();
+
+    if let Some((total, unread, last_sync)) = stats {
+        let stats_obj = js_sys::Object::new();
+        js_sys::Reflect::set(&stats_obj, &"totalMessages".into(), &(total as u32).into()).unwrap();
+        js_sys::Reflect::set(&stats_obj, &"unreadCount".into(), &(unread as u32).into()).unwrap();
+        js_sys::Reflect::set(&stats_obj, &"lastSync".into(), &(last_sync as f64).into()).unwrap();
+        stats_obj.into()
+    } else {
+        JsValue::NULL
+    }
+}
+
+// Message synchronization helpers
+#[wasm_bindgen]
+pub fn create_sync_request(room_id: &str, last_sync: f64, message_count: u32) -> JsValue {
+    let sync_request = MessageSyncRequest {
+        request_type: SyncRequestType::RequestSync {
+            last_sync: last_sync as u64,
+            message_count: message_count as usize,
+        },
+        room_id: room_id.to_string(),
+        requester_id: get_current_user_id(),
+        timestamp: js_sys::Date::now() as u64,
+    };
+
+    serde_wasm_bindgen::to_value(&sync_request).unwrap_or(JsValue::NULL)
+}
+
+#[wasm_bindgen]
+pub fn handle_sync_request(request_data: &JsValue) -> JsValue {
+    let request: MessageSyncRequest = match serde_wasm_bindgen::from_value(request_data.clone()) {
+        Ok(req) => req,
+        Err(_) => return JsValue::NULL,
+    };
+
+    match request.request_type {
+        SyncRequestType::RequestSync { last_sync, .. } => {
+            let messages = with_message_manager(|manager| {
+                manager.get_messages_for_sync(&request.room_id, last_sync, 50)
+            }).unwrap_or_default();
+
+            let response = MessageSyncRequest {
+                request_type: SyncRequestType::SyncResponse { messages },
+                room_id: request.room_id,
+                requester_id: get_current_user_id(),
+                timestamp: js_sys::Date::now() as u64,
+            };
+
+            serde_wasm_bindgen::to_value(&response).unwrap_or(JsValue::NULL)
+        },
+        _ => JsValue::NULL,
+    }
+}
+
+#[wasm_bindgen]
+pub fn save_room_messages_to_storage(room_id: &str) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.save_room_to_storage(room_id)
+    })?
+}
+
+#[wasm_bindgen]
+pub fn load_room_messages_from_storage(room_id: &str) -> Result<bool, JsValue> {
+    with_message_manager(|manager| {
+        manager.load_room_from_storage(room_id)
+    })?
 }

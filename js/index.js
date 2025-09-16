@@ -288,7 +288,24 @@ function createSafeWasmProxies() {
     validate_file: safeWasmCall('validate_file', ['fileName', 'fileSize', 'mimeType']),
     detect_attack_patterns: safeWasmCall('detect_attack_patterns', ['input']),
     validate_json_input: safeWasmCall('validate_json_input', ['jsonStr', 'maxSize']),
-    validate_input_batch: safeWasmCall('validate_input_batch', ['inputType', 'values'])
+    validate_input_batch: safeWasmCall('validate_input_batch', ['inputType', 'values']),
+
+    // Phase 3: Enhanced Message Processing Functions
+    set_message_manager_user: safeWasmCall('set_message_manager_user', ['userId']),
+    send_message_enhanced: safeWasmCall('send_message_enhanced', ['roomId', 'content', 'messageId']),
+    receive_message_from_peer: safeWasmCall('receive_message_from_peer', ['messageData']),
+    get_room_messages: safeWasmCall('get_room_messages', ['roomId', 'limit']),
+    edit_message: safeWasmCall('edit_message', ['roomId', 'messageId', 'newContent']),
+    delete_message: safeWasmCall('delete_message', ['roomId', 'messageId']),
+    add_message_reaction: safeWasmCall('add_message_reaction', ['roomId', 'messageId', 'emoji', 'userId']),
+    handle_typing_indicator: safeWasmCall('handle_typing_indicator', ['roomId', 'userId', 'isTyping'], { isTyping: Boolean }),
+    get_typing_users: safeWasmCall('get_typing_users', ['roomId']),
+    get_messages_for_sync: safeWasmCall('get_messages_for_sync', ['roomId', 'afterTimestamp', 'limit']),
+    get_room_message_stats: safeWasmCall('get_room_message_stats', ['roomId']),
+    create_sync_request: safeWasmCall('create_sync_request', ['roomId', 'lastSync', 'messageCount']),
+    handle_sync_request: safeWasmCall('handle_sync_request', ['requestData']),
+    save_room_messages_to_storage: safeWasmCall('save_room_messages_to_storage', ['roomId']),
+    load_room_messages_from_storage: safeWasmCall('load_room_messages_from_storage', ['roomId'])
   };
   
   log("Safe WASM function proxies created");
@@ -358,6 +375,29 @@ function safeWasmCall(funcName, paramNames, paramTransforms = {}) {
  */
 function loadChatHistory(roomId) {
   try {
+    // First try to load from WASM enhanced message system
+    if (window.safeWasm && window.safeWasm.load_room_messages_from_storage) {
+      try {
+        window.safeWasm.load_room_messages_from_storage(roomId);
+      } catch (wasmError) {
+        console.warn('Could not load from WASM storage:', wasmError);
+      }
+    }
+
+    // Then get messages from WASM
+    if (window.safeWasm && window.safeWasm.get_room_messages) {
+      const messages = window.safeWasm.get_room_messages(roomId, 100);
+      if (messages && messages.length > 0) {
+        // Store in AppState for compatibility
+        AppState.chatHistory.set(roomId, {
+          messages: messages,
+          lastSync: Date.now()
+        });
+        return messages;
+      }
+    }
+
+    // Fallback to localStorage if WASM doesn't have messages
     const historyKey = `chatHistory_${roomId}`;
     const savedHistory = localStorage.getItem(historyKey);
 
@@ -616,6 +656,7 @@ async function ensureUserInitialized() {
 
     try {
       window.safeWasm.initialize(userName, newUserId);
+      window.safeWasm.set_message_manager_user(newUserId);
 
       // Update tooltip with user ID
       const userIdTooltip = document.getElementById('userIdTooltip');
@@ -678,6 +719,7 @@ function restoreUserInfo() {
       if (savedUserName && savedUserId) {
         // Restore saved user data
         window.safeWasm.initialize(savedUserName, savedUserId);
+        window.safeWasm.set_message_manager_user(savedUserId);
         if (userIdTooltip) {
           userIdTooltip.textContent = savedUserId;
         }
@@ -698,6 +740,7 @@ function restoreUserInfo() {
       const userId = generateUUID();
 
       window.safeWasm.initialize(userName, userId);
+      window.safeWasm.set_message_manager_user(userId);
       if (userIdTooltip) {
         userIdTooltip.textContent = userId;
       }
@@ -1139,36 +1182,69 @@ function handleIncomingP2PMessage(message, peerId) {
       console.log(`💬 Displaying received chat message: "${message.content}" from ${message.sender}`);
       // Display chat message
       displayReceivedMessage(message);
-      // Store in WASM for persistence
+      // Store in WASM using enhanced message system
       try {
         const roomId = getCurrentRoomId();
-        console.log(`🟢 WASM LEVEL: Storing received message in WASM`);
+        console.log(`🟢 WASM LEVEL: Storing received message using enhanced system`);
         console.log(`🟢 Room ID: ${roomId}`);
         console.log(`🟢 Message content: ${message.content}`);
         console.log(`🟢 Message ID: ${message.id}`);
-        console.log(`🟢 Calling window.safeWasm.send_message...`);
 
-        const wasmResult = window.safeWasm.send_message(roomId, message.content, message.id);
-        console.log(`🟢 WASM send_message result:`, wasmResult);
+        // Create enhanced message object for WASM
+        const enhancedMsg = {
+          id: message.id,
+          sender_id: message.senderId || peerId,
+          sender_name: message.sender || 'Unknown',
+          message_type: 'Text',
+          content: message.content,
+          timestamp: message.timestamp || Date.now(),
+          room_id: roomId,
+          status: 'Received',
+          edited: false,
+          edit_timestamp: null,
+          original_content: null,
+          reply_to: null,
+          reactions: new Map(),
+          mentions: [],
+          local_timestamp: Date.now(),
+          delivery_attempts: 0,
+          size_bytes: message.content.length
+        };
+
+        console.log(`🟢 Calling window.safeWasm.receive_message_from_peer...`);
+        const wasmResult = window.safeWasm.receive_message_from_peer(enhancedMsg);
+        console.log(`🟢 WASM receive_message_from_peer result:`, wasmResult);
 
         // Add to persistent chat history
         addMessageToHistory(roomId, message);
         console.log(`🟢 WASM storage and history update completed successfully`);
       } catch (error) {
-        console.error('Error storing message in WASM:', error);
+        console.error('Error storing enhanced message in WASM:', error);
       }
       break;
 
     case 'draft':
-      // Handle real-time draft message
+      // Handle real-time draft message using Rust typing indicators
       console.log(`🟣 DRAFT PROCESSING: handlePeerDraft called for peer ${peerId}`);
       console.log(`🟣 Draft content: "${message.content}"`);
+
+      // Update typing status in Rust
+      const roomId = getCurrentRoomId();
+      if (roomId && window.safeWasm && window.safeWasm.handle_typing_indicator) {
+        const isTyping = message.content && message.content.trim().length > 0;
+        window.safeWasm.handle_typing_indicator(roomId, peerId, isTyping);
+      }
+
       handlePeerDraft(message, peerId);
       console.log(`🟣 DRAFT PROCESSING: handlePeerDraft completed`);
       break;
 
     case 'clear-draft':
-      // Clear peer's draft message
+      // Clear peer's draft message and typing status
+      const currentRoom = getCurrentRoomId();
+      if (currentRoom && window.safeWasm && window.safeWasm.handle_typing_indicator) {
+        window.safeWasm.handle_typing_indicator(currentRoom, peerId, false);
+      }
       clearPeerDraft(peerId);
       break;
 
@@ -1289,21 +1365,28 @@ function sendMessage() {
       console.log(`❌ CHAT BROADCAST: No P2P connection to broadcast message`);
     }
 
-    // Store locally in WASM
-    debugLog(`💾 Attempting to store in WASM...`);
+    // Store locally in WASM using enhanced message system
+    debugLog(`💾 Attempting to store in WASM using enhanced system...`);
     try {
       if (!window.safeWasm) {
         throw new Error('window.safeWasm is not available');
       }
-      if (!window.safeWasm.send_message) {
-        throw new Error('window.safeWasm.send_message function is missing');
+      if (!window.safeWasm.send_message_enhanced) {
+        throw new Error('window.safeWasm.send_message_enhanced function is missing');
       }
 
-      debugLog(`💾 Calling WASM send_message...`);
-      const wasmResult = window.safeWasm.send_message(roomId, message, messageId);
-      debugLog(`✅ Message stored in WASM successfully`);
+      debugLog(`💾 Calling WASM send_message_enhanced...`);
+      const enhancedMessage = window.safeWasm.send_message_enhanced(roomId, message, messageId);
+      debugLog(`✅ Enhanced message stored in WASM successfully`);
+
+      // Update message object with enhanced data
+      if (enhancedMessage) {
+        messageObj.mentions = enhancedMessage.mentions || [];
+        messageObj.reactions = enhancedMessage.reactions || new Map();
+        messageObj.edited = false;
+      }
     } catch (wasmError) {
-      debugLog(`❌ Failed to store message in WASM: ${wasmError.message}`);
+      debugLog(`❌ Failed to store enhanced message in WASM: ${wasmError.message}`);
       log(`Failed to store message: ${wasmError.message}`);
     }
 
@@ -1389,22 +1472,22 @@ function retrieveMessages(roomId) {
     if (!window.safeWasm) {
       throw new Error('window.safeWasm is not available');
     }
-    if (!window.safeWasm.get_messages) {
-      throw new Error('window.safeWasm.get_messages function is missing');
+    if (!window.safeWasm.get_room_messages) {
+      throw new Error('window.safeWasm.get_room_messages function is missing');
     }
 
-    console.log(`🔍 Calling WASM get_messages for room: ${roomId}`);
-    const messagesResult = window.safeWasm.get_messages(roomId);
-    console.log(`🔍 WASM get_messages returned:`, {
+    console.log(`🔍 Calling WASM get_room_messages for room: ${roomId}`);
+    const messagesResult = window.safeWasm.get_room_messages(roomId, 100);
+    console.log(`🔍 WASM get_room_messages returned:`, {
       type: typeof messagesResult,
       length: messagesResult?.length,
       value: messagesResult
     });
 
-    // Parse the JSON string
-    if (typeof messagesResult === 'string') {
+    // Handle the result (now returns objects directly, not JSON string)
+    if (messagesResult) {
       try {
-        const messages = JSON.parse(messagesResult);
+        const messages = Array.isArray(messagesResult) ? messagesResult : [];
         console.log(`✅ Retrieved ${messages.length} messages from room ${roomId}`);
         console.log(`📋 Messages retrieved:`, messages);
 
@@ -1580,6 +1663,7 @@ function handleInitializeUser(userName = null) {
 
     // Initialize user in WASM module
     window.safeWasm.initialize(userName, userId);
+    window.safeWasm.set_message_manager_user(userId);
 
     // Update tooltip with user ID - Firefox compatibility
     const tooltip = document.getElementById('userIdTooltip');
@@ -1658,6 +1742,13 @@ function handleDraftMessage() {
   const messageInput = document.getElementById('messageInput');
   const content = messageInput.value;
   console.log(`🟠 DRAFT HANDLER: Input content = "${content}"`);
+
+  // Update typing status in Rust
+  const userId = getCurrentUserId();
+  if (userId && window.safeWasm && window.safeWasm.handle_typing_indicator) {
+    const isTyping = content && content.trim().length > 0;
+    window.safeWasm.handle_typing_indicator(roomId, userId, isTyping);
+  }
 
   try {
     const p2pConnection = getP2PConnection();
