@@ -855,13 +855,12 @@ async function joinRoom(roomId) {
     return null;
   }
 
-  // Pure JavaScript validation (proven to work correctly)
-  const sanitizedRoomId = String(roomId || '').trim()
-    .split('').filter(c => /[a-zA-Z0-9_-]/.test(c)).join('');
+  // Sanitize and validate room ID using WASM (following sanitize_html_content pattern)
+  const sanitizedRoomId = window.safeWasm.validate_room_id(roomId);
 
-  if (!sanitizedRoomId || sanitizedRoomId.length < 3 || sanitizedRoomId.length > 64) {
+  if (!sanitizedRoomId || sanitizedRoomId.length === 0) {
     logger.warn('Room ID validation failed:', roomId);
-    log(`Room ID must be 3-64 alphanumeric characters (can include dashes and underscores)`);
+    log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
     return null;
   }
 
