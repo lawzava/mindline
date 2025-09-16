@@ -145,9 +145,17 @@ export function getRoomFromURL() {
   // Use JavaScript implementation (WASM get_room_from_url returns corrupted arrays)
   const params = getURLParams();
   const roomId = params.get('r');
-  logger.debug('getRoomFromURL - JS implementation, URL search:', window.location.search);
-  logger.debug('getRoomFromURL - JS implementation, parsed room ID:', roomId);
-  return roomId;
+  logger.info('getRoomFromURL - URL search:', window.location.search);
+  logger.info('getRoomFromURL - parsed room ID:', roomId);
+
+  // Validate room ID
+  if (roomId && roomId.length >= 3) {
+    logger.info('getRoomFromURL - valid room ID found:', roomId);
+    return roomId;
+  }
+
+  logger.info('getRoomFromURL - no valid room ID in URL');
+  return null;
 }
 
 export function updateURLWithRoom(roomId) {

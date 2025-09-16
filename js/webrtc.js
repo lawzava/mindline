@@ -31,7 +31,13 @@ export class P2PConnection {
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' }
       ],
-      iceCandidatePoolSize: 10 // Better for mobile connections
+      iceCandidatePoolSize: 10, // Better for mobile connections
+      // Critical settings for connection stability
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require',
+      iceTransportPolicy: 'all',
+      // Restart ICE on connection failures
+      iceRestart: true
     };
   }
 
@@ -340,13 +346,23 @@ export class P2PConnection {
       this.dataChannels.set(peerId, dataChannel);
 
       // Register peer with Rust P2P coordination
-      if (window.safeWasm && window.safeWasm.add_peer) {
+      if (window.safeWasm) {
         try {
           console.log(`🎯 Registering peer ${peerId} with Rust P2P manager`);
-          window.safeWasm.add_peer(peerId, 'Connected');
-          // Set default quality for now
-          if (window.safeWasm.update_peer_metrics) {
-            window.safeWasm.update_peer_metrics(peerId, 50, 1.0); // 50ms latency, 1.0 quality
+
+          // First add to known peers
+          if (window.safeWasm.add_known_peer) {
+            window.safeWasm.add_known_peer(peerId);
+          }
+
+          // Then update connection state to create peer in peers HashMap
+          if (window.safeWasm.update_peer_connection_state) {
+            window.safeWasm.update_peer_connection_state(peerId, 'connected');
+          }
+
+          // Set default quality metrics
+          if (window.safeWasm.update_peer_latency) {
+            window.safeWasm.update_peer_latency(peerId, 50); // 50ms latency
           }
         } catch (e) {
           console.error(`Failed to register peer ${peerId} with Rust:`, e);
@@ -473,21 +489,28 @@ export class P2PConnection {
           // They have higher priority, we need to restart
           console.log(`Restarting connection for ${peerId} (they have priority)`);
 
-          // Rollback to stable state and accept their offer
-          await pc.setLocalDescription({type: 'rollback'});
-          await pc.setRemoteDescription(new RTCSessionDescription(offer));
+          try {
+            // Rollback to stable state and accept their offer
+            await pc.setLocalDescription({type: 'rollback'});
+            await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
-          // Process any queued ICE candidates now that we have remote description
-          await this.processQueuedCandidates(peerId);
+            // Process any queued ICE candidates now that we have remote description
+            await this.processQueuedCandidates(peerId);
 
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
 
-          this.sendSignalingMessage({
-            type: 'answer',
-            targetId: peerId,
-            data: answer
-          });
+            this.sendSignalingMessage({
+              type: 'answer',
+              targetId: peerId,
+              data: answer
+            });
+          } catch (collisionError) {
+            console.error(`Error resolving offer collision with ${peerId}:`, collisionError);
+            // Clean up and let reconnection logic handle it
+            this.removePeer(peerId);
+            return;
+          }
         }
       } else {
         console.warn(`Cannot handle offer in state ${pc.signalingState} for peer ${peerId}`);
@@ -720,6 +743,16 @@ export class P2PConnection {
     // Clean up any pending ICE candidates
     this.pendingCandidates.delete(peerId);
 
+    // Remove from Rust P2P manager
+    if (window.safeWasm && window.safeWasm.remove_peer_from_network) {
+      try {
+        window.safeWasm.remove_peer_from_network(peerId);
+        console.log(`🧹 Removed peer ${peerId} from Rust P2P manager`);
+      } catch (e) {
+        console.error(`Failed to remove peer ${peerId} from Rust:`, e);
+      }
+    }
+
     if (this.onPeerDisconnectedCallback) {
       this.onPeerDisconnectedCallback(peerId);
     }
@@ -779,12 +812,33 @@ export class P2PConnection {
   }
 
   /**
-   * Handle connection failure
+   * Handle connection failure with retry logic
    */
   handleConnectionFailure(peerId) {
     console.log(`Handling connection failure for ${peerId}`);
     const pc = this.peers.get(peerId);
     if (pc && (pc.connectionState === 'failed' || pc.connectionState === 'disconnected')) {
+      console.log(`🔄 Attempting ICE restart for ${peerId} before removing`);
+
+      try {
+        // First try ICE restart if supported
+        if (pc.connectionState === 'failed' && pc.iceConnectionState !== 'closed') {
+          pc.restartIce();
+
+          // Give ICE restart a chance to work (5 seconds)
+          setTimeout(() => {
+            if (pc.connectionState === 'failed') {
+              console.log(`🚫 ICE restart failed for ${peerId}, removing peer`);
+              this.removePeer(peerId);
+            }
+          }, 5000);
+          return;
+        }
+      } catch (error) {
+        console.error(`ICE restart failed for ${peerId}:`, error);
+      }
+
+      // Remove peer if ICE restart not possible or failed
       this.removePeer(peerId);
     }
   }

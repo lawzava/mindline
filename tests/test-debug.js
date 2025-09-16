@@ -5,8 +5,8 @@ const path = require('path');
 
 async function debug() {
   // Load WASM module
-  const wasmPath = path.join(__dirname, 'pkg', 'mindline_bg.wasm');
-  const wasmModule = await import('./pkg/mindline.js');
+  const wasmPath = path.join(__dirname, '..', 'pkg', 'mindline_bg.wasm');
+  const wasmModule = await import('../pkg/mindline.js');
   const wasmBytes = fs.readFileSync(wasmPath);
   await wasmModule.default(wasmBytes);
   const wasm = wasmModule;
