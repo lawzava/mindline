@@ -130,7 +130,7 @@ export function updateRoomHistoryUI() {
             <div class="room-meta text-xs text-gray-500 dark:text-gray-400">Last joined ${timeAgo}</div>
           </div>
           <div class="flex gap-2 items-center">
-            <button onclick="event.stopPropagation(); shareRoom('${room.id}')"
+            <button onclick="event.stopPropagation(); shareRoomById('${room.id}')"
                     class="neo-btn-mini neo-hover-bounce"
                     title="Share room">
               <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
