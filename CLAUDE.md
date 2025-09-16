@@ -111,3 +111,7 @@ Mindline is now a Progressive Web App (PWA) with:
 ### Logging
 - Rust: Use `console_log!` macro for browser console output
 - JavaScript: Use `log()` function for console + debug area output
+- When testing UI/ux features always use playwrith mcp
+- when testing functionality before submitting the solution always make sure to test with at least 3 users talking to each other
+- before testing with playwrith mcp review html files to know exact selector ids to use
+- Create two separate browser contexts for testing - one for each user. Each context should be isolated with its own storage.
