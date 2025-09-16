@@ -33,14 +33,6 @@ impl LogLevel {
         }
     }
 
-    pub fn to_color(self) -> &'static str {
-        match self {
-            LogLevel::Debug => "#9b59b6", // Purple
-            LogLevel::Info => "#3498db",  // Blue
-            LogLevel::Warn => "#f39c12",  // Orange
-            LogLevel::Error => "#e74c3c", // Red
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
@@ -91,21 +83,6 @@ impl LogComponent {
         }
     }
 
-    pub fn to_color(&self) -> &'static str {
-        match self {
-            LogComponent::Core => "#2c3e50",
-            LogComponent::WebRTC => "#27ae60",
-            LogComponent::WASM => "#e67e22",
-            LogComponent::UI => "#8e44ad",
-            LogComponent::P2P => "#16a085",
-            LogComponent::State => "#34495e",
-            LogComponent::Messages => "#2980b9",
-            LogComponent::Sanitizer => "#c0392b",
-            LogComponent::Network => "#7f8c8d",
-            LogComponent::Storage => "#8c5f1e",
-            LogComponent::Custom(_) => "#95a5a6",
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -158,12 +135,6 @@ impl LogEntry {
         self
     }
 
-    pub fn with_location(mut self, file: &str, line: u32, function: &str) -> Self {
-        self.file = Some(file.to_string());
-        self.line = Some(line);
-        self.function = Some(function.to_string());
-        self
-    }
 
     pub fn format_for_console(&self) -> String {
         let timestamp = format_timestamp(self.timestamp);
@@ -184,9 +155,6 @@ impl LogEntry {
         formatted
     }
 
-    pub fn should_display_in_production(&self) -> bool {
-        matches!(self.level, LogLevel::Warn | LogLevel::Error)
-    }
 
     pub fn get_search_text(&self) -> String {
         let mut search_text = format!("{} {} {}",
@@ -411,30 +379,7 @@ impl Logger {
         }
     }
 
-    pub fn start_timer(&mut self, label: &str) {
-        let start_time = js_sys::Date::now() as u64;
-        self.performance_timers.insert(label.to_string(), start_time);
 
-        if self.config.is_development {
-            console::time_with_label(label);
-        }
-    }
-
-    pub fn end_timer(&mut self, label: &str) -> Option<u64> {
-        if let Some(start_time) = self.performance_timers.remove(label) {
-            let duration = (js_sys::Date::now() as u64).saturating_sub(start_time);
-
-            if self.config.is_development {
-                console::time_end_with_label(label);
-            }
-
-            self.info(LogComponent::Core, &format!("⏱️  {} completed in {}ms", label, duration));
-            Some(duration)
-        } else {
-            self.warn(LogComponent::Core, &format!("Timer '{}' was not started", label));
-            None
-        }
-    }
 
     pub fn group(&mut self, label: &str) {
         self.group_stack.push(label.to_string());

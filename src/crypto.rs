@@ -70,32 +70,6 @@ impl EncryptionManager {
         Ok(key_id)
     }
 
-    pub fn generate_user_identity_key(&mut self, user_id: &str, password: Option<&str>) -> Result<String, JsValue> {
-        let key_id = format!("user_identity_{}", user_id);
-
-        let key_data = if let Some(password) = password {
-            // For WASM compatibility, we'll use a simpler key derivation
-            self.derive_key_from_password(password, user_id.as_bytes())?
-        } else {
-            self.generate_random_key(32)?
-        };
-
-        let encryption_key = EncryptionKey {
-            id: key_id.clone(),
-            key_data,
-            algorithm: "AES-256-GCM".to_string(),
-            created_at: js_sys::Date::now() as u64,
-            expires_at: None,
-            usage: KeyUsage::UserIdentity,
-        };
-
-        self.keys.insert(key_id.clone(), encryption_key);
-        self.user_identity_key = Some(key_id.clone());
-
-        console_log!("Generated user identity key for user: {}", user_id);
-        Ok(key_id)
-    }
-
     pub fn encrypt_message(&self, message: &str, key_id: Option<&str>) -> Result<EncryptedData, JsValue> {
         let key_id = key_id
             .or(self.default_room_key.as_deref())
@@ -267,10 +241,6 @@ impl EncryptionManager {
     fn simple_xor_decrypt(&self, ciphertext: &[u8], key: &[u8], nonce: &[u8]) -> Vec<u8> {
         // XOR encryption is symmetric
         self.simple_xor_encrypt(ciphertext, key, nonce)
-    }
-
-    pub fn get_key_info(&self, key_id: &str) -> Option<&EncryptionKey> {
-        self.keys.get(key_id)
     }
 
     pub fn list_keys(&self) -> Vec<String> {
