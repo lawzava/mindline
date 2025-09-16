@@ -1204,29 +1204,6 @@ export function log_with_data(level, component, message, data) {
 /**
  * @param {string} label
  */
-export function start_performance_timer(label) {
-    const ptr0 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.start_performance_timer(ptr0, len0);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
- * @param {string} label
- * @returns {number | undefined}
- */
-export function end_performance_timer(label) {
-    const ptr0 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.end_performance_timer(ptr0, len0);
-    return ret[0] === 0 ? undefined : ret[1];
-}
-
-/**
- * @param {string} label
- */
 export function start_log_group(label) {
     const ptr0 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
@@ -1391,6 +1368,324 @@ export function create_debug_report() {
     }
 }
 
+/**
+ * @param {string} room_id
+ * @returns {string}
+ */
+export function generate_room_encryption_key(room_id) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.generate_room_encryption_key(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * @param {string} message
+ * @param {string | null} [key_id]
+ * @returns {string}
+ */
+export function encrypt_message_content(message, key_id) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        var ptr1 = isLikeNone(key_id) ? 0 : passStringToWasm0(key_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.encrypt_message_content(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * @param {string} encrypted_data
+ * @returns {string}
+ */
+export function decrypt_message_content(encrypted_data) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(encrypted_data, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.decrypt_message_content(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * @param {string} key_id
+ * @param {string | null} [password]
+ * @returns {string}
+ */
+export function export_encryption_key(key_id, password) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(key_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        var ptr1 = isLikeNone(password) ? 0 : passStringToWasm0(password, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.export_encryption_key(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * @param {string} exported_key
+ * @param {string | null} [password]
+ * @returns {string}
+ */
+export function import_encryption_key(exported_key, password) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(exported_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        var ptr1 = isLikeNone(password) ? 0 : passStringToWasm0(password, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.import_encryption_key(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * @returns {any}
+ */
+export function list_encryption_keys() {
+    const ret = wasm.list_encryption_keys();
+    return ret;
+}
+
+/**
+ * @param {string} key_id
+ * @returns {boolean}
+ */
+export function delete_encryption_key(key_id) {
+    const ptr0 = passStringToWasm0(key_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.delete_encryption_key(ptr0, len0);
+    return ret !== 0;
+}
+
+/**
+ * @param {string} database_name
+ * @param {number} version
+ */
+export function initialize_storage(database_name, version) {
+    const ptr0 = passStringToWasm0(database_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.initialize_storage(ptr0, len0, version);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {any} message_data
+ */
+export function store_message_persistent(message_data) {
+    const ret = wasm.store_message_persistent(message_data);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} room_id
+ * @param {number | null} [limit]
+ * @returns {any}
+ */
+export function get_stored_messages(room_id, limit) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.get_stored_messages(ptr0, len0, isLikeNone(limit) ? 0x100000001 : (limit) >>> 0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @param {any} room_data
+ */
+export function store_room_persistent(room_data) {
+    const ret = wasm.store_room_persistent(room_data);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} room_id
+ * @returns {any}
+ */
+export function get_stored_room(room_id) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.get_stored_room(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @returns {any}
+ */
+export function list_stored_rooms() {
+    const ret = wasm.list_stored_rooms();
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @param {number} days_old
+ * @returns {number}
+ */
+export function cleanup_old_storage_data(days_old) {
+    const ret = wasm.cleanup_old_storage_data(days_old);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] >>> 0;
+}
+
+export function start_performance_monitoring() {
+    const ret = wasm.start_performance_monitoring();
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} name
+ * @param {number} value
+ * @param {string} unit
+ * @param {string} category
+ */
+export function record_performance_metric(name, value, unit, category) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(unit, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(category, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.record_performance_metric(ptr0, len0, value, ptr1, len1, ptr2, len2);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @returns {any}
+ */
+export function get_performance_summary() {
+    const ret = wasm.get_performance_summary();
+    return ret;
+}
+
+/**
+ * @param {string} label
+ */
+export function start_performance_timer(label) {
+    const ptr0 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.start_performance_timer(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} label
+ * @returns {number | undefined}
+ */
+export function end_performance_timer(label) {
+    const ptr0 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.end_performance_timer(ptr0, len0);
+    return ret[0] === 0 ? undefined : ret[1];
+}
+
+/**
+ * @param {string} name
+ */
+export function increment_performance_counter(name) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.increment_performance_counter(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} name
+ * @returns {bigint}
+ */
+export function get_performance_counter(name) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.get_performance_counter(ptr0, len0);
+    return BigInt.asUintN(64, ret);
+}
+
 async function __wbg_load(module, imports) {
     if (typeof Response === 'function' && module instanceof Response) {
         if (typeof WebAssembly.instantiateStreaming === 'function') {
@@ -1434,6 +1729,10 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_buffer_609cc3eee51ed158 = function(arg0) {
         const ret = arg0.buffer;
+        return ret;
+    };
+    imports.wbg.__wbg_byteLength_ea52ac3de882b483 = function(arg0) {
+        const ret = arg0.byteLength;
         return ret;
     };
     imports.wbg.__wbg_call_672a4d21634d4a24 = function() { return handleError(function (arg0, arg1) {
@@ -1667,6 +1966,10 @@ function __wbg_get_imports() {
         const ret = Date.now();
         return ret;
     };
+    imports.wbg.__wbg_now_d18023d54d4e5500 = function(arg0) {
+        const ret = arg0.now();
+        return ret;
+    };
     imports.wbg.__wbg_pathname_f525fe3ba3d01fcf = function() { return handleError(function (arg0, arg1) {
         const ret = arg1.pathname;
         const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -1674,6 +1977,10 @@ function __wbg_get_imports() {
         getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
         getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
     }, arguments) };
+    imports.wbg.__wbg_performance_c185c0cdc2766575 = function(arg0) {
+        const ret = arg0.performance;
+        return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
+    };
     imports.wbg.__wbg_process_5c1d670bc53614b8 = function(arg0) {
         const ret = arg0.process;
         return ret;
@@ -1755,12 +2062,6 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_table_fe5deeebbd1d9dab = function(arg0) {
         console.table(arg0);
-    };
-    imports.wbg.__wbg_timeEnd_c619922f7c81b96d = function(arg0, arg1) {
-        console.timeEnd(getStringFromWasm0(arg0, arg1));
-    };
-    imports.wbg.__wbg_time_45bf36fd575512a4 = function(arg0, arg1) {
-        console.time(getStringFromWasm0(arg0, arg1));
     };
     imports.wbg.__wbg_value_cd1ffa7b1ab794f1 = function(arg0) {
         const ret = arg0.value;
