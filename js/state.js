@@ -142,18 +142,12 @@ export function getURLParams() {
 }
 
 export function getRoomFromURL() {
-  if (window.safeWasm && window.safeWasm.get_room_from_url) {
-    const roomId = window.safeWasm.get_room_from_url();
-    logger.debug('getRoomFromURL - WASM result:', roomId);
-    return roomId;
-  } else {
-    // Fallback to JavaScript implementation
-    const params = getURLParams();
-    const roomId = params.get('r');
-    logger.debug('getRoomFromURL - JS fallback, URL search:', window.location.search);
-    logger.debug('getRoomFromURL - JS fallback, parsed room ID:', roomId);
-    return roomId;
-  }
+  // Use JavaScript implementation (WASM get_room_from_url returns corrupted arrays)
+  const params = getURLParams();
+  const roomId = params.get('r');
+  logger.debug('getRoomFromURL - JS implementation, URL search:', window.location.search);
+  logger.debug('getRoomFromURL - JS implementation, parsed room ID:', roomId);
+  return roomId;
 }
 
 export function updateURLWithRoom(roomId) {
