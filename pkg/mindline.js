@@ -277,29 +277,35 @@ export function get_app_config() {
 }
 
 /**
- * @returns {string | undefined}
+ * @returns {string}
  */
 export function get_current_user_id() {
-    const ret = wasm.get_current_user_id();
-    let v1;
-    if (ret[0] !== 0) {
-        v1 = getStringFromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.get_current_user_id();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
-    return v1;
 }
 
 /**
- * @returns {string | undefined}
+ * @returns {string}
  */
 export function get_current_room_id() {
-    const ret = wasm.get_current_room_id();
-    let v1;
-    if (ret[0] !== 0) {
-        v1 = getStringFromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.get_current_room_id();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
-    return v1;
 }
 
 /**
@@ -478,16 +484,19 @@ export function generate_uuid() {
 }
 
 /**
- * @returns {string | undefined}
+ * @returns {string}
  */
 export function get_room_from_url() {
-    const ret = wasm.get_room_from_url();
-    let v1;
-    if (ret[0] !== 0) {
-        v1 = getStringFromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.get_room_from_url();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
-    return v1;
 }
 
 /**

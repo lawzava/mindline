@@ -483,18 +483,20 @@ pub fn get_app_config() -> JsValue {
 }
 
 #[wasm_bindgen]
-pub fn get_current_user_id() -> Option<String> {
+pub fn get_current_user_id() -> String {
     APP_STATE.with(|state| {
         let state = state.lock().unwrap();
-        state.user_session.as_ref().map(|session| session.id.clone())
+        state.user_session.as_ref()
+            .map(|session| session.id.clone())
+            .unwrap_or_else(|| String::new())
     })
 }
 
 #[wasm_bindgen]
-pub fn get_current_room_id() -> Option<String> {
+pub fn get_current_room_id() -> String {
     APP_STATE.with(|state| {
         let state = state.lock().unwrap();
-        state.current_room_id.clone()
+        state.current_room_id.clone().unwrap_or_else(|| String::new())
     })
 }
 
@@ -800,13 +802,20 @@ pub fn generate_uuid() -> JsValue {
 }
 
 #[wasm_bindgen]
-pub fn get_room_from_url() -> Option<String> {
-    let window = web_sys::window()?;
+pub fn get_room_from_url() -> String {
+    let window = match web_sys::window() {
+        Some(w) => w,
+        None => return String::new(),
+    };
+
     let location = window.location();
-    let search = location.search().ok()?;
+    let search = match location.search() {
+        Ok(s) => s,
+        Err(_) => return String::new(),
+    };
 
     if search.is_empty() {
-        return None;
+        return String::new();
     }
 
     // Parse URL parameters manually
@@ -815,13 +824,14 @@ pub fn get_room_from_url() -> Option<String> {
         if let Some((key, value)) = param.split_once('=') {
             if key == "r" {
                 // URL decode the value
-                let decoded = js_sys::decode_uri_component(value).ok()?;
-                return Some(decoded.into());
+                if let Ok(decoded) = js_sys::decode_uri_component(value) {
+                    return String::from(decoded);
+                }
             }
         }
     }
 
-    None
+    String::new()
 }
 
 #[wasm_bindgen]
