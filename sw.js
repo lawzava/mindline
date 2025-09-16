@@ -1,7 +1,7 @@
 // Mindline PWA Service Worker
-const CACHE_NAME = 'mindline-v1.0.0';
-const STATIC_CACHE_NAME = 'mindline-static-v1.0.0';
-const DYNAMIC_CACHE_NAME = 'mindline-dynamic-v1.0.0';
+const CACHE_NAME = 'mindline-v1.0.2';
+const STATIC_CACHE_NAME = 'mindline-static-v1.0.2';
+const DYNAMIC_CACHE_NAME = 'mindline-dynamic-v1.0.2';
 
 // Assets to cache on install
 const STATIC_ASSETS = [

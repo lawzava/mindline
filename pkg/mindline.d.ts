@@ -39,6 +39,21 @@ export function validate_file(file_name: string, file_size: number, mime_type: s
 export function detect_attack_patterns(input: string): any;
 export function validate_json_input(json_str: string, max_size: number): any;
 export function validate_input_batch(input_type: string, values: any): any;
+export function set_message_manager_user(user_id: string): void;
+export function send_message_enhanced(room_id: string, content: string, message_id: string): any;
+export function receive_message_from_peer(message_data: any): boolean;
+export function get_room_messages(room_id: string, limit?: number | null): any;
+export function edit_message(room_id: string, message_id: string, new_content: string): void;
+export function delete_message(room_id: string, message_id: string): void;
+export function add_message_reaction(room_id: string, message_id: string, emoji: string, user_id: string): void;
+export function handle_typing_indicator(room_id: string, user_id: string, is_typing: boolean): void;
+export function get_typing_users(room_id: string): any;
+export function get_messages_for_sync(room_id: string, after_timestamp: number, limit: number): any;
+export function get_room_message_stats(room_id: string): any;
+export function create_sync_request(room_id: string, last_sync: number, message_count: number): any;
+export function handle_sync_request(request_data: any): any;
+export function save_room_messages_to_storage(room_id: string): void;
+export function load_room_messages_from_storage(room_id: string): boolean;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -82,13 +97,28 @@ export interface InitOutput {
   readonly detect_attack_patterns: (a: number, b: number) => any;
   readonly validate_json_input: (a: number, b: number, c: number) => any;
   readonly validate_input_batch: (a: number, b: number, c: any) => any;
-  readonly __wbindgen_exn_store: (a: number) => void;
-  readonly __externref_table_alloc: () => number;
-  readonly __wbindgen_export_2: WebAssembly.Table;
+  readonly set_message_manager_user: (a: number, b: number) => [number, number];
+  readonly send_message_enhanced: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+  readonly receive_message_from_peer: (a: any) => [number, number, number];
+  readonly get_room_messages: (a: number, b: number, c: number) => any;
+  readonly edit_message: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+  readonly delete_message: (a: number, b: number, c: number, d: number) => [number, number];
+  readonly add_message_reaction: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+  readonly handle_typing_indicator: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+  readonly get_typing_users: (a: number, b: number) => any;
+  readonly get_messages_for_sync: (a: number, b: number, c: number, d: number) => any;
+  readonly get_room_message_stats: (a: number, b: number) => any;
+  readonly create_sync_request: (a: number, b: number, c: number, d: number) => any;
+  readonly handle_sync_request: (a: any) => any;
+  readonly save_room_messages_to_storage: (a: number, b: number) => [number, number];
+  readonly load_room_messages_from_storage: (a: number, b: number) => [number, number, number];
   readonly memory: WebAssembly.Memory;
-  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+  readonly __wbindgen_exn_store: (a: number) => void;
+  readonly __externref_table_alloc: () => number;
+  readonly __wbindgen_export_5: WebAssembly.Table;
+  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __externref_table_dealloc: (a: number) => void;
   readonly __wbindgen_start: () => void;
 }

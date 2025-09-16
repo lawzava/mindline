@@ -31,7 +31,7 @@ function updateDebugOutput(message) {
  * @param {boolean} shouldScroll - Whether to scroll to bottom
  * @param {number|Date} messageTimestamp - Timestamp of the message (optional, defaults to current time)
  */
-export function displayMessage(message, isMe = true, senderName = 'You', shouldScroll = true, messageTimestamp = null) {
+export function displayMessage(message, isMe = true, senderName = 'You', shouldScroll = true, messageTimestamp = null, messageObj = null) {
   const chatArea = document.getElementById('chatArea');
   const welcomeMessage = document.getElementById('welcomeMessage');
 
@@ -43,6 +43,9 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
   // Create message container
   const messageContainer = document.createElement('div');
   messageContainer.className = 'message-container mb-4';
+  if (messageObj && messageObj.id) {
+    messageContainer.setAttribute('data-message-id', messageObj.id);
+  }
 
   // Create the message bubble
   const messageElement = document.createElement('div');
@@ -76,18 +79,129 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
 
   const contentDiv = document.createElement('div');
   contentDiv.className = 'message-content';
-  contentDiv.textContent = message;
+
+  // Handle enhanced message content
+  let displayContent = message;
+  if (messageObj) {
+    // Check if message is edited
+    if (messageObj.edited) {
+      displayContent = message;
+      const editedLabel = document.createElement('span');
+      editedLabel.className = 'message-edited';
+      editedLabel.textContent = ' (edited)';
+      editedLabel.style.fontSize = '0.8em';
+      editedLabel.style.opacity = '0.7';
+      contentDiv.textContent = displayContent;
+      contentDiv.appendChild(editedLabel);
+    } else if (messageObj.status === 'Deleted') {
+      contentDiv.textContent = '[Message deleted]';
+      contentDiv.style.fontStyle = 'italic';
+      contentDiv.style.opacity = '0.6';
+    } else {
+      contentDiv.textContent = displayContent;
+    }
+  } else {
+    contentDiv.textContent = displayContent;
+  }
 
   const timestampDiv = document.createElement('div');
   timestampDiv.className = 'message-timestamp';
   timestampDiv.textContent = timestamp;
 
-  // Status indicator removed
+  // Add reactions if present
+  if (messageObj && messageObj.reactions && messageObj.reactions.size > 0) {
+    const reactionsDiv = document.createElement('div');
+    reactionsDiv.className = 'message-reactions';
+    reactionsDiv.style.marginTop = '4px';
+    reactionsDiv.style.display = 'flex';
+    reactionsDiv.style.gap = '4px';
+    reactionsDiv.style.flexWrap = 'wrap';
+
+    // Handle Map or object reactions
+    const reactions = messageObj.reactions instanceof Map ? messageObj.reactions : new Map(Object.entries(messageObj.reactions || {}));
+
+    reactions.forEach((data, emoji) => {
+      const reactionSpan = document.createElement('span');
+      reactionSpan.className = 'reaction-badge';
+      reactionSpan.style.background = 'rgba(255,255,255,0.1)';
+      reactionSpan.style.padding = '2px 6px';
+      reactionSpan.style.borderRadius = '12px';
+      reactionSpan.style.fontSize = '0.9em';
+      reactionSpan.textContent = `${emoji} ${data.count || data.users?.length || 1}`;
+      reactionsDiv.appendChild(reactionSpan);
+    });
+
+    messageElement.appendChild(reactionsDiv);
+  }
 
   // Assemble message
   messageElement.appendChild(senderDiv);
   messageElement.appendChild(contentDiv);
   messageElement.appendChild(timestampDiv);
+
+  // Add action buttons for messages - TEMPORARILY DISABLED
+  // Will re-enable edit, delete, and emoji reactions later
+  /*
+  if (messageObj && messageObj.id) {
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'message-actions';
+    actionsDiv.style.display = 'none'; // Hidden by default
+    actionsDiv.style.marginTop = '4px';
+    actionsDiv.style.gap = '8px';
+
+    // Only show edit/delete for own messages
+    if (isMe && messageObj.status !== 'Deleted') {
+      // Edit button
+      const editBtn = document.createElement('button');
+      editBtn.className = 'message-action-btn edit-btn';
+      editBtn.textContent = '✏️';
+      editBtn.title = 'Edit message';
+      editBtn.style.background = 'transparent';
+      editBtn.style.border = 'none';
+      editBtn.style.cursor = 'pointer';
+      editBtn.style.fontSize = '14px';
+      editBtn.style.padding = '2px 6px';
+      editBtn.onclick = () => window.editMessage(messageObj.id, messageObj.room_id);
+      actionsDiv.appendChild(editBtn);
+
+      // Delete button
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'message-action-btn delete-btn';
+      deleteBtn.textContent = '🗑️';
+      deleteBtn.title = 'Delete message';
+      deleteBtn.style.background = 'transparent';
+      deleteBtn.style.border = 'none';
+      deleteBtn.style.cursor = 'pointer';
+      deleteBtn.style.fontSize = '14px';
+      deleteBtn.style.padding = '2px 6px';
+      deleteBtn.onclick = () => window.deleteMessage(messageObj.id, messageObj.room_id);
+      actionsDiv.appendChild(deleteBtn);
+    }
+
+    // React button (for all messages)
+    const reactBtn = document.createElement('button');
+    reactBtn.className = 'message-action-btn react-btn';
+    reactBtn.textContent = '😊';
+    reactBtn.title = 'Add reaction';
+    reactBtn.style.background = 'transparent';
+    reactBtn.style.border = 'none';
+    reactBtn.style.cursor = 'pointer';
+    reactBtn.style.fontSize = '14px';
+    reactBtn.style.padding = '2px 6px';
+    reactBtn.onclick = () => window.showReactionPicker(messageObj.id, messageObj.room_id);
+    actionsDiv.appendChild(reactBtn);
+
+    messageElement.appendChild(actionsDiv);
+
+    // Show actions on hover
+    messageElement.onmouseenter = () => {
+      actionsDiv.style.display = 'flex';
+    };
+    messageElement.onmouseleave = () => {
+      actionsDiv.style.display = 'none';
+    };
+  }
+  */
 
   messageContainer.appendChild(messageElement);
   chatArea.appendChild(messageContainer);
@@ -253,10 +367,11 @@ export function displayChatHistory(messages) {
       chatArea.appendChild(welcomeMessage.cloneNode(true));
     }
   } else {
-    // Display all messages
+    // Display all messages with enhanced features
     messages.forEach(message => {
-      const isMe = message.senderId === getCurrentUserId();
-      displayMessage(message.content, isMe, message.sender, false, message.timestamp); // false = don't scroll yet, pass timestamp
+      const isMe = message.senderId === getCurrentUserId() || message.sender_id === getCurrentUserId();
+      const senderName = message.sender || message.sender_name || 'Unknown';
+      displayMessage(message.content, isMe, senderName, false, message.timestamp, message); // Pass full message object
     });
 
     // Scroll to bottom after all messages are displayed
