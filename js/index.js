@@ -1211,8 +1211,8 @@ function sendMessage() {
 
   debugLog(`📝 Raw message input: "${rawMessage}"`);
 
-  // Sanitize and validate the message
-  const message = window.safeWasm.validate_message(rawMessage);
+  // JavaScript fallback validation for message (same WASM pointer issue)
+  const message = String(rawMessage || '').trim().substring(0, 2000);
 
   if (!message || message.length === 0) {
     debugLog(`❌ Invalid or empty message, aborting send`);
@@ -1244,7 +1244,10 @@ function sendMessage() {
     // Generate message ID on client side
     const messageId = generateUUID();
     const rawUserName = document.getElementById('userName').value || 'Anonymous';
-    const userName = window.safeWasm.validate_username(rawUserName) || 'Anonymous';
+    // JavaScript fallback validation for username (same WASM pointer issue)
+    const userName = String(rawUserName || '').trim()
+      .split('').filter(c => /[a-zA-Z0-9 _-]/.test(c)).join('')
+      .substring(0, 32) || 'Anonymous';
 
     console.log(`📝 Sending message: userId=${userId}, userName=${userName}, messageId=${messageId}, roomId=${roomId}`);
 
