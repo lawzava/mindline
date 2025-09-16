@@ -861,7 +861,7 @@ async function joinRoom(roomId) {
   console.log('DEBUG: Sanitized roomId:', sanitizedRoomId);
   console.log('DEBUG: Type of sanitizedRoomId:', typeof sanitizedRoomId);
 
-  if (!sanitizedRoomId) {
+  if (!sanitizedRoomId || sanitizedRoomId.length === 0) {
     logger.warn('Room ID validation failed:', roomId);
     log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
     return null;
@@ -1203,7 +1203,7 @@ function sendMessage() {
   // Sanitize and validate the message
   const message = window.safeWasm.validate_message(rawMessage);
 
-  if (!message) {
+  if (!message || message.length === 0) {
     debugLog(`❌ Invalid or empty message, aborting send`);
     logger.warn('Message failed validation:', rawMessage);
     return;
