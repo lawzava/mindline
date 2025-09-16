@@ -12,7 +12,7 @@ import {
   setP2PConnection,
   AppState
 } from './state.js';
-import { log, updateConnectionStatus, updateDraftsDisplay } from './ui.js';
+import { log, updateConnectionStatus, updateDraftsDisplay, displayMessage } from './ui.js';
 import {
   handleSyncRequest,
   handleSyncResponse,
@@ -134,7 +134,7 @@ export async function initializeP2P(roomId) {
  */
 export function handleIncomingP2PMessage(message, peerId) {
   try {
-    logger.debug(`Received P2P message from ${peerId}:`, message.type);
+    logger.info(`🎯 Received P2P message from ${peerId}:`, message.type, message);
 
     switch (message.type) {
       case 'chat':
@@ -175,19 +175,24 @@ export function handleIncomingP2PMessage(message, peerId) {
  * @param {string} peerId - Peer ID
  */
 function handleChatMessage(message, peerId) {
-  const { content, senderName, messageId, timestamp } = message;
+  const { content, senderName, senderId, messageId, timestamp } = message;
 
-  if (!content || !senderName) {
+  logger.info('🎯 Handling chat message:', { content, senderName, senderId, messageId, timestamp });
+
+  if (!content || (!senderName && !senderId)) {
     logger.warn('Invalid chat message received');
     return;
   }
+
+  // Use senderId as fallback for senderName
+  const displayName = senderName || senderId || peerId;
 
   // Add to message history
   const messageObj = {
     id: messageId || `msg_${Date.now()}_${Math.random()}`,
     content: content,
-    senderId: peerId,
-    sender: senderName,
+    senderId: senderId || peerId,
+    sender: displayName,
     timestamp: timestamp || Date.now(),
     type: 'chat'
   };
@@ -198,10 +203,9 @@ function handleChatMessage(message, peerId) {
   }
 
   // Display the message
-  const { displayMessage } = require('./ui.js');
-  displayMessage(content, false, senderName, true, timestamp, messageObj);
+  displayMessage(content, false, displayName, true, timestamp, messageObj);
 
-  debugLog(`Chat message from ${senderName}: ${content}`);
+  debugLog(`Chat message from ${displayName}: ${content}`);
 }
 
 /**
@@ -210,13 +214,14 @@ function handleChatMessage(message, peerId) {
  * @param {string} peerId - Peer ID
  */
 function handleTypingMessage(message, peerId) {
-  const { content, senderName } = message;
+  const { content, senderName, senderId } = message;
 
-  if (window.handlePeerDraft) {
-    window.handlePeerDraft(message, peerId);
-  }
+  logger.info('🎯 Handling typing message:', { content, senderName, senderId });
 
-  debugLog(`Typing from ${senderName}: ${content || '[empty]'}`);
+  // Call the draft handler directly
+  handlePeerDraft(message, peerId);
+
+  debugLog(`Typing from ${senderName || senderId || peerId}: ${content || '[empty]'}`);
 }
 
 /**

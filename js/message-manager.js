@@ -371,13 +371,15 @@ export function sendMessage() {
 
     logger.debug(`📝 Sending message: userId=${userId}, userName=${userName}, messageId=${messageId}, roomId=${roomId}`);
 
-    // Create message object
+    // Create message object with proper fields for P2P broadcast
     const messageObj = {
       id: messageId,
       type: 'chat',
       content: message,
       sender: userName,
+      senderName: userName,  // Include both for compatibility
       senderId: getCurrentUserId(),
+      messageId: messageId,  // Include messageId explicitly for P2P
       timestamp: Date.now()
     };
 
