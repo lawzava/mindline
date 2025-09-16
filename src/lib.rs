@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 
 // Include sanitizer module
 mod sanitizer;
-use sanitizer::{with_sanitizer, InputSanitizer};
+use sanitizer::with_sanitizer;
 
 // Configure the WASM crate
 #[wasm_bindgen]
