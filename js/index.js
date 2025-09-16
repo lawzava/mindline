@@ -1314,12 +1314,12 @@ function handleIncomingP2PMessage(message, peerId) {
           content: message.content,
           timestamp: message.timestamp || Date.now(),
           room_id: roomId,
-          status: 'Received',
+          status: 'Delivered',  // Use a valid enum variant
           edited: false,
           edit_timestamp: null,
           original_content: null,
           reply_to: null,
-          reactions: new Map(),
+          reactions: {},  // Use plain object instead of Map
           mentions: [],
           local_timestamp: Date.now(),
           delivery_attempts: 0,
