@@ -3,7 +3,7 @@
  * Orchestrates the initialization of all modules
  */
 
-import '../css/styles.css';
+import '../css/main.css';
 import { P2PConnection } from './webrtc.js';
 import logger from './logger.js';
 
