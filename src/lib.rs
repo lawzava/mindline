@@ -1,4 +1,5 @@
 // src/lib.rs
+// Version 1.0.1 - Memory access fix applied
 use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -1033,10 +1034,30 @@ pub fn receive_message_from_peer(message_data: &JsValue) -> Result<bool, JsValue
 
 #[wasm_bindgen]
 pub fn get_room_messages(room_id: &str, limit: Option<u32>) -> JsValue {
+    // Debug logging to see what we're receiving
+    console_log!("[WASM] get_room_messages called with room_id: {}, limit: {:?}", room_id, limit);
+
+    // Handle the case where wasm-bindgen might pass a sentinel value
+    // The JS binding uses 0x100000001 as a sentinel for None
+    let safe_limit = if let Some(l) = limit {
+        // Check if the value is suspiciously large (likely the sentinel)
+        if l > 1000000 {
+            console_log!("[WASM] Detected sentinel value {} for None, using None", l);
+            None
+        } else {
+            console_log!("[WASM] Using limit value: {}", l);
+            Some(l as usize)
+        }
+    } else {
+        console_log!("[WASM] No limit specified (None)");
+        None
+    };
+
     let messages = with_message_manager(|manager| {
-        manager.get_messages(room_id, limit.map(|l| l as usize))
+        manager.get_messages(room_id, safe_limit)
     }).unwrap_or_default();
 
+    console_log!("[WASM] Returning {} messages", messages.len());
     serde_wasm_bindgen::to_value(&messages).unwrap_or(JsValue::NULL)
 }
 

@@ -139,6 +139,70 @@ export function displayMessage(message, isMe = true, senderName = 'You', shouldS
   messageElement.appendChild(contentDiv);
   messageElement.appendChild(timestampDiv);
 
+  // Add action buttons for messages - TEMPORARILY DISABLED
+  // Will re-enable edit, delete, and emoji reactions later
+  /*
+  if (messageObj && messageObj.id) {
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'message-actions';
+    actionsDiv.style.display = 'none'; // Hidden by default
+    actionsDiv.style.marginTop = '4px';
+    actionsDiv.style.gap = '8px';
+
+    // Only show edit/delete for own messages
+    if (isMe && messageObj.status !== 'Deleted') {
+      // Edit button
+      const editBtn = document.createElement('button');
+      editBtn.className = 'message-action-btn edit-btn';
+      editBtn.textContent = '✏️';
+      editBtn.title = 'Edit message';
+      editBtn.style.background = 'transparent';
+      editBtn.style.border = 'none';
+      editBtn.style.cursor = 'pointer';
+      editBtn.style.fontSize = '14px';
+      editBtn.style.padding = '2px 6px';
+      editBtn.onclick = () => window.editMessage(messageObj.id, messageObj.room_id);
+      actionsDiv.appendChild(editBtn);
+
+      // Delete button
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'message-action-btn delete-btn';
+      deleteBtn.textContent = '🗑️';
+      deleteBtn.title = 'Delete message';
+      deleteBtn.style.background = 'transparent';
+      deleteBtn.style.border = 'none';
+      deleteBtn.style.cursor = 'pointer';
+      deleteBtn.style.fontSize = '14px';
+      deleteBtn.style.padding = '2px 6px';
+      deleteBtn.onclick = () => window.deleteMessage(messageObj.id, messageObj.room_id);
+      actionsDiv.appendChild(deleteBtn);
+    }
+
+    // React button (for all messages)
+    const reactBtn = document.createElement('button');
+    reactBtn.className = 'message-action-btn react-btn';
+    reactBtn.textContent = '😊';
+    reactBtn.title = 'Add reaction';
+    reactBtn.style.background = 'transparent';
+    reactBtn.style.border = 'none';
+    reactBtn.style.cursor = 'pointer';
+    reactBtn.style.fontSize = '14px';
+    reactBtn.style.padding = '2px 6px';
+    reactBtn.onclick = () => window.showReactionPicker(messageObj.id, messageObj.room_id);
+    actionsDiv.appendChild(reactBtn);
+
+    messageElement.appendChild(actionsDiv);
+
+    // Show actions on hover
+    messageElement.onmouseenter = () => {
+      actionsDiv.style.display = 'flex';
+    };
+    messageElement.onmouseleave = () => {
+      actionsDiv.style.display = 'none';
+    };
+  }
+  */
+
   messageContainer.appendChild(messageElement);
   chatArea.appendChild(messageContainer);
 
