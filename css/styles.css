@@ -3036,3 +3036,68 @@ h1, h2, h3, h4, h5, h6 {
     transform: translate(4px, 4px) scale(0.92);
     box-shadow: var(--small-shadow) var(--shadow-color);
 }
+
+/* ========== Enhanced Message UI Styles ========== */
+
+/* Message action buttons */
+.message-actions {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    display: flex;
+    gap: 4px;
+}
+
+.neo-message-bubble:hover .message-actions {
+    opacity: 1;
+}
+
+.message-action-btn {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    opacity: 0.7;
+}
+
+.message-action-btn:hover {
+    transform: scale(1.2);
+    opacity: 1;
+}
+
+/* Message edit input */
+.message-edit-input {
+    font-family: inherit;
+    font-size: inherit;
+}
+
+/* Reaction picker */
+.reaction-picker {
+    animation: fadeIn 0.2s ease;
+}
+
+/* Reaction badges */
+.reaction-badge {
+    transition: background 0.2s ease, transform 0.2s ease;
+    user-select: none;
+    cursor: pointer;
+}
+
+.reaction-badge:hover {
+    transform: scale(1.1);
+    background: rgba(255,255,255,0.2) !important;
+}
+
+/* Edited message indicator */
+.message-edited {
+    font-style: italic;
+    margin-left: 4px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
