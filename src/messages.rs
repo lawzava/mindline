@@ -1,7 +1,7 @@
 // src/messages.rs - Enhanced message processing for Phase 3
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use wasm_bindgen::prelude::*;
 use std::sync::{Arc, Mutex};
 use web_sys::window;
@@ -218,8 +218,8 @@ pub enum SyncRequestType {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RoomMessageState {
     pub room_id: String,
-    pub messages: VecDeque<EnhancedMessage>, // Ordered by timestamp
-    pub message_lookup: HashMap<String, usize>, // message_id -> index in VecDeque
+    pub messages: Vec<EnhancedMessage>, // Ordered by timestamp
+    pub message_ids: HashSet<String>, // Quick lookup for duplicate checking
     pub last_sync: u64,
     pub total_messages: usize,
     pub unread_count: usize,
@@ -238,8 +238,8 @@ impl RoomMessageState {
 
         Self {
             room_id,
-            messages: VecDeque::new(),
-            message_lookup: HashMap::new(),
+            messages: Vec::new(),
+            message_ids: HashSet::new(),
             last_sync: 0,
             total_messages: 0,
             unread_count: 0,
@@ -252,7 +252,7 @@ impl RoomMessageState {
 
     pub fn add_message(&mut self, mut message: EnhancedMessage) -> bool {
         // Check for duplicates
-        if self.message_lookup.contains_key(&message.id) {
+        if self.message_ids.contains(&message.id) {
             return false;
         }
 
@@ -265,33 +265,27 @@ impl RoomMessageState {
             .position(|m| m.timestamp > message.timestamp)
             .unwrap_or(self.messages.len());
 
-        // Update lookup table indices for messages that will be shifted
-        for (_, index) in self.message_lookup.iter_mut() {
-            if *index >= insert_index {
-                *index += 1;
-            }
-        }
+        // Ensure index is valid for VecDeque insert
+        let safe_index = insert_index.min(self.messages.len());
 
         // Insert message
-        self.messages.insert(insert_index, message.clone());
-        self.message_lookup.insert(message.id.clone(), insert_index);
+        self.messages.insert(safe_index, message.clone());
+        self.message_ids.insert(message.id.clone());
         self.total_messages += 1;
 
         true
     }
 
     pub fn get_message(&self, message_id: &str) -> Option<&EnhancedMessage> {
-        self.message_lookup
-            .get(message_id)
-            .and_then(|&index| self.messages.get(index))
+        self.messages
+            .iter()
+            .find(|m| m.id == message_id)
     }
 
     pub fn get_message_mut(&mut self, message_id: &str) -> Option<&mut EnhancedMessage> {
-        if let Some(&index) = self.message_lookup.get(message_id) {
-            self.messages.get_mut(index)
-        } else {
-            None
-        }
+        self.messages
+            .iter_mut()
+            .find(|m| m.id == message_id)
     }
 
     pub fn edit_message(&mut self, message_id: &str, new_content: String) -> bool {
@@ -304,12 +298,10 @@ impl RoomMessageState {
     }
 
     pub fn delete_message(&mut self, message_id: &str) -> bool {
-        if let Some(&index) = self.message_lookup.get(message_id) {
-            if let Some(message) = self.messages.get_mut(index) {
-                message.status = MessageStatus::Deleted;
-                message.content = "[Message deleted]".to_string();
-                return true;
-            }
+        if let Some(message) = self.get_message_mut(message_id) {
+            message.status = MessageStatus::Deleted;
+            message.content = "[Message deleted]".to_string();
+            return true;
         }
         false
     }
@@ -324,15 +316,21 @@ impl RoomMessageState {
     }
 
     pub fn get_recent_messages(&self, limit: usize) -> Vec<EnhancedMessage> {
-        self.messages
+        // Return messages in chronological order (oldest to newest)
+        let all_messages: Vec<EnhancedMessage> = self.messages
             .iter()
-            .rev()
-            .take(limit)
             .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect()
+            .collect();
+
+        // If we have more messages than the limit, take the most recent ones
+        if all_messages.len() > limit && limit > 0 {
+            let skip_count = all_messages.len().saturating_sub(limit);
+            all_messages.into_iter()
+                .skip(skip_count)
+                .collect()
+        } else {
+            all_messages
+        }
     }
 
     pub fn mark_all_read(&mut self) {
@@ -503,14 +501,9 @@ impl MessageManager {
     pub fn cleanup_old_messages(&mut self, room_id: &str) {
         if let Some(room) = self.rooms.get_mut(room_id) {
             while room.messages.len() > self.message_cache_size {
-                if let Some(old_message) = room.messages.pop_front() {
-                    room.message_lookup.remove(&old_message.id);
-                    // Update indices in lookup table
-                    for (_, index) in room.message_lookup.iter_mut() {
-                        if *index > 0 {
-                            *index -= 1;
-                        }
-                    }
+                if !room.messages.is_empty() {
+                    let old_message = room.messages.remove(0);
+                    room.message_ids.remove(&old_message.id);
                 }
             }
         }
@@ -558,11 +551,17 @@ impl MessageManager {
                     Ok(true)
                 },
                 Err(e) => {
-                    console_log!("Failed to deserialize room data: {}", e);
+                    console_log!("Failed to deserialize room data: {}, clearing old data", e);
+                    // Clear corrupted/old format data
+                    let _ = storage.remove_item(&storage_key);
+                    // Create fresh room
+                    self.get_or_create_room(room_id);
                     Ok(false)
                 }
             }
         } else {
+            // No data found, create new room
+            self.get_or_create_room(room_id);
             Ok(false)
         }
     }

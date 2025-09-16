@@ -215,9 +215,9 @@ async function loadWasmModule() {
   try {
     // Dynamically import the module
     const wasm = await import('../pkg/mindline.js');
-    const initialized = await wasm.default();
-    IndexState.wasmModule = initialized;
-    
+    await wasm.default(); // Initialize the WASM module
+    IndexState.wasmModule = wasm; // Store the module itself, not the result
+
     updateDebugOutput('WASM module loaded successfully!');
     return true;
   } catch (err) {
@@ -326,16 +326,41 @@ function safeWasmCall(funcName, paramNames, paramTransforms = {}) {
       const safeArgs = args.slice(0, paramNames.length).map((arg, index) => {
         const paramName = paramNames[index];
         const transform = paramTransforms[paramName] || String;
-        
+
+        // Special handling for 'limit' parameter which should be numeric and optional
+        if (paramName === 'limit') {
+          if (arg === undefined || arg === null) {
+            return undefined; // Pass undefined for None in Rust Option<u32>
+          }
+          return Number(arg); // Convert to number for u32
+        }
+
+        // Special handling for other numeric parameters
+        if (paramName === 'maxAttempts' || paramName === 'windowMs' || paramName === 'fileSize' ||
+            paramName === 'maxSize' || paramName === 'afterTimestamp' || paramName === 'lastSync' ||
+            paramName === 'messageCount') {
+          return Number(arg || 0);
+        }
+
+        // Handle undefined/null for optional parameters
+        if (arg === undefined || arg === null) {
+          // If transform returns undefined, pass undefined to WASM
+          const transformed = transform(arg);
+          if (transformed === undefined) {
+            return undefined;
+          }
+          arg = "";
+        }
+
         // Apply transform function (String by default)
-        const safeArg = transform(arg || "");
-        
+        const safeArg = transform(arg);
+
         // Validate required parameters (allow optional parameters for new functions)
         if (safeArg === "" && paramName !== 'content' && paramName !== 'signalData' &&
             paramName !== 'displayName' && paramName !== 'senderName' && paramName !== 'isTyping') {
           throw new Error(`${paramName} cannot be empty`);
         }
-        
+
         return safeArg;
       });
       
@@ -1436,7 +1461,9 @@ function sendMessage() {
     // Display the message in chat
     console.log(`🖥️ Displaying message in chat UI`);
     try {
-      displayMessage(message, true, userName, true, messageObj.timestamp);
+      // Pass the full message object for enhanced features
+      messageObj.room_id = roomId;
+      displayMessage(message, true, userName, true, messageObj.timestamp, messageObj);
       console.log(`✅ Message displayed in UI successfully`);
     } catch (displayError) {
       console.error(`❌ Failed to display message in UI:`, displayError);
@@ -2245,7 +2272,12 @@ function connectNewUIWithWasm() {
 
 // Display received message from P2P
 function displayReceivedMessage(messageObj) {
-  displayMessage(messageObj.content, false, messageObj.sender, true, messageObj.timestamp);
+  // Add room_id to message object if not present
+  if (!messageObj.room_id) {
+    messageObj.room_id = getCurrentRoomId();
+  }
+
+  displayMessage(messageObj.content, false, messageObj.sender, true, messageObj.timestamp, messageObj);
 
   // Ensure chat scrolls to show new message from peer
   scrollChatToBottom('smooth', 50);
@@ -2416,3 +2448,291 @@ window.addEventListener('beforeunload', () => {
 
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', initializeApp);
+
+// ========== Enhanced Message UI Functions ==========
+
+/**
+ * Edit a message
+ * @param {string} messageId - Message ID to edit
+ * @param {string} roomId - Room ID
+ */
+window.editMessage = function(messageId, roomId) {
+  // Find the message element
+  const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (!messageContainer) {
+    console.error('Message element not found');
+    return;
+  }
+
+  const contentDiv = messageContainer.querySelector('.message-content');
+  if (!contentDiv) return;
+
+  // Get current content (remove edited label if present)
+  const currentContent = contentDiv.textContent.replace(' (edited)', '').trim();
+
+  // Create edit input
+  const editInput = document.createElement('input');
+  editInput.type = 'text';
+  editInput.value = currentContent;
+  editInput.className = 'message-edit-input';
+  editInput.style.width = '100%';
+  editInput.style.padding = '4px 8px';
+  editInput.style.borderRadius = '4px';
+  editInput.style.border = '1px solid rgba(255,255,255,0.2)';
+  editInput.style.background = 'rgba(0,0,0,0.2)';
+  editInput.style.color = 'inherit';
+
+  // Replace content with input
+  const originalContent = contentDiv.innerHTML;
+  contentDiv.innerHTML = '';
+  contentDiv.appendChild(editInput);
+
+  // Focus and select text
+  editInput.focus();
+  editInput.select();
+
+  // Save on Enter, cancel on Escape
+  editInput.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      const newContent = editInput.value.trim();
+      if (newContent && newContent !== currentContent) {
+        // Update in WASM
+        try {
+          window.safeWasm.edit_message(roomId, messageId, newContent);
+
+          // Update UI
+          contentDiv.textContent = newContent;
+          const editedLabel = document.createElement('span');
+          editedLabel.className = 'message-edited';
+          editedLabel.textContent = ' (edited)';
+          editedLabel.style.fontSize = '0.8em';
+          editedLabel.style.opacity = '0.7';
+          contentDiv.appendChild(editedLabel);
+
+          // Broadcast edit to peers
+          if (AppState.p2pConnection) {
+            AppState.p2pConnection.broadcast({
+              type: 'message-edit',
+              messageId: messageId,
+              content: newContent,
+              senderId: getCurrentUserId()
+            });
+          }
+
+          log('Message edited successfully');
+        } catch (error) {
+          console.error('Failed to edit message:', error);
+          contentDiv.innerHTML = originalContent;
+        }
+      } else {
+        contentDiv.innerHTML = originalContent;
+      }
+    } else if (e.key === 'Escape') {
+      contentDiv.innerHTML = originalContent;
+    }
+  };
+
+  // Cancel on blur
+  editInput.onblur = () => {
+    setTimeout(() => {
+      if (contentDiv.contains(editInput)) {
+        contentDiv.innerHTML = originalContent;
+      }
+    }, 200);
+  };
+};
+
+/**
+ * Delete a message
+ * @param {string} messageId - Message ID to delete
+ * @param {string} roomId - Room ID
+ */
+window.deleteMessage = function(messageId, roomId) {
+  if (confirm('Are you sure you want to delete this message?')) {
+    try {
+      // Delete in WASM
+      window.safeWasm.delete_message(roomId, messageId);
+
+      // Update UI
+      const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
+      if (messageContainer) {
+        const contentDiv = messageContainer.querySelector('.message-content');
+        if (contentDiv) {
+          contentDiv.textContent = '[Message deleted]';
+          contentDiv.style.fontStyle = 'italic';
+          contentDiv.style.opacity = '0.6';
+        }
+
+        // Remove action buttons
+        const actionsDiv = messageContainer.querySelector('.message-actions');
+        if (actionsDiv) {
+          actionsDiv.remove();
+        }
+      }
+
+      // Broadcast deletion to peers
+      if (AppState.p2pConnection) {
+        AppState.p2pConnection.broadcast({
+          type: 'message-delete',
+          messageId: messageId,
+          senderId: getCurrentUserId()
+        });
+      }
+
+      log('Message deleted');
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+      log('Failed to delete message');
+    }
+  }
+};
+
+/**
+ * Show reaction picker for a message
+ * @param {string} messageId - Message ID to react to
+ * @param {string} roomId - Room ID
+ */
+window.showReactionPicker = function(messageId, roomId) {
+  // Common reactions
+  const reactions = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👏'];
+
+  // Create reaction picker
+  const picker = document.createElement('div');
+  picker.className = 'reaction-picker';
+  picker.style.position = 'absolute';
+  picker.style.background = 'var(--surface-color, #2e3440)';
+  picker.style.border = '1px solid rgba(255,255,255,0.1)';
+  picker.style.borderRadius = '8px';
+  picker.style.padding = '8px';
+  picker.style.display = 'flex';
+  picker.style.gap = '4px';
+  picker.style.zIndex = '1000';
+  picker.style.boxShadow = '0 4px 6px rgba(0,0,0,0.3)';
+
+  reactions.forEach(emoji => {
+    const btn = document.createElement('button');
+    btn.textContent = emoji;
+    btn.style.background = 'transparent';
+    btn.style.border = 'none';
+    btn.style.cursor = 'pointer';
+    btn.style.fontSize = '20px';
+    btn.style.padding = '4px';
+    btn.style.borderRadius = '4px';
+    btn.style.transition = 'background 0.2s';
+
+    btn.onmouseenter = () => {
+      btn.style.background = 'rgba(255,255,255,0.1)';
+    };
+    btn.onmouseleave = () => {
+      btn.style.background = 'transparent';
+    };
+
+    btn.onclick = () => {
+      // Add reaction
+      try {
+        const userId = getCurrentUserId();
+        window.safeWasm.add_message_reaction(roomId, messageId, emoji, userId);
+
+        // Update UI immediately
+        updateMessageReactions(messageId, emoji, userId);
+
+        // Broadcast reaction to peers
+        if (AppState.p2pConnection) {
+          AppState.p2pConnection.broadcast({
+            type: 'message-reaction',
+            messageId: messageId,
+            emoji: emoji,
+            userId: userId,
+            senderId: getCurrentUserId()
+          });
+        }
+
+        log(`Added ${emoji} reaction`);
+      } catch (error) {
+        console.error('Failed to add reaction:', error);
+      }
+
+      // Remove picker
+      picker.remove();
+    };
+
+    picker.appendChild(btn);
+  });
+
+  // Position picker near the message
+  const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (messageContainer) {
+    messageContainer.style.position = 'relative';
+    messageContainer.appendChild(picker);
+
+    // Position below the message
+    picker.style.bottom = '-40px';
+    picker.style.right = '0';
+
+    // Remove picker on click outside
+    setTimeout(() => {
+      document.addEventListener('click', function removePicker(e) {
+        if (!picker.contains(e.target)) {
+          picker.remove();
+          document.removeEventListener('click', removePicker);
+        }
+      });
+    }, 100);
+  }
+};
+
+/**
+ * Update message reactions in UI
+ * @param {string} messageId - Message ID
+ * @param {string} emoji - Emoji reaction
+ * @param {string} userId - User who reacted
+ */
+function updateMessageReactions(messageId, emoji, userId) {
+  const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (!messageContainer) return;
+
+  let reactionsDiv = messageContainer.querySelector('.message-reactions');
+  if (!reactionsDiv) {
+    // Create reactions container if it doesn't exist
+    reactionsDiv = document.createElement('div');
+    reactionsDiv.className = 'message-reactions';
+    reactionsDiv.style.marginTop = '4px';
+    reactionsDiv.style.display = 'flex';
+    reactionsDiv.style.gap = '4px';
+    reactionsDiv.style.flexWrap = 'wrap';
+
+    const messageElement = messageContainer.querySelector('.neo-message-bubble');
+    if (messageElement) {
+      messageElement.appendChild(reactionsDiv);
+    }
+  }
+
+  // Find or create reaction badge
+  let reactionBadge = Array.from(reactionsDiv.children).find(
+    child => child.dataset.emoji === emoji
+  );
+
+  if (!reactionBadge) {
+    reactionBadge = document.createElement('span');
+    reactionBadge.className = 'reaction-badge';
+    reactionBadge.dataset.emoji = emoji;
+    reactionBadge.dataset.users = userId;
+    reactionBadge.dataset.count = '1';
+    reactionBadge.style.background = 'rgba(255,255,255,0.1)';
+    reactionBadge.style.padding = '2px 6px';
+    reactionBadge.style.borderRadius = '12px';
+    reactionBadge.style.fontSize = '0.9em';
+    reactionBadge.style.cursor = 'pointer';
+    reactionBadge.textContent = `${emoji} 1`;
+    reactionsDiv.appendChild(reactionBadge);
+  } else {
+    // Update existing badge
+    const users = reactionBadge.dataset.users.split(',');
+    if (!users.includes(userId)) {
+      users.push(userId);
+      reactionBadge.dataset.users = users.join(',');
+      reactionBadge.dataset.count = users.length.toString();
+      reactionBadge.textContent = `${emoji} ${users.length}`;
+    }
+  }
+}
