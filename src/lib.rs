@@ -862,43 +862,46 @@ pub fn update_url_with_room(room_id: &str) -> Result<(), JsValue> {
 // ========== Phase 2: Input Sanitization and Validation ==========
 
 #[wasm_bindgen]
-pub fn validate_room_id(room_id: &JsValue) -> Result<String, JsValue> {
-    let room_id = validate_js_string_param(room_id, "room ID")?;
-
-    match with_sanitizer(|s| s.validate_room_id(&room_id)) {
-        Ok(Some(valid_id)) => Ok(valid_id),
-        Ok(None) => Err(JsValue::from_str("Invalid room ID")),
-        Err(e) => {
-            console_log!("Error validating room ID: {:?}", e);
-            Err(e)
+pub fn validate_room_id(room_id: &str) -> String {
+    match with_sanitizer(|s| s.validate_room_id(room_id)) {
+        Ok(Some(valid_id)) => valid_id,
+        Ok(None) => {
+            console_log!("Room ID validation failed, returning empty string");
+            String::new()
+        },
+        Err(_) => {
+            console_log!("Error in room ID validation, returning empty string");
+            String::new()
         }
     }
 }
 
 #[wasm_bindgen]
-pub fn validate_username(username: &JsValue) -> Result<String, JsValue> {
-    let username = validate_js_string_param(username, "username")?;
-
-    match with_sanitizer(|s| s.validate_username(&username)) {
-        Ok(Some(valid_name)) => Ok(valid_name),
-        Ok(None) => Err(JsValue::from_str("Invalid username")),
-        Err(e) => {
-            console_log!("Error validating username: {:?}", e);
-            Err(e)
+pub fn validate_username(username: &str) -> String {
+    match with_sanitizer(|s| s.validate_username(username)) {
+        Ok(Some(valid_name)) => valid_name,
+        Ok(None) => {
+            console_log!("Username validation failed, returning empty string");
+            String::new()
+        },
+        Err(_) => {
+            console_log!("Error in username validation, returning empty string");
+            String::new()
         }
     }
 }
 
 #[wasm_bindgen]
-pub fn validate_message(message: &JsValue) -> Result<String, JsValue> {
-    let message = validate_js_string_param(message, "message")?;
-
-    match with_sanitizer(|s| s.validate_message(&message)) {
-        Ok(Some(valid_message)) => Ok(valid_message),
-        Ok(None) => Err(JsValue::from_str("Invalid message")),
-        Err(e) => {
-            console_log!("Error validating message: {:?}", e);
-            Err(e)
+pub fn validate_message(message: &str) -> String {
+    match with_sanitizer(|s| s.validate_message(message)) {
+        Ok(Some(valid_message)) => valid_message,
+        Ok(None) => {
+            console_log!("Message validation failed, returning empty string");
+            String::new()
+        },
+        Err(_) => {
+            console_log!("Error in message validation, returning empty string");
+            String::new()
         }
     }
 }
