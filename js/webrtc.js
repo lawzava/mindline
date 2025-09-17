@@ -355,6 +355,11 @@ export class P2PConnection {
             window.safeWasm.add_known_peer(peerId);
           }
 
+          // Add to connected peers in state API
+          if (window.safeWasm.add_connected_peer) {
+            window.safeWasm.add_connected_peer(peerId);
+          }
+
           // Then update connection state to create peer in peers HashMap
           if (window.safeWasm.update_peer_connection_state) {
             window.safeWasm.update_peer_connection_state(peerId, 'connected');
@@ -744,9 +749,15 @@ export class P2PConnection {
     this.pendingCandidates.delete(peerId);
 
     // Remove from Rust P2P manager
-    if (window.safeWasm && window.safeWasm.remove_peer_from_network) {
+    if (window.safeWasm) {
       try {
-        window.safeWasm.remove_peer_from_network(peerId);
+        if (window.safeWasm.remove_peer_from_network) {
+          window.safeWasm.remove_peer_from_network(peerId);
+        }
+        // Remove from connected peers in state API
+        if (window.safeWasm.remove_connected_peer) {
+          window.safeWasm.remove_connected_peer(peerId);
+        }
         console.log(`🧹 Removed peer ${peerId} from Rust P2P manager`);
       } catch (e) {
         console.error(`Failed to remove peer ${peerId} from Rust:`, e);
@@ -968,6 +979,19 @@ export class P2PConnection {
    * Get list of connected peer IDs
    */
   getConnectedPeers() {
+    // First try to get from WASM state
+    if (window.safeWasm && window.safeWasm.get_connected_peers) {
+      try {
+        const peers = window.safeWasm.get_connected_peers();
+        if (peers && Array.isArray(peers)) {
+          return peers;
+        }
+      } catch (error) {
+        console.error('Failed to get connected peers from WASM:', error);
+      }
+    }
+
+    // Fallback to checking local data channels
     const connected = [];
     this.dataChannels.forEach((channel, peerId) => {
       if (channel.readyState === 'open') {
