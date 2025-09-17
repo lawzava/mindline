@@ -605,6 +605,7 @@ export class P2PConnection {
     const messageSize = new Blob([messageStr]).size;
     let deliveredCount = 0;
     let attemptedCount = 0;
+    let queuedCount = 0;
 
     // Get optimal peers for broadcast from Rust if available
     let targetPeers = [];
@@ -680,6 +681,22 @@ export class P2PConnection {
         }
       } else {
         console.warn(`⚠️ Channel to ${peerId} not open: ${channel.readyState}`);
+
+        // Queue message for later delivery
+        if (window.safeWasm && window.safeWasm.queue_p2p_message) {
+          try {
+            const messageType = message.type || 'unknown';
+            const priority = message.priority || 5;
+            const messageId = window.safeWasm.queue_p2p_message(peerId, messageStr, messageType, priority);
+            if (messageId) {
+              queuedCount++;
+              console.log(`📥 Message queued for ${peerId} with ID: ${messageId}`);
+            }
+          } catch (e) {
+            console.warn(`Failed to queue message for ${peerId}:`, e);
+          }
+        }
+
         // Try to re-establish connection if channel is closed
         if (channel.readyState === 'closed') {
           console.log(`🔄 Attempting to re-establish connection to ${peerId}`);
@@ -690,11 +707,21 @@ export class P2PConnection {
       }
     }
 
-    console.log(`📊 Broadcast result: ${deliveredCount}/${attemptedCount} delivered`);
+    console.log(`📊 Broadcast result: ${deliveredCount}/${attemptedCount} delivered, ${queuedCount} queued`);
 
     // If delivery rate is too low, there might be connection issues
     if (attemptedCount > 0 && deliveredCount / attemptedCount < 0.5) {
       console.warn(`🚨 Low delivery rate: ${deliveredCount}/${attemptedCount} - possible connection issues`);
+    }
+
+    // Display queue status if messages were queued
+    if (queuedCount > 0 && window.safeWasm && window.safeWasm.get_p2p_queue_status) {
+      try {
+        const queueStatus = window.safeWasm.get_p2p_queue_status();
+        console.log(`📦 Queue status: ${queueStatus.pending} pending, ${queueStatus.highPriority} high priority`);
+      } catch (e) {
+        // Non-critical
+      }
     }
 
     return deliveredCount;

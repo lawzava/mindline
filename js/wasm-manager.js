@@ -123,6 +123,19 @@ export function createSafeWasmProxies() {
     handle_connection_failure: safeWasmCall('handle_connection_failure', ['peerId']),
     set_connection_strategy: safeWasmCall('set_connection_strategy', ['strategy']),
     get_best_peers_for_broadcast: safeWasmCall('get_best_peers_for_broadcast', ['maxPeers'], { maxPeers: Number }),
+    get_broadcast_plan: safeWasmCall('get_broadcast_plan', ['messageType']),
+
+    // Message queue functions
+    queue_p2p_message: safeWasmCall('queue_p2p_message', ['targetPeer', 'content', 'messageType', 'priority'], {
+      priority: Number,
+      targetPeer: (v) => v === null || v === undefined ? undefined : v
+    }),
+    process_p2p_queue: safeWasmCall('process_p2p_queue', []),
+    get_p2p_queue_status: safeWasmCall('get_p2p_queue_status', []),
+    clear_p2p_queue_for_peer: safeWasmCall('clear_p2p_queue_for_peer', ['peerId']),
+
+    record_performance_metric: safeWasmCall('record_performance_metric', ['metric', 'value'], { value: Number }),
+    start_performance_monitoring: safeWasmCall('start_performance_monitoring', []),
     // Aliases for functions called in webrtc.js
     add_peer: safeWasmCall('add_known_peer', ['peerId']),
     update_peer_metrics: function(peerId, latency, quality) {
@@ -205,6 +218,11 @@ export function createSafeWasmProxies() {
 function safeWasmCall(funcName, paramNames = [], paramTransforms = {}) {
   return function(...args) {
     try {
+      // Handle case where no arguments are passed but they're expected
+      if (!args) {
+        args = [];
+      }
+
       // Validate we have the right number of parameters
       if (args.length !== paramNames.length) {
         const message = `${funcName}: expected ${paramNames.length} parameters (${paramNames.join(', ')}), got ${args.length}`;
