@@ -40,6 +40,7 @@ export function createSafeWasmProxies() {
     join_room: safeWasmCall('join_room', ['roomId', 'signalData']),
     create_room_with_id: safeWasmCall('create_room_with_id', ['roomId']),
     send_message: safeWasmCall('send_message', ['roomId', 'content', 'messageId']),
+    send_typing_indicator: safeWasmCall('send_typing_indicator', ['roomId', 'isTyping'], { isTyping: Boolean }),
     get_messages: safeWasmCall('get_messages', ['roomId']),
 
     // Phase 1: Enhanced State Management Functions
@@ -178,7 +179,19 @@ export function createSafeWasmProxies() {
     cancel_scheduled_task: safeWasmCall('cancel_scheduled_task', ['taskId']),
     get_scheduled_tasks: safeWasmCall('get_scheduled_tasks', []),
     trigger_maintenance_mode: safeWasmCall('trigger_maintenance_mode', ['enabled'], { enabled: Boolean }),
-    get_maintenance_status: safeWasmCall('get_maintenance_status', [])
+    get_maintenance_status: safeWasmCall('get_maintenance_status', []),
+
+    // Storage and persistence functions (previously missing)
+    store_message_persistent: safeWasmCall('store_message_persistent', ['roomId', 'message']),
+    store_room_persistent: safeWasmCall('store_room_persistent', ['roomId', 'roomData']),
+    get_stored_messages: safeWasmCall('get_stored_messages', ['roomId']),
+    get_stored_room: safeWasmCall('get_stored_room', ['roomId']),
+
+    // Encryption functions (previously missing)
+    encrypt_message_content: safeWasmCall('encrypt_message_content', ['content']),
+    decrypt_message_content: safeWasmCall('decrypt_message_content', ['encrypted']),
+    export_encryption_key: safeWasmCall('export_encryption_key', []),
+    import_encryption_key: safeWasmCall('import_encryption_key', ['key'])
   };
 }
 
