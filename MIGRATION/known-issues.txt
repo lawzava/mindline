@@ -1,0 +1,20 @@
+# Known Issues Before Migration
+# Date: Tue Sep 16 17:36:30 PDT 2025
+
+## Functional Issues
+- [x] P2P connection between same user ID in different tabs fails
+- [x] WebSocket connection to logging server (ws://localhost:3001/logs) fails repeatedly
+
+## Performance Issues
+- [ ] None identified
+
+## Console Warnings
+- [x] X-Frame-Options header warning
+- [x] Tailwind CDN warning (should not be used in production)
+- [x] Manifest enctype warning
+- [x] beforeinstallprompt event.preventDefault() warning
+
+## Notes
+- Application core functionality works (room creation, messaging, theme toggle)
+- Build system is functional
+- P2P needs testing with proper different user IDs/browsers

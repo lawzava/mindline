@@ -142,19 +142,10 @@ export function getURLParams() {
 }
 
 export function getRoomFromURL() {
-  // Use JavaScript implementation (WASM get_room_from_url returns corrupted arrays)
-  const params = getURLParams();
-  const roomId = params.get('r');
-  logger.info('getRoomFromURL - URL search:', window.location.search);
-  logger.info('getRoomFromURL - parsed room ID:', roomId);
-
-  // Validate room ID
-  if (roomId && roomId.length >= 3) {
-    logger.info('getRoomFromURL - valid room ID found:', roomId);
-    return roomId;
+  if (window.safeWasm && window.safeWasm.get_room_from_url) {
+    const roomId = window.safeWasm.get_room_from_url();
+    return roomId || null; // Convert undefined to null
   }
-
-  logger.info('getRoomFromURL - no valid room ID in URL');
   return null;
 }
 
@@ -182,19 +173,10 @@ export function updateURLWithRoom(roomId) {
   }
 }
 
-// UUID generation - JavaScript primary for cross-browser stability
+// UUID generation - using WASM for consistency
 export function generateUUID() {
-  // Use JavaScript UUID for maximum browser compatibility
-  // WASM UUID will be re-enabled once cross-browser serialization is resolved
-  try {
-    return crypto.randomUUID();
-  } catch (error) {
-    logger.error('JavaScript UUID generation failed:', error);
-    // Fallback to manual UUID generation
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c == 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+  if (window.safeWasm && window.safeWasm.generate_uuid) {
+    return window.safeWasm.generate_uuid();
   }
+  throw new Error('WASM UUID generation not available');
 }
