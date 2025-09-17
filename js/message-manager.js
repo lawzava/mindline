@@ -331,12 +331,29 @@ export function sendMessage() {
 
   debugLog(`📝 Raw message input: "${rawMessage}"`);
 
-  // Use pure JavaScript validation until WASM serialization is fixed
-  const message = String(rawMessage || '').trim().substring(0, 2000);
+  // Use WASM validation for message
+  const trimmedMessage = String(rawMessage || '').trim();
 
-  if (!message || message.length === 0) {
-    debugLog(`❌ Invalid or empty message, aborting send`);
-    logger.warn('Message failed validation:', rawMessage);
+  if (!window.safeWasm || !window.safeWasm.validate_message) {
+    logger.error('WASM message validation not available');
+    log('Message validation system not ready. Please reload the page.');
+    return;
+  }
+
+  let message;
+  try {
+    const isValid = window.safeWasm.validate_message(trimmedMessage);
+    if (!isValid) {
+      debugLog(`❌ Invalid or empty message, aborting send`);
+      logger.warn('Message failed validation:', rawMessage);
+      return;
+    }
+    // WASM validation passed, but we still need to truncate for now
+    // as the WASM function validates but doesn't truncate
+    message = trimmedMessage.substring(0, 2000);
+  } catch (error) {
+    logger.error('Message validation error:', error);
+    log('Error validating message. Please try again.');
     return;
   }
 
@@ -364,10 +381,27 @@ export function sendMessage() {
     // Generate message ID on client side
     const messageId = generateUUID();
     const rawUserName = document.getElementById('userName')?.value || 'Anonymous';
-    // Use pure JavaScript validation until WASM serialization is fixed
-    const userName = String(rawUserName || '').trim()
-      .split('').filter(c => /[a-zA-Z0-9 _-]/.test(c)).join('')
-      .substring(0, 32) || 'Anonymous';
+    // Use WASM validation for username
+    let userName;
+    if (!window.safeWasm || !window.safeWasm.validate_username) {
+      // Fallback if WASM not ready
+      userName = 'Anonymous';
+    } else {
+      try {
+        const trimmedName = String(rawUserName || '').trim();
+        const isValid = window.safeWasm.validate_username(trimmedName);
+        if (isValid) {
+          // WASM validation passed, but we still need to truncate for now
+          // as the WASM function validates but doesn't truncate
+          userName = trimmedName.substring(0, 32);
+        } else {
+          userName = 'Anonymous';
+        }
+      } catch (error) {
+        logger.error('Username validation error:', error);
+        userName = 'Anonymous';
+      }
+    }
 
     logger.debug(`📝 Sending message: userId=${userId}, userName=${userName}, messageId=${messageId}, roomId=${roomId}`);
 
