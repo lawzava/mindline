@@ -19,9 +19,8 @@ export const AppState = {
 
 // Application constants
 export const CONSTANTS = {
-  MIN_ROOM_ID_LENGTH: 8,
-  MAX_MESSAGE_LENGTH: 2000,
-  MAX_USERNAME_LENGTH: 32,
+  // Validation constants now handled by WASM
+  // MIN_ROOM_ID_LENGTH, MAX_MESSAGE_LENGTH, MAX_USERNAME_LENGTH moved to Rust
   RECONNECT_DELAY: 2000,
   MAX_RECONNECT_ATTEMPTS: 5,
   MESSAGE_SYNC_TIMEOUT: 5000

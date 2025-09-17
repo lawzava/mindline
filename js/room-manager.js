@@ -24,13 +24,18 @@ import { loadChatHistory } from './message-manager.js';
 import { addRoomToHistory, generateShareableURL } from './room-history.js';
 import { initializeP2P } from './p2p-manager.js';
 
-// Room ID validation function
+// Room ID validation now uses WASM function
 function isValidRoomId(id) {
-  if (!id || typeof id !== 'string' || id.length < 8) {
+  if (!window.safeWasm || !window.safeWasm.validate_room_id) {
+    // Fallback if WASM not ready
     return false;
   }
-  const validPattern = /^[a-zA-Z0-9_-]+$/;
-  return validPattern.test(id);
+  try {
+    return window.safeWasm.validate_room_id(id);
+  } catch (error) {
+    logger.error('Room ID validation error:', error);
+    return false;
+  }
 }
 
 /**
@@ -47,9 +52,9 @@ export async function createRoom() {
       roomId = generateUUID();
     }
 
-    // Validate the room ID format
+    // Validate the room ID format using WASM
     if (!isValidRoomId(roomId)) {
-      log(`Room ID must be at least ${CONSTANTS.MIN_ROOM_ID_LENGTH} alphanumeric characters (can include dashes and underscores)`);
+      log(`Room ID must be at least 8 alphanumeric characters (can include dashes and underscores)`);
       return null;
     }
 
@@ -110,22 +115,26 @@ export async function joinRoom(roomId) {
     return null;
   }
 
-  // Use proven JavaScript validation
-  const sanitizedRoomId = String(roomId || '')
-    .split('')
-    .filter(c => /[a-zA-Z0-9_-]/.test(c))
-    .join('');
-
-  if (!sanitizedRoomId || sanitizedRoomId.length < 3 || sanitizedRoomId.length > 64) {
-    logger.warn('Room ID validation failed:', roomId);
-    log(`Room ID must be 3-64 alphanumeric characters (can include dashes and underscores)`);
+  // Use WASM validation
+  if (!window.safeWasm || !window.safeWasm.validate_room_id) {
+    logger.error('WASM validation not available');
+    log('Room validation system not ready. Please reload the page.');
     return null;
   }
 
-  logger.info('Room ID validation passed:', sanitizedRoomId);
-
-  // Use sanitized room ID for the rest of the function
-  roomId = sanitizedRoomId;
+  try {
+    const isValid = window.safeWasm.validate_room_id(roomId);
+    if (!isValid) {
+      logger.warn('Room ID validation failed:', roomId);
+      log(`Room ID must be at least 8 alphanumeric characters (can include dashes and underscores)`);
+      return null;
+    }
+    logger.info('Room ID validation passed:', roomId);
+  } catch (error) {
+    logger.error('Room ID validation error:', error);
+    log('Error validating room ID. Please try again.');
+    return null;
+  }
 
   try {
     // Show connecting status
