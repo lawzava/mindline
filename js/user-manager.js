@@ -26,6 +26,8 @@ export async function ensureUserInitialized() {
       if (window.safeWasm) {
         window.safeWasm.initialize(userName, newUserId);
         window.safeWasm.set_message_manager_user(newUserId);
+        // Also update state API
+        window.safeWasm.update_user_session(userName, newUserId);
       }
 
       // Update tooltip with user ID
@@ -91,6 +93,8 @@ export function restoreUserInfo() {
         if (window.safeWasm) {
           window.safeWasm.initialize(savedUserName, savedUserId);
           window.safeWasm.set_message_manager_user(savedUserId);
+          // Also update state API
+          window.safeWasm.update_user_session(savedUserName, savedUserId);
         }
 
         if (userIdTooltip) {
@@ -114,6 +118,8 @@ export function restoreUserInfo() {
       if (window.safeWasm) {
         window.safeWasm.initialize(userName, userId);
         window.safeWasm.set_message_manager_user(userId);
+        // Also update state API
+        window.safeWasm.update_user_session(userName, userId);
       }
 
       if (userIdTooltip) {
@@ -178,6 +184,8 @@ export function handleInitializeUser(userName = null) {
     if (window.safeWasm) {
       window.safeWasm.initialize(finalUserName, userId);
       window.safeWasm.set_message_manager_user(userId);
+      // Also update state API
+      window.safeWasm.update_user_session(finalUserName, userId);
     }
 
     // Update UI elements
