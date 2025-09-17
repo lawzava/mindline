@@ -5,13 +5,18 @@
 
 import logger from './logger.js';
 
-// Import validation function (will be refactored from index.js)
+// Use WASM validation function
 function isValidRoomId(id) {
-  if (!id || typeof id !== 'string' || id.length < 8) {
+  if (!window.safeWasm || !window.safeWasm.validate_room_id) {
+    // Fallback if WASM not ready
     return false;
   }
-  const validPattern = /^[a-zA-Z0-9_-]+$/;
-  return validPattern.test(id);
+  try {
+    return window.safeWasm.validate_room_id(id);
+  } catch (error) {
+    logger.error('Room ID validation error:', error);
+    return false;
+  }
 }
 
 /**
