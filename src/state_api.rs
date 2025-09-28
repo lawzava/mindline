@@ -10,21 +10,6 @@ use wasm_bindgen::prelude::*;
 
 // Core state management functions
 
-#[wasm_bindgen]
-pub fn get_app_state() -> JsValue {
-    APP_STATE.with(|state| {
-        let state = state.lock().unwrap();
-        serde_wasm_bindgen::to_value(&*state).unwrap_or(JsValue::NULL)
-    })
-}
-
-#[wasm_bindgen]
-pub fn get_app_config() -> JsValue {
-    APP_STATE.with(|state| {
-        let state = state.lock().unwrap();
-        serde_wasm_bindgen::to_value(&state.config).unwrap_or(JsValue::NULL)
-    })
-}
 
 #[wasm_bindgen]
 pub fn get_current_user_id() -> String {
@@ -97,100 +82,6 @@ pub fn update_user_session(name: &str, user_id: &str) -> Result<(), JsValue> {
     })
 }
 
-#[wasm_bindgen]
-pub fn set_typing_status(is_typing: bool) -> Result<(), JsValue> {
-    APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
-
-        if let Some(ref mut session) = state.user_session {
-            session.is_typing = is_typing;
-            session.last_activity = js_sys::Date::now() as u64;
-            console_log!("Typing status set to: {}", is_typing);
-        }
-
-        Ok(())
-    })
-}
-
-// Room history management
-
-#[wasm_bindgen]
-pub fn get_room_history_list() -> JsValue {
-    APP_STATE.with(|state| {
-        let state = state.lock().unwrap();
-
-        // Convert room histories to a simplified list for JavaScript
-        let room_list: Vec<_> = state.room_histories
-            .values()
-            .map(|history| &history.room_metadata)
-            .collect();
-
-        serde_wasm_bindgen::to_value(&room_list).unwrap_or(JsValue::NULL)
-    })
-}
-
-#[wasm_bindgen]
-pub fn add_room_to_history(room_id: &str, display_name: Option<String>) -> Result<(), JsValue> {
-    if room_id.is_empty() {
-        return Err(JsValue::from_str("Room ID cannot be empty"));
-    }
-
-    APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
-
-        let now = js_sys::Date::now() as u64;
-        let display_name = display_name.unwrap_or_else(|| room_id.to_string());
-
-        // Update existing or create new room history
-        let room_history = state.room_histories.entry(room_id.to_string())
-            .or_insert_with(|| RoomHistory {
-                messages: Vec::new(),
-                last_sync: 0,
-                room_metadata: RoomMetadata {
-                    id: room_id.to_string(),
-                    created_at: now,
-                    last_joined: now,
-                    display_name: display_name.clone(),
-                    peer_count: 0,
-                    total_messages: 0,
-                },
-            });
-
-        // Update metadata
-        room_history.room_metadata.last_joined = now;
-        room_history.room_metadata.display_name = display_name;
-
-        console_log!("Added room to history: {}", room_id);
-        Ok(())
-    })
-}
-
-#[wasm_bindgen]
-pub fn remove_room_from_history(room_id: &str) -> Result<(), JsValue> {
-    APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
-
-        state.room_histories.remove(room_id);
-        console_log!("Removed room from history: {}", room_id);
-        Ok(())
-    })
-}
-
-#[wasm_bindgen]
-pub fn get_room_metadata(room_id: &str) -> JsValue {
-    APP_STATE.with(|state| {
-        let state = state.lock().unwrap();
-
-        state.room_histories
-            .get(room_id)
-            .map(|history| &history.room_metadata)
-            .map(|metadata| serde_wasm_bindgen::to_value(metadata).unwrap_or(JsValue::NULL))
-            .unwrap_or(JsValue::NULL)
-    })
-}
 
 // Draft messages management
 
@@ -240,17 +131,6 @@ pub fn clear_draft_message(peer_id: &str) -> Result<(), JsValue> {
     })
 }
 
-#[wasm_bindgen]
-pub fn clear_all_draft_messages() -> Result<(), JsValue> {
-    APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
-
-        state.draft_messages.clear();
-        console_log!("All draft messages cleared");
-        Ok(())
-    })
-}
 
 // P2P state management
 
