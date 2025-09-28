@@ -128,13 +128,6 @@ pub fn get_log_entries(filter_json: Option<String>) -> JsValue {
     serde_wasm_bindgen::to_value(&logs).unwrap_or(JsValue::NULL)
 }
 
-#[wasm_bindgen]
-pub fn clear_log_buffer() -> Result<(), JsValue> {
-    with_logger(|logger| {
-        logger.clear_logs();
-    })?;
-    Ok(())
-}
 
 #[wasm_bindgen]
 pub fn export_logs_json(filter_json: Option<String>) -> String {
@@ -146,12 +139,6 @@ pub fn export_logs_json(filter_json: Option<String>) -> String {
     }).unwrap_or_else(|_| "[]".to_string())
 }
 
-#[wasm_bindgen]
-pub fn export_recent_logs_json(count: u32) -> String {
-    with_logger(|logger| {
-        logger.export_recent_logs(count as usize)
-    }).unwrap_or_else(|_| "[]".to_string())
-}
 
 #[wasm_bindgen]
 pub fn get_log_statistics() -> JsValue {
@@ -207,15 +194,6 @@ pub fn search_logs(query: &str, limit: Option<u32>) -> JsValue {
     serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
 }
 
-#[wasm_bindgen]
-pub fn get_logs_by_component(component: &str, limit: Option<u32>) -> JsValue {
-    let comp = LogComponent::from_str(component);
-    let results = with_logger(|logger| {
-        logger.get_logs_by_component(comp, limit.map(|l| l as usize))
-    }).unwrap_or_default();
-
-    serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
-}
 
 #[wasm_bindgen]
 pub fn get_error_summary(last_n_minutes: u32) -> JsValue {
@@ -234,10 +212,3 @@ pub fn get_error_summary(last_n_minutes: u32) -> JsValue {
     serde_wasm_bindgen::to_value(&summary).unwrap_or(JsValue::NULL)
 }
 
-#[wasm_bindgen]
-pub fn create_debug_report() -> String {
-    with_logger(|logger| {
-        let report = logger.create_debug_report();
-        serde_json::to_string_pretty(&report).unwrap_or_else(|_| "Failed to create debug report".to_string())
-    }).unwrap_or_else(|_| "Logger not available".to_string())
-}
