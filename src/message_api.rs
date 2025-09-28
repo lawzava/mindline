@@ -78,61 +78,6 @@ pub fn get_room_messages(room_id: &str, limit: Option<u32>) -> JsValue {
     serde_wasm_bindgen::to_value(&messages).unwrap_or(JsValue::NULL)
 }
 
-#[wasm_bindgen]
-pub fn edit_message(room_id: &str, message_id: &str, new_content: &str) -> Result<(), JsValue> {
-    with_message_manager(|manager| {
-        manager.edit_message(room_id, message_id, new_content)
-    })?
-}
-
-#[wasm_bindgen]
-pub fn delete_message(room_id: &str, message_id: &str) -> Result<(), JsValue> {
-    with_message_manager(|manager| {
-        manager.delete_message(room_id, message_id)
-    })?
-}
-
-#[wasm_bindgen]
-pub fn add_message_reaction(
-    room_id: &str,
-    message_id: &str,
-    emoji: &str,
-    user_id: &str,
-) -> Result<(), JsValue> {
-    with_message_manager(|manager| {
-        manager.add_reaction(room_id, message_id, emoji, user_id)
-    })?
-}
-
-#[wasm_bindgen]
-pub fn handle_typing_indicator(room_id: &str, user_id: &str, is_typing: bool) -> Result<(), JsValue> {
-    with_message_manager(|manager| {
-        manager.handle_typing_indicator(room_id, user_id, is_typing);
-        Ok(())
-    })?
-}
-
-#[wasm_bindgen]
-pub fn get_typing_users(room_id: &str) -> JsValue {
-    let typing_users = with_message_manager(|manager| {
-        manager.get_typing_users(room_id)
-    }).unwrap_or_default();
-
-    serde_wasm_bindgen::to_value(&typing_users).unwrap_or(JsValue::NULL)
-}
-
-#[wasm_bindgen]
-pub fn get_messages_for_sync(
-    room_id: &str,
-    after_timestamp: f64,
-    limit: u32,
-) -> JsValue {
-    let messages = with_message_manager(|manager| {
-        manager.get_messages_for_sync(room_id, after_timestamp as u64, limit as usize)
-    }).unwrap_or_default();
-
-    serde_wasm_bindgen::to_value(&messages).unwrap_or(JsValue::NULL)
-}
 
 #[wasm_bindgen]
 pub fn get_room_message_stats(room_id: &str) -> JsValue {
