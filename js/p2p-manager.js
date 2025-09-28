@@ -161,7 +161,7 @@ function startQueueProcessing(p2pConnection) {
     return;
   }
 
-  // Process queue every 200ms
+  // Process queue every 1 second (reduced from 200ms to save CPU)
   const queueInterval = setInterval(() => {
     try {
       const messages = window.safeWasm.process_p2p_queue();
@@ -202,7 +202,7 @@ function startQueueProcessing(p2pConnection) {
       clearInterval(queueInterval);
       logger.debug('Queue processing stopped - P2P disconnected');
     }
-  }, 200); // Process every 200ms
+  }, 1000); // Process every 1 second (reduced from 200ms for better CPU usage)
 
   // Store interval ID for cleanup
   if (!window.queueIntervals) {
@@ -444,6 +444,13 @@ export function disconnectP2P() {
     updateConnectionStatus('disconnected');
     updatePeerCount();
     log('Disconnected from P2P network');
+  }
+
+  // Clean up all queue processing intervals
+  if (window.queueIntervals) {
+    window.queueIntervals.forEach(interval => clearInterval(interval));
+    window.queueIntervals = [];
+    logger.debug('Cleared all queue processing intervals');
   }
 }
 

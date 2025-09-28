@@ -75,11 +75,14 @@ export class P2PConnection {
           }));
         };
 
-        this.ws.onmessage = async (event) => {
+        this.ws.onmessage = (event) => {
           console.log(`🔵 SIGNALING: Received message:`, event.data);
           const message = JSON.parse(event.data);
           console.log(`🔵 SIGNALING: Parsed message:`, message);
-          await this.handleSignalingMessage(message);
+          // Don't await - handle async to avoid blocking WebSocket event loop
+          this.handleSignalingMessage(message).catch(error => {
+            console.error('Error handling signaling message:', error);
+          });
         };
 
         this.ws.onerror = (error) => {

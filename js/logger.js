@@ -11,6 +11,7 @@ class Logger {
     this.logQueue = [];
     this.isConnectedToLogServer = false;
     this.wasmInitialized = false;
+    this.isLoggingToWasm = false;
 
     // Initialize logger
     if (this.isDevelopment) {
@@ -147,9 +148,16 @@ class Logger {
     if (this.isDevelopment) {
       console.info('%c[INFO]', 'color: #3498db;', ...args);
       this.sendToLogServer('info', `[INFO] ${args.join(' ')}`);
-      // Also log to WASM
-      if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_info) {
-        window.safeWasm.log_info('js', args.join(' '));
+      // Also log to WASM (with recursion guard)
+      if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_info && !this.isLoggingToWasm) {
+        this.isLoggingToWasm = true;
+        try {
+          window.safeWasm.log_info('js', args.join(' '));
+        } catch (e) {
+          // Silently fail to prevent recursion
+        } finally {
+          this.isLoggingToWasm = false;
+        }
       }
     }
   }
@@ -158,9 +166,16 @@ class Logger {
     // Always show warnings
     console.warn('%c[WARN]', 'color: #f39c12;', ...args);
     this.sendToLogServer('warn', `[WARN] ${args.join(' ')}`);
-    // Also log to WASM
-    if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_warn) {
-      window.safeWasm.log_warn('js', args.join(' '));
+    // Also log to WASM (with recursion guard)
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_warn && !this.isLoggingToWasm) {
+      this.isLoggingToWasm = true;
+      try {
+        window.safeWasm.log_warn('js', args.join(' '));
+      } catch (e) {
+        // Silently fail to prevent recursion
+      } finally {
+        this.isLoggingToWasm = false;
+      }
     }
   }
 
@@ -168,9 +183,16 @@ class Logger {
     // Always show errors
     console.error('%c[ERROR]', 'color: #e74c3c;', ...args);
     this.sendToLogServer('error', `[ERROR] ${args.join(' ')}`);
-    // Also log to WASM
-    if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_error) {
-      window.safeWasm.log_error('js', args.join(' '));
+    // Also log to WASM (with recursion guard)
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_error && !this.isLoggingToWasm) {
+      this.isLoggingToWasm = true;
+      try {
+        window.safeWasm.log_error('js', args.join(' '));
+      } catch (e) {
+        // Silently fail to prevent recursion
+      } finally {
+        this.isLoggingToWasm = false;
+      }
     }
   }
 
@@ -178,9 +200,16 @@ class Logger {
     if (this.isDevelopment && this.isDebugEnabled) {
       console.log('%c[DEBUG]', 'color: #9b59b6;', ...args);
       this.sendToLogServer('debug', `[DEBUG] ${args.join(' ')}`);
-      // Also log to WASM
-      if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_debug) {
-        window.safeWasm.log_debug('js', args.join(' '));
+      // Also log to WASM (with recursion guard)
+      if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_debug && !this.isLoggingToWasm) {
+        this.isLoggingToWasm = true;
+        try {
+          window.safeWasm.log_debug('js', args.join(' '));
+        } catch (e) {
+          // Silently fail to prevent recursion
+        } finally {
+          this.isLoggingToWasm = false;
+        }
       }
     }
   }
