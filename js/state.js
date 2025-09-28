@@ -11,7 +11,7 @@ export const AppState = {
   p2pConnection: null,  // WebRTC object remains in JS
   isWasmLoaded: false,
   safeWasm: null,
-  // Legacy state kept for compatibility but not used
+  draftMessages: new Map(),  // Track typing indicators from peers
   messageHistory: new Map()  // Kept for compatibility
 };
 
@@ -85,7 +85,9 @@ export function getChatHistory(roomId) {
   // Use WASM to get messages for the room
   if (window.safeWasm && window.safeWasm.get_messages) {
     try {
-      const messages = window.safeWasm.get_messages(roomId, 0, 1000);
+      const messagesJson = window.safeWasm.get_messages(roomId);
+      // Parse the JSON string returned from WASM
+      const messages = messagesJson ? JSON.parse(messagesJson) : [];
       if (messages && messages.length > 0) {
         return {
           messages: messages,

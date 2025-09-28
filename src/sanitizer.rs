@@ -79,9 +79,14 @@ impl InputSanitizer {
             return None;
         }
 
-        // Check length limit
+        // Check length limit - ensure we don't slice in the middle of a UTF-8 character
         let sanitized = if trimmed.len() > 2000 {
-            &trimmed[..2000]
+            // Find the last valid character boundary at or before index 2000
+            let mut boundary = 2000;
+            while boundary > 0 && !trimmed.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            &trimmed[..boundary]
         } else {
             trimmed
         };
