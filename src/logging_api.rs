@@ -42,30 +42,42 @@ pub fn set_log_context(user_id: Option<String>, room_id: Option<String>, compone
 
 #[wasm_bindgen]
 pub fn log_debug(component: &str, message: &str) {
-    let _ = with_logger(|logger| {
-        logger.debug(LogComponent::from_str(component), message);
-    });
+    // Defensive: catch any panics to prevent crashes
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = with_logger(|logger| {
+            logger.debug(LogComponent::from_str(component), message);
+        });
+    }));
 }
 
 #[wasm_bindgen]
 pub fn log_info(component: &str, message: &str) {
-    let _ = with_logger(|logger| {
-        logger.info(LogComponent::from_str(component), message);
-    });
+    // Defensive: catch any panics to prevent crashes
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = with_logger(|logger| {
+            logger.info(LogComponent::from_str(component), message);
+        });
+    }));
 }
 
 #[wasm_bindgen]
 pub fn log_warn(component: &str, message: &str) {
-    let _ = with_logger(|logger| {
-        logger.warn(LogComponent::from_str(component), message);
-    });
+    // Defensive: catch any panics to prevent crashes
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = with_logger(|logger| {
+            logger.warn(LogComponent::from_str(component), message);
+        });
+    }));
 }
 
 #[wasm_bindgen]
 pub fn log_error(component: &str, message: &str) {
-    let _ = with_logger(|logger| {
-        logger.error(LogComponent::from_str(component), message);
-    });
+    // Defensive: catch any panics to prevent crashes
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = with_logger(|logger| {
+            logger.error(LogComponent::from_str(component), message);
+        });
+    }));
 }
 
 #[wasm_bindgen]
