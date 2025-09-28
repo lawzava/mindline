@@ -288,7 +288,8 @@ function safeWasmCall(funcName, paramNames = [], paramTransforms = {}) {
         error: error.message
       };
 
-      logger.error(`WASM call failed:`, contextInfo);
+      // Use console.error directly to prevent infinite recursion if logger WASM calls fail
+      console.error(`[ERROR] WASM call failed:`, contextInfo);
 
       // Re-throw with enhanced error message
       const enhancedError = new Error(`WASM call failed: ${funcName} - ${error.message}`);
