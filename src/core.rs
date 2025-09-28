@@ -150,29 +150,6 @@ pub fn send_message(room_id: &JsValue, content: &JsValue, message_id: &JsValue) 
     })
 }
 
-// Send typing indicator for real-time typing display
-#[wasm_bindgen]
-pub fn send_typing_indicator(room_id: &JsValue, is_typing: JsValue) -> Result<(), JsValue> {
-    let room_id = validate_js_string_param(room_id, "room ID")?;
-
-    let is_typing = is_typing.as_bool().ok_or_else(|| {
-        console_log!("Failed to convert is_typing to boolean");
-        JsValue::from_str("Invalid typing indicator")
-    })?;
-
-    console_log!(
-        "send_typing_indicator called with room_id: '{}' and is_typing: {}",
-        room_id,
-        is_typing
-    );
-
-    // In a real implementation, this would broadcast to other users
-    // Log the typing state for debugging
-    let typing_state = if is_typing { "typing" } else { "stopped typing" };
-    console_log!("User is {} in room {}", typing_state, room_id);
-
-    Ok(())
-}
 
 // DEPRECATED: Use get_room_messages instead
 // Get messages from a room (legacy function - will be removed)
