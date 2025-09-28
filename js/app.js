@@ -73,6 +73,26 @@ async function initializeApp() {
       log("Rust logger initialized");
     }
 
+    // Start performance monitoring
+    if (window.safeWasm && window.safeWasm.start_performance_monitoring) {
+      try {
+        window.safeWasm.start_performance_monitoring();
+        log("Performance monitoring started");
+
+        // Record initial metrics
+        if (window.safeWasm.record_performance_metric) {
+          try {
+            window.safeWasm.record_performance_metric('app_start', Date.now());
+            window.safeWasm.record_performance_metric('memory_usage', performance.memory ? performance.memory.usedJSHeapSize : 0);
+          } catch (metricError) {
+            logger.warn('Could not record initial metrics:', metricError);
+          }
+        }
+      } catch (perfError) {
+        logger.warn('Could not start performance monitoring:', perfError);
+      }
+    }
+
     // Restore user state
     await restoreUserState();
 

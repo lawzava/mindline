@@ -1,9 +1,10 @@
 // src/p2p_api.rs
 // Phase 4: P2P Network Coordination WASM Bindings
 
-use crate::p2p::{self, with_p2p_manager, ConnectionDecision, ConnectionState, ConnectionStrategy, PeerRole};
+use crate::p2p::{self, with_p2p_manager, ConnectionDecision, ConnectionState, ConnectionStrategy, PeerRole, QueuedMessage};
 use crate::console_log;
 use wasm_bindgen::prelude::*;
+use uuid::Uuid;
 
 // P2P Network Coordination WASM Bindings
 
@@ -248,4 +249,62 @@ pub fn get_broadcast_plan(redundancy_level: u32) -> JsValue {
     }).unwrap_or_default();
 
     serde_wasm_bindgen::to_value(&plan).unwrap_or(JsValue::NULL)
+}
+
+// Message Queue WASM Bindings
+#[wasm_bindgen]
+pub fn queue_p2p_message(
+    target_peer: Option<String>,
+    content: &str,
+    message_type: &str,
+    priority: u32,
+) -> Result<String, JsValue> {
+    let message = QueuedMessage {
+        id: Uuid::new_v4().to_string(),
+        target_peer,
+        content: content.to_string(),
+        priority,
+        attempts: 0,
+        max_attempts: 3,
+        created_at: js_sys::Date::now() as u64,
+        last_attempt: None,
+        message_type: message_type.to_string(),
+    };
+
+    with_p2p_manager(|manager| {
+        manager.queue_message(message)
+            .map_err(|e| JsValue::from_str(&e))
+    })?
+}
+
+#[wasm_bindgen]
+pub fn process_p2p_queue() -> JsValue {
+    let messages = with_p2p_manager(|manager| {
+        manager.process_message_queue()
+    }).unwrap_or_default();
+
+    serde_wasm_bindgen::to_value(&messages).unwrap_or(JsValue::NULL)
+}
+
+#[wasm_bindgen]
+pub fn get_p2p_queue_status() -> JsValue {
+    let (pending, high_priority) = with_p2p_manager(|manager| {
+        manager.get_queue_status()
+    }).unwrap_or((0, 0));
+
+    let status = js_sys::Object::new();
+    js_sys::Reflect::set(&status, &"pending".into(), &(pending as u32).into()).unwrap();
+    js_sys::Reflect::set(&status, &"highPriority".into(), &(high_priority as u32).into()).unwrap();
+
+    status.into()
+}
+
+#[wasm_bindgen]
+pub fn clear_p2p_queue_for_peer(peer_id: &str) -> Result<(), JsValue> {
+    with_p2p_manager(|manager| {
+        manager.clear_queue_for_peer(peer_id);
+    })?;
+
+    console_log!("Cleared message queue for peer {}", peer_id);
+    Ok(())
 }

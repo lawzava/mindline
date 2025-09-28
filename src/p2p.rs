@@ -1,12 +1,25 @@
 // src/p2p.rs - P2P Network Coordination Module
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use wasm_bindgen::prelude::*;
 
 // Macro for logging to browser console
 macro_rules! console_log {
     ($($t:tt)*) => (crate::log(&format!($($t)*)))
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct QueuedMessage {
+    pub id: String,
+    pub target_peer: Option<String>, // None for broadcast
+    pub content: String,
+    pub priority: u32,
+    pub attempts: u32,
+    pub max_attempts: u32,
+    pub created_at: u64,
+    pub last_attempt: Option<u64>,
+    pub message_type: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -145,6 +158,10 @@ pub struct P2PNetworkState {
     pub last_mesh_check: u64,
     pub signaling_connected: bool,
     pub connection_strategy: ConnectionStrategy,
+    pub message_queue: VecDeque<QueuedMessage>,
+    pub max_queue_size: usize,
+    pub queue_process_interval: u64,
+    pub last_queue_process: u64,
 }
 
 impl P2PNetworkState {
@@ -161,6 +178,10 @@ impl P2PNetworkState {
             last_mesh_check: js_sys::Date::now() as u64,
             signaling_connected: false,
             connection_strategy: ConnectionStrategy::FullMesh,
+            message_queue: VecDeque::new(),
+            max_queue_size: 1000,
+            queue_process_interval: 100, // 100ms
+            last_queue_process: js_sys::Date::now() as u64,
         }
     }
 
@@ -499,6 +520,85 @@ impl P2PNetworkState {
                 vec![all_connected]
             }
         }
+    }
+
+    // Message Queue Methods
+    pub fn queue_message(&mut self, message: QueuedMessage) -> Result<String, String> {
+        if self.message_queue.len() >= self.max_queue_size {
+            // Remove oldest low-priority messages
+            self.message_queue.retain(|msg| msg.priority > 1);
+
+            if self.message_queue.len() >= self.max_queue_size {
+                return Err("Message queue full".to_string());
+            }
+        }
+
+        let message_id = message.id.clone();
+        self.message_queue.push_back(message);
+        console_log!("Queued message {} for delivery", message_id);
+        Ok(message_id)
+    }
+
+    pub fn process_message_queue(&mut self) -> Vec<QueuedMessage> {
+        let now = js_sys::Date::now() as u64;
+
+        // Check if enough time has passed
+        if now - self.last_queue_process < self.queue_process_interval {
+            return Vec::new();
+        }
+
+        self.last_queue_process = now;
+
+        let mut messages_to_send = Vec::new();
+        let mut messages_to_retry = Vec::new();
+
+        // Process all messages in queue
+        while let Some(mut message) = self.message_queue.pop_front() {
+            // Check if message can be sent
+            let can_send = if let Some(ref target) = message.target_peer {
+                // Unicast - check if peer is connected
+                self.peers.get(target)
+                    .map(|p| p.connection_state == ConnectionState::Connected)
+                    .unwrap_or(false)
+            } else {
+                // Broadcast - check if any peers are connected
+                !self.get_connected_peers().is_empty()
+            };
+
+            if can_send {
+                messages_to_send.push(message);
+            } else {
+                // Retry logic
+                message.attempts += 1;
+                if message.attempts < message.max_attempts {
+                    message.last_attempt = Some(now);
+                    messages_to_retry.push(message);
+                } else {
+                    console_log!("Message {} exceeded max attempts, dropping", message.id);
+                }
+            }
+        }
+
+        // Re-queue messages that need retry
+        for msg in messages_to_retry {
+            self.message_queue.push_back(msg);
+        }
+
+        messages_to_send
+    }
+
+    pub fn get_queue_status(&self) -> (usize, usize) {
+        let pending = self.message_queue.len();
+        let high_priority = self.message_queue.iter()
+            .filter(|msg| msg.priority > 5)
+            .count();
+        (pending, high_priority)
+    }
+
+    pub fn clear_queue_for_peer(&mut self, peer_id: &str) {
+        self.message_queue.retain(|msg| {
+            msg.target_peer.as_ref() != Some(&peer_id.to_string())
+        });
     }
 }
 
