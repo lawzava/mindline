@@ -64,12 +64,6 @@ pub fn update_peer_connection_state(peer_id: &str, state: &str) -> Result<(), Js
     Ok(())
 }
 
-#[wasm_bindgen]
-pub fn should_initiate_connection_to_peer(peer_id: &str) -> bool {
-    with_p2p_manager(|manager| {
-        manager.should_initiate_connection(peer_id)
-    }).unwrap_or(false)
-}
 
 #[wasm_bindgen]
 pub fn get_connection_decision(peer_id: &str) -> JsValue {
@@ -85,14 +79,6 @@ pub fn get_connection_decision(peer_id: &str) -> JsValue {
     serde_wasm_bindgen::to_value(&decision).unwrap_or(JsValue::NULL)
 }
 
-#[wasm_bindgen]
-pub fn get_connected_peer_list() -> JsValue {
-    let peers = with_p2p_manager(|manager| {
-        manager.get_connected_peers()
-    }).unwrap_or_default();
-
-    serde_wasm_bindgen::to_value(&peers).unwrap_or(JsValue::NULL)
-}
 
 #[wasm_bindgen]
 pub fn record_peer_message_sent(peer_id: &str, size_bytes: u32) -> Result<(), JsValue> {
@@ -183,23 +169,6 @@ pub fn handle_connection_failure(peer_id: &str) -> JsValue {
     serde_wasm_bindgen::to_value(&strategy).unwrap_or(JsValue::NULL)
 }
 
-#[wasm_bindgen]
-pub fn set_connection_strategy(strategy: &str) -> Result<(), JsValue> {
-    let new_strategy = match strategy {
-        "full_mesh" => ConnectionStrategy::FullMesh,
-        "selective" => ConnectionStrategy::Selective,
-        "hub" => ConnectionStrategy::Hub,
-        "adaptive" => ConnectionStrategy::Adaptive,
-        _ => return Err(JsValue::from_str("Invalid connection strategy")),
-    };
-
-    with_p2p_manager(|manager| {
-        manager.connection_strategy = new_strategy;
-        console_log!("Connection strategy set to: {:?}", manager.connection_strategy);
-    })?;
-
-    Ok(())
-}
 
 #[wasm_bindgen]
 pub fn cleanup_stale_peers(timeout_minutes: u32) -> u32 {
@@ -242,14 +211,6 @@ pub fn should_send_to_peer(peer_id: &str, message_priority: u32) -> bool {
     }).unwrap_or(false)
 }
 
-#[wasm_bindgen]
-pub fn get_broadcast_plan(redundancy_level: u32) -> JsValue {
-    let plan = with_p2p_manager(|manager| {
-        manager.get_redundant_broadcast_plan(redundancy_level)
-    }).unwrap_or_default();
-
-    serde_wasm_bindgen::to_value(&plan).unwrap_or(JsValue::NULL)
-}
 
 // Message Queue WASM Bindings
 #[wasm_bindgen]
@@ -299,12 +260,3 @@ pub fn get_p2p_queue_status() -> JsValue {
     status.into()
 }
 
-#[wasm_bindgen]
-pub fn clear_p2p_queue_for_peer(peer_id: &str) -> Result<(), JsValue> {
-    with_p2p_manager(|manager| {
-        manager.clear_queue_for_peer(peer_id);
-    })?;
-
-    console_log!("Cleared message queue for peer {}", peer_id);
-    Ok(())
-}
