@@ -10,11 +10,14 @@ class Logger {
     this.logSocket = null;
     this.logQueue = [];
     this.isConnectedToLogServer = false;
+    this.wasmInitialized = false;
+    this.isLoggingToWasm = false;
 
     // Initialize logger
     if (this.isDevelopment) {
       console.log('%c🔧 Development Mode - Logging Enabled', 'color: #3498db; font-weight: bold;');
       this.initializeLogSocket();
+      this.initializeWasmLogger();
     }
   }
 
@@ -26,6 +29,26 @@ class Logger {
     const isDevServer = window.location.port === '8080' || window.location.port === '8088' || window.location.port === '3000';
 
     return isLocalhost || hasDevFlag || isDevServer;
+  }
+
+  initializeWasmLogger() {
+    // Wait for WASM to be available
+    const checkWasm = () => {
+      if (window.safeWasm && window.safeWasm.initialize_logger) {
+        try {
+          window.safeWasm.initialize_logger(this.isDevelopment, this.isDebugEnabled);
+          window.safeWasm.configure_logger(1000, true, true, false);
+          this.wasmInitialized = true;
+          console.log('%c✅ WASM Logger Initialized', 'color: #27ae60; font-weight: bold;');
+        } catch (error) {
+          console.warn('Failed to initialize WASM logger:', error);
+        }
+      } else {
+        // Retry after 100ms if WASM not ready
+        setTimeout(checkWasm, 100);
+      }
+    };
+    checkWasm();
   }
 
   initializeLogSocket() {
@@ -100,11 +123,17 @@ class Logger {
   enableDebug() {
     this.isDebugEnabled = true;
     console.log('%c🐛 Debug Mode Enabled', 'color: #f39c12; font-weight: bold;');
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.enable_debug_logging) {
+      window.safeWasm.enable_debug_logging();
+    }
   }
 
   disableDebug() {
     this.isDebugEnabled = false;
     console.log('%c🐛 Debug Mode Disabled', 'color: #95a5a6; font-weight: bold;');
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.disable_debug_logging) {
+      window.safeWasm.disable_debug_logging();
+    }
   }
 
   // Standard logging methods
@@ -119,6 +148,17 @@ class Logger {
     if (this.isDevelopment) {
       console.info('%c[INFO]', 'color: #3498db;', ...args);
       this.sendToLogServer('info', `[INFO] ${args.join(' ')}`);
+      // Also log to WASM (with recursion guard)
+      if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_info && !this.isLoggingToWasm) {
+        this.isLoggingToWasm = true;
+        try {
+          window.safeWasm.log_info('js', args.join(' '));
+        } catch (e) {
+          // Silently fail to prevent recursion
+        } finally {
+          this.isLoggingToWasm = false;
+        }
+      }
     }
   }
 
@@ -126,18 +166,51 @@ class Logger {
     // Always show warnings
     console.warn('%c[WARN]', 'color: #f39c12;', ...args);
     this.sendToLogServer('warn', `[WARN] ${args.join(' ')}`);
+    // Also log to WASM (with recursion guard)
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_warn && !this.isLoggingToWasm) {
+      this.isLoggingToWasm = true;
+      try {
+        window.safeWasm.log_warn('js', args.join(' '));
+      } catch (e) {
+        // Silently fail to prevent recursion
+      } finally {
+        this.isLoggingToWasm = false;
+      }
+    }
   }
 
   error(...args) {
     // Always show errors
     console.error('%c[ERROR]', 'color: #e74c3c;', ...args);
     this.sendToLogServer('error', `[ERROR] ${args.join(' ')}`);
+    // Also log to WASM (with recursion guard)
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_error && !this.isLoggingToWasm) {
+      this.isLoggingToWasm = true;
+      try {
+        window.safeWasm.log_error('js', args.join(' '));
+      } catch (e) {
+        // Silently fail to prevent recursion
+      } finally {
+        this.isLoggingToWasm = false;
+      }
+    }
   }
 
   debug(...args) {
     if (this.isDevelopment && this.isDebugEnabled) {
       console.log('%c[DEBUG]', 'color: #9b59b6;', ...args);
       this.sendToLogServer('debug', `[DEBUG] ${args.join(' ')}`);
+      // Also log to WASM (with recursion guard)
+      if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_debug && !this.isLoggingToWasm) {
+        this.isLoggingToWasm = true;
+        try {
+          window.safeWasm.log_debug('js', args.join(' '));
+        } catch (e) {
+          // Silently fail to prevent recursion
+        } finally {
+          this.isLoggingToWasm = false;
+        }
+      }
     }
   }
 
@@ -174,12 +247,20 @@ class Logger {
   time(label) {
     if (this.isDevelopment) {
       console.time(label);
+      // Also start WASM timer
+      if (this.wasmInitialized && window.safeWasm && window.safeWasm.start_performance_timer) {
+        window.safeWasm.start_performance_timer(label);
+      }
     }
   }
 
   timeEnd(label) {
     if (this.isDevelopment) {
       console.timeEnd(label);
+      // Also end WASM timer
+      if (this.wasmInitialized && window.safeWasm && window.safeWasm.end_performance_timer) {
+        window.safeWasm.end_performance_timer(label);
+      }
     }
   }
 
@@ -187,12 +268,20 @@ class Logger {
   group(label) {
     if (this.isDevelopment) {
       console.group(label);
+      // Also start WASM log group
+      if (this.wasmInitialized && window.safeWasm && window.safeWasm.start_log_group) {
+        window.safeWasm.start_log_group(label);
+      }
     }
   }
 
   groupEnd() {
     if (this.isDevelopment) {
       console.groupEnd();
+      // Also end WASM log group
+      if (this.wasmInitialized && window.safeWasm && window.safeWasm.end_log_group) {
+        window.safeWasm.end_log_group();
+      }
     }
   }
 
@@ -200,7 +289,43 @@ class Logger {
   table(data) {
     if (this.isDevelopment) {
       console.table(data);
+      // Also log to WASM
+      if (this.wasmInitialized && window.safeWasm && window.safeWasm.log_table) {
+        window.safeWasm.log_table(data);
+      }
     }
+  }
+
+  // Export logs for debugging
+  exportLogs() {
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.export_logs_json) {
+      return window.safeWasm.export_logs_json('');
+    }
+    return null;
+  }
+
+  // Get error summary
+  getErrorSummary(minutes = 60) {
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.get_error_summary) {
+      return window.safeWasm.get_error_summary(minutes);
+    }
+    return null;
+  }
+
+  // Search logs
+  searchLogs(query, limit = 100) {
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.search_logs) {
+      return window.safeWasm.search_logs(query, limit);
+    }
+    return [];
+  }
+
+  // Get log statistics
+  getStats() {
+    if (this.wasmInitialized && window.safeWasm && window.safeWasm.get_log_statistics) {
+      return window.safeWasm.get_log_statistics();
+    }
+    return null;
   }
 }
 

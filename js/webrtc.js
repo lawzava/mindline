@@ -75,11 +75,14 @@ export class P2PConnection {
           }));
         };
 
-        this.ws.onmessage = async (event) => {
+        this.ws.onmessage = (event) => {
           console.log(`🔵 SIGNALING: Received message:`, event.data);
           const message = JSON.parse(event.data);
           console.log(`🔵 SIGNALING: Parsed message:`, message);
-          await this.handleSignalingMessage(message);
+          // Don't await - handle async to avoid blocking WebSocket event loop
+          this.handleSignalingMessage(message).catch(error => {
+            console.error('Error handling signaling message:', error);
+          });
         };
 
         this.ws.onerror = (error) => {
@@ -355,6 +358,11 @@ export class P2PConnection {
             window.safeWasm.add_known_peer(peerId);
           }
 
+          // Add to connected peers in state API
+          if (window.safeWasm.add_connected_peer) {
+            window.safeWasm.add_connected_peer(peerId);
+          }
+
           // Then update connection state to create peer in peers HashMap
           if (window.safeWasm.update_peer_connection_state) {
             window.safeWasm.update_peer_connection_state(peerId, 'connected');
@@ -600,6 +608,7 @@ export class P2PConnection {
     const messageSize = new Blob([messageStr]).size;
     let deliveredCount = 0;
     let attemptedCount = 0;
+    let queuedCount = 0;
 
     // Get optimal peers for broadcast from Rust if available
     let targetPeers = [];
@@ -675,6 +684,22 @@ export class P2PConnection {
         }
       } else {
         console.warn(`⚠️ Channel to ${peerId} not open: ${channel.readyState}`);
+
+        // Queue message for later delivery
+        if (window.safeWasm && window.safeWasm.queue_p2p_message) {
+          try {
+            const messageType = message.type || 'unknown';
+            const priority = message.priority || 5;
+            const messageId = window.safeWasm.queue_p2p_message(peerId, messageStr, messageType, priority);
+            if (messageId) {
+              queuedCount++;
+              console.log(`📥 Message queued for ${peerId} with ID: ${messageId}`);
+            }
+          } catch (e) {
+            console.warn(`Failed to queue message for ${peerId}:`, e);
+          }
+        }
+
         // Try to re-establish connection if channel is closed
         if (channel.readyState === 'closed') {
           console.log(`🔄 Attempting to re-establish connection to ${peerId}`);
@@ -685,11 +710,21 @@ export class P2PConnection {
       }
     }
 
-    console.log(`📊 Broadcast result: ${deliveredCount}/${attemptedCount} delivered`);
+    console.log(`📊 Broadcast result: ${deliveredCount}/${attemptedCount} delivered, ${queuedCount} queued`);
 
     // If delivery rate is too low, there might be connection issues
     if (attemptedCount > 0 && deliveredCount / attemptedCount < 0.5) {
       console.warn(`🚨 Low delivery rate: ${deliveredCount}/${attemptedCount} - possible connection issues`);
+    }
+
+    // Display queue status if messages were queued
+    if (queuedCount > 0 && window.safeWasm && window.safeWasm.get_p2p_queue_status) {
+      try {
+        const queueStatus = window.safeWasm.get_p2p_queue_status();
+        console.log(`📦 Queue status: ${queueStatus.pending} pending, ${queueStatus.highPriority} high priority`);
+      } catch (e) {
+        // Non-critical
+      }
     }
 
     return deliveredCount;
@@ -744,9 +779,15 @@ export class P2PConnection {
     this.pendingCandidates.delete(peerId);
 
     // Remove from Rust P2P manager
-    if (window.safeWasm && window.safeWasm.remove_peer_from_network) {
+    if (window.safeWasm) {
       try {
-        window.safeWasm.remove_peer_from_network(peerId);
+        if (window.safeWasm.remove_peer_from_network) {
+          window.safeWasm.remove_peer_from_network(peerId);
+        }
+        // Remove from connected peers in state API
+        if (window.safeWasm.remove_connected_peer) {
+          window.safeWasm.remove_connected_peer(peerId);
+        }
         console.log(`🧹 Removed peer ${peerId} from Rust P2P manager`);
       } catch (e) {
         console.error(`Failed to remove peer ${peerId} from Rust:`, e);
@@ -968,6 +1009,19 @@ export class P2PConnection {
    * Get list of connected peer IDs
    */
   getConnectedPeers() {
+    // First try to get from WASM state
+    if (window.safeWasm && window.safeWasm.get_connected_peers) {
+      try {
+        const peers = window.safeWasm.get_connected_peers();
+        if (peers && Array.isArray(peers)) {
+          return peers;
+        }
+      } catch (error) {
+        console.error('Failed to get connected peers from WASM:', error);
+      }
+    }
+
+    // Fallback to checking local data channels
     const connected = [];
     this.dataChannels.forEach((channel, peerId) => {
       if (channel.readyState === 'open') {

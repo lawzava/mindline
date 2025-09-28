@@ -92,6 +92,17 @@ export async function initializeP2P(roomId) {
     log(`Peer connected: ${peerId}`);
     updatePeerCount();
 
+    // Use WASM to decide connection strategy
+    if (window.safeWasm && window.safeWasm.get_connection_decision) {
+      const decision = window.safeWasm.get_connection_decision(peerId);
+      logger.debug(`Connection decision for ${peerId}: ${decision}`);
+    }
+
+    // Record peer in WASM P2P manager
+    if (window.safeWasm && window.safeWasm.add_known_peer) {
+      window.safeWasm.add_known_peer(peerId);
+    }
+
     // Request message synchronization from new peer
     setTimeout(() => {
       requestMessageSync(roomId);
@@ -113,6 +124,16 @@ export async function initializeP2P(roomId) {
   p2pConnection.onPeerDisconnected((peerId) => {
     log(`Peer disconnected: ${peerId}`);
     updatePeerCount();
+
+    // Remove peer from WASM P2P manager
+    if (window.safeWasm && window.safeWasm.remove_peer_from_network) {
+      window.safeWasm.remove_peer_from_network(peerId);
+    }
+
+    // Handle connection failure
+    if (window.safeWasm && window.safeWasm.handle_connection_failure) {
+      window.safeWasm.handle_connection_failure(peerId);
+    }
   });
 
   // Connect to the signaling server
@@ -120,11 +141,74 @@ export async function initializeP2P(roomId) {
     await p2pConnection.connect();
     updateConnectionStatus('connected');
     log(`Connected to room: ${roomId}`);
+
+    // Start message queue processing loop
+    startQueueProcessing(p2pConnection);
   } catch (error) {
     logger.error('Failed to connect to P2P:', error);
     updateConnectionStatus('failed');
     throw error;
   }
+}
+
+/**
+ * Start processing messages from the queue
+ * @param {P2PConnection} p2pConnection - P2P connection instance
+ */
+function startQueueProcessing(p2pConnection) {
+  if (!window.safeWasm || !window.safeWasm.process_p2p_queue) {
+    logger.debug('Queue processing not available');
+    return;
+  }
+
+  // Process queue every 1 second (reduced from 200ms to save CPU)
+  const queueInterval = setInterval(() => {
+    try {
+      const messages = window.safeWasm.process_p2p_queue();
+      if (messages && messages.length > 0) {
+        logger.debug(`Processing ${messages.length} queued messages`);
+
+        for (const msg of messages) {
+          // Send queued messages
+          if (msg.target_peer) {
+            // Unicast to specific peer
+            const channel = p2pConnection.dataChannels.get(msg.target_peer);
+            if (channel && channel.readyState === 'open') {
+              try {
+                channel.send(msg.content);
+                logger.debug(`✅ Sent queued message to ${msg.target_peer}`);
+              } catch (e) {
+                logger.error(`Failed to send queued message to ${msg.target_peer}:`, e);
+              }
+            }
+          } else {
+            // Broadcast to all peers
+            try {
+              const parsedMsg = JSON.parse(msg.content);
+              p2pConnection.broadcast(parsedMsg);
+              logger.debug(`✅ Broadcast queued message type: ${parsedMsg.type}`);
+            } catch (e) {
+              logger.error(`Failed to broadcast queued message:`, e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('Error processing message queue:', error);
+    }
+
+    // Check if connection is still active, clear interval if not
+    if (!getP2PConnection()) {
+      clearInterval(queueInterval);
+      logger.debug('Queue processing stopped - P2P disconnected');
+    }
+  }, 1000); // Process every 1 second (reduced from 200ms for better CPU usage)
+
+  // Store interval ID for cleanup
+  if (!window.queueIntervals) {
+    window.queueIntervals = [];
+  }
+  window.queueIntervals.push(queueInterval);
 }
 
 /**
@@ -135,6 +219,12 @@ export async function initializeP2P(roomId) {
 export function handleIncomingP2PMessage(message, peerId) {
   try {
     logger.info(`🎯 Received P2P message from ${peerId}:`, message.type, message);
+
+    // Record message received for P2P metrics
+    if (window.safeWasm && window.safeWasm.record_peer_message_received) {
+      const messageSize = JSON.stringify(message).length;
+      window.safeWasm.record_peer_message_received(peerId, messageSize);
+    }
 
     switch (message.type) {
       case 'chat':
@@ -175,13 +265,25 @@ export function handleIncomingP2PMessage(message, peerId) {
  * @param {string} peerId - Peer ID
  */
 function handleChatMessage(message, peerId) {
-  const { content, senderName, senderId, messageId, timestamp } = message;
+  const { content, senderName, senderId, messageId, timestamp, encrypted } = message;
 
-  logger.info('🎯 Handling chat message:', { content, senderName, senderId, messageId, timestamp });
+  logger.info('🎯 Handling chat message:', { content: encrypted ? '[encrypted]' : content, senderName, senderId, messageId, timestamp });
 
   if (!content || (!senderName && !senderId)) {
     logger.warn('Invalid chat message received');
     return;
+  }
+
+  // Decrypt message if it's encrypted
+  let decryptedContent = content;
+  if (encrypted && window.safeWasm && window.safeWasm.decrypt_message_content) {
+    try {
+      decryptedContent = window.safeWasm.decrypt_message_content(content);
+      logger.debug('Message decrypted successfully');
+    } catch (error) {
+      logger.warn('Failed to decrypt message:', error);
+      decryptedContent = '[Encrypted message - unable to decrypt]';
+    }
   }
 
   // Use senderId as fallback for senderName
@@ -190,7 +292,7 @@ function handleChatMessage(message, peerId) {
   // Add to message history
   const messageObj = {
     id: messageId || `msg_${Date.now()}_${Math.random()}`,
-    content: content,
+    content: decryptedContent,
     senderId: senderId || peerId,
     sender: displayName,
     timestamp: timestamp || Date.now(),
@@ -203,7 +305,7 @@ function handleChatMessage(message, peerId) {
   }
 
   // Display the message
-  displayMessage(content, false, displayName, true, timestamp, messageObj);
+  displayMessage(decryptedContent, false, displayName, true, timestamp, messageObj);
 
   // Clear the typing indicator for this peer since they sent a message
   clearPeerDraft(peerId);
@@ -342,6 +444,13 @@ export function disconnectP2P() {
     updateConnectionStatus('disconnected');
     updatePeerCount();
     log('Disconnected from P2P network');
+  }
+
+  // Clean up all queue processing intervals
+  if (window.queueIntervals) {
+    window.queueIntervals.forEach(interval => clearInterval(interval));
+    window.queueIntervals = [];
+    logger.debug('Cleared all queue processing intervals');
   }
 }
 
