@@ -27,7 +27,11 @@ export function loadChatHistory(roomId) {
     // Get messages from WASM (single source of truth)
     if (window.safeWasm && window.safeWasm.get_room_messages) {
       const messages = window.safeWasm.get_room_messages(roomId, 100);
-      return messages || [];
+      // Handle the returned value which could be an array or need parsing
+      if (Array.isArray(messages)) {
+        return messages;
+      }
+      return [];
     }
 
     return [];
@@ -68,7 +72,24 @@ export function addMessageToHistory(roomId, message) {
     // Add to WASM message system (single source of truth)
     if (window.safeWasm && window.safeWasm.receive_message_from_peer) {
       try {
-        window.safeWasm.receive_message_from_peer(message);
+        // Format message for WASM EnhancedMessage type
+        const enhancedMessage = {
+          id: message.id || message.messageId,
+          sender_id: message.senderId || message.sender_id,
+          sender_name: message.senderName || message.sender || 'Anonymous',
+          message_type: 'Text', // Capitalize for Rust enum
+          content: message.content || '',
+          timestamp: message.timestamp || Date.now(),
+          room_id: roomId,
+          status: 'Sent',
+          edited: false,
+          edit_timestamp: null,
+          original_content: null,
+          reply_to: null,
+          reactions: {}
+        };
+
+        window.safeWasm.receive_message_from_peer(enhancedMessage);
         // Auto-save to storage
         saveChatHistory(roomId);
       } catch (wasmError) {
@@ -88,7 +109,12 @@ export function addMessageToHistory(roomId, message) {
 export function getChatHistory(roomId) {
   // Always get from WASM (single source of truth)
   if (window.safeWasm && window.safeWasm.get_room_messages) {
-    return window.safeWasm.get_room_messages(roomId, 100) || [];
+    const messages = window.safeWasm.get_room_messages(roomId, 100);
+    // Handle the returned value which could be an array or need parsing
+    if (Array.isArray(messages)) {
+      return messages;
+    }
+    return [];
   }
   return [];
 }
@@ -176,8 +202,9 @@ export function handleSyncResponse(message, peerId) {
       // Refresh UI if this is the current room
       const currentRoomId = getCurrentRoomId();
       if (roomId === currentRoomId) {
-        const { displayChatHistory } = require('./ui.js');
-        displayChatHistory(getChatHistory(roomId));
+        import('./ui.js').then(({ displayChatHistory }) => {
+          displayChatHistory(getChatHistory(roomId));
+        });
       }
 
       log(`Synced ${messages.length} messages from peer`);

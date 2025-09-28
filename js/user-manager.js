@@ -68,8 +68,9 @@ export async function restoreUserState() {
   // Initialize user if needed
   restoreUserInfo();
 
-  // Restore room connection
-  await restoreRoomConnection();
+  // Don't auto-restore room connection - user should manually rejoin
+  // This prevents aggressive setInterval loops from starting on every page load
+  // await restoreRoomConnection();
 }
 
 /**
