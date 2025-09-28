@@ -7,28 +7,27 @@ use wasm_bindgen::prelude::*;
 // URL and utility functions
 
 #[wasm_bindgen]
-pub fn generate_uuid() -> JsValue {
-    // Use serde-wasm-bindgen for cross-browser compatibility
+pub fn generate_uuid() -> String {
+    // Return String directly for proper JavaScript interop
     use uuid::Uuid;
-    let uuid_string = Uuid::new_v4().to_string();
-    serde_wasm_bindgen::to_value(&uuid_string).unwrap_or_else(|_| JsValue::from_str(&uuid_string))
+    Uuid::new_v4().to_string()
 }
 
 #[wasm_bindgen]
-pub fn get_room_from_url() -> String {
+pub fn get_room_from_url() -> Option<String> {
     let window = match web_sys::window() {
         Some(w) => w,
-        None => return String::new(),
+        None => return None,
     };
 
     let location = window.location();
     let search = match location.search() {
         Ok(s) => s,
-        Err(_) => return String::new(),
+        Err(_) => return None,
     };
 
     if search.is_empty() {
-        return String::new();
+        return None;
     }
 
     // Parse URL parameters manually
@@ -38,13 +37,17 @@ pub fn get_room_from_url() -> String {
             if key == "r" {
                 // URL decode the value
                 if let Ok(decoded) = js_sys::decode_uri_component(value) {
-                    return String::from(decoded);
+                    let room_id = String::from(decoded);
+                    // Validate room ID has minimum length
+                    if room_id.len() >= 3 {
+                        return Some(room_id);
+                    }
                 }
             }
         }
     }
 
-    String::new()
+    None
 }
 
 #[wasm_bindgen]

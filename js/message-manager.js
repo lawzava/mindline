@@ -15,7 +15,7 @@ import { debugLog } from './debug-utils.js';
  */
 export function loadChatHistory(roomId) {
   try {
-    // First try to load from WASM enhanced message system
+    // Always load from WASM storage first
     if (window.safeWasm && window.safeWasm.load_room_messages_from_storage) {
       try {
         window.safeWasm.load_room_messages_from_storage(roomId);
@@ -24,64 +24,33 @@ export function loadChatHistory(roomId) {
       }
     }
 
-    // Then get messages from WASM
+    // Get messages from WASM (single source of truth)
     if (window.safeWasm && window.safeWasm.get_room_messages) {
       const messages = window.safeWasm.get_room_messages(roomId, 100);
-      if (messages && messages.length > 0) {
-        // Store in AppState for compatibility
-        AppState.chatHistory.set(roomId, {
-          messages: messages,
-          lastSync: Date.now()
-        });
+      // Handle the returned value which could be an array or need parsing
+      if (Array.isArray(messages)) {
         return messages;
       }
-    }
-
-    // Fallback to localStorage if WASM doesn't have messages
-    const historyKey = `chatHistory_${roomId}`;
-    const savedHistory = localStorage.getItem(historyKey);
-
-    if (savedHistory) {
-      const parsed = JSON.parse(savedHistory);
-      AppState.chatHistory.set(roomId, {
-        messages: parsed.messages || [],
-        lastSync: parsed.lastSync || 0
-      });
-      return parsed.messages || [];
-    } else {
-      AppState.chatHistory.set(roomId, {
-        messages: [],
-        lastSync: 0
-      });
       return [];
     }
+
+    return [];
   } catch (error) {
     logger.error('Error loading chat history:', error);
-    AppState.chatHistory.set(roomId, {
-      messages: [],
-      lastSync: 0
-    });
     return [];
   }
 }
 
 /**
- * Save chat history for a room to localStorage
+ * Save chat history for a room
  * @param {string} roomId - Room ID to save history for
  */
 export function saveChatHistory(roomId) {
   try {
-    const roomHistory = AppState.chatHistory.get(roomId);
-    if (!roomHistory) return;
-
-    const historyKey = `chatHistory_${roomId}`;
-    const historyData = {
-      messages: roomHistory.messages,
-      lastSync: Date.now()
-    };
-
-    localStorage.setItem(historyKey, JSON.stringify(historyData));
-    roomHistory.lastSync = historyData.lastSync;
+    // Use WASM to save messages
+    if (window.safeWasm && window.safeWasm.save_room_messages_to_storage) {
+      window.safeWasm.save_room_messages_to_storage(roomId);
+    }
   } catch (error) {
     console.error('Error saving chat history:', error);
   }
@@ -94,55 +63,39 @@ export function saveChatHistory(roomId) {
  */
 export function addMessageToHistory(roomId, message) {
   try {
-    // First ensure we have valid message data
+    // Validate message
     if (!message || !message.id) {
       logger.warn('Cannot add invalid message to history');
       return;
     }
 
-    // Add to WASM enhanced message system if available
+    // Add to WASM message system (single source of truth)
     if (window.safeWasm && window.safeWasm.receive_message_from_peer) {
       try {
-        const messageData = JSON.stringify(message);
-        window.safeWasm.receive_message_from_peer(messageData);
+        // Format message for WASM EnhancedMessage type
+        const enhancedMessage = {
+          id: message.id || message.messageId,
+          sender_id: message.senderId || message.sender_id,
+          sender_name: message.senderName || message.sender || 'Anonymous',
+          message_type: 'Text', // Capitalize for Rust enum
+          content: message.content || '',
+          timestamp: message.timestamp || Date.now(),
+          room_id: roomId,
+          status: 'Sent',
+          edited: false,
+          edit_timestamp: null,
+          original_content: null,
+          reply_to: null,
+          reactions: {}
+        };
+
+        window.safeWasm.receive_message_from_peer(enhancedMessage);
+        // Auto-save to storage
+        saveChatHistory(roomId);
       } catch (wasmError) {
         console.warn('Could not add to WASM message system:', wasmError);
       }
     }
-
-    // Also maintain in AppState for immediate UI updates
-    let roomHistory = AppState.chatHistory.get(roomId);
-    if (!roomHistory) {
-      roomHistory = {
-        messages: [],
-        lastSync: 0
-      };
-      AppState.chatHistory.set(roomId, roomHistory);
-    }
-
-    // Check if message already exists (avoid duplicates)
-    const existingMessageIndex = roomHistory.messages.findIndex(msg => msg.id === message.id);
-    if (existingMessageIndex !== -1) {
-      // Update existing message
-      roomHistory.messages[existingMessageIndex] = message;
-      logger.debug('Updated existing message in history:', message.id);
-    } else {
-      // Add new message
-      roomHistory.messages.push(message);
-      logger.debug('Added new message to history:', message.id);
-    }
-
-    // Sort messages by timestamp to maintain order
-    roomHistory.messages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
-    // Keep only last 100 messages for performance
-    if (roomHistory.messages.length > 100) {
-      roomHistory.messages = roomHistory.messages.slice(-100);
-    }
-
-    // Auto-save periodically
-    saveChatHistory(roomId);
-
   } catch (error) {
     logger.error('Error adding message to history:', error);
   }
@@ -154,13 +107,16 @@ export function addMessageToHistory(roomId, message) {
  * @returns {Array} Array of messages
  */
 export function getChatHistory(roomId) {
-  const roomHistory = AppState.chatHistory.get(roomId);
-  if (roomHistory && roomHistory.messages) {
-    return roomHistory.messages;
+  // Always get from WASM (single source of truth)
+  if (window.safeWasm && window.safeWasm.get_room_messages) {
+    const messages = window.safeWasm.get_room_messages(roomId, 100);
+    // Handle the returned value which could be an array or need parsing
+    if (Array.isArray(messages)) {
+      return messages;
+    }
+    return [];
   }
-
-  // Try to load if not in memory
-  return loadChatHistory(roomId);
+  return [];
 }
 
 /**
@@ -171,11 +127,19 @@ export function requestMessageSync(roomId) {
   if (!roomId) return;
 
   try {
-    const roomHistory = AppState.chatHistory.get(roomId);
-    const lastSync = roomHistory ? roomHistory.lastSync : 0;
-    const messageCount = roomHistory ? roomHistory.messages.length : 0;
+    // Get stats from WASM
+    let lastSync = 0;
+    let messageCount = 0;
 
-    // Create sync request using WASM if available
+    if (window.safeWasm && window.safeWasm.get_room_message_stats) {
+      const stats = window.safeWasm.get_room_message_stats(roomId);
+      if (stats) {
+        lastSync = stats.lastSync || 0;
+        messageCount = stats.totalMessages || 0;
+      }
+    }
+
+    // Create sync request using WASM
     if (window.safeWasm && window.safeWasm.create_sync_request) {
       const syncRequest = window.safeWasm.create_sync_request(roomId, lastSync, messageCount);
       if (syncRequest) {
@@ -185,23 +149,7 @@ export function requestMessageSync(roomId) {
           p2pConnection.broadcast(syncRequest);
           logger.debug('Sync request sent for room:', roomId);
         }
-        return;
       }
-    }
-
-    // Fallback sync request
-    const syncMessage = {
-      type: 'sync-request',
-      roomId: roomId,
-      lastSync: lastSync,
-      messageCount: messageCount,
-      timestamp: Date.now()
-    };
-
-    const p2pConnection = AppState.p2pConnection;
-    if (p2pConnection) {
-      p2pConnection.broadcast(syncMessage);
-      log(`Requested message sync for room ${roomId}`);
     }
   } catch (error) {
     logger.error('Error requesting message sync:', error);
@@ -215,43 +163,14 @@ export function requestMessageSync(roomId) {
  */
 export function handleSyncRequest(message, peerId) {
   try {
-    const { roomId, lastSync, messageCount } = message;
-
-    // Use WASM sync handler if available
+    // Always use WASM sync handler
     if (window.safeWasm && window.safeWasm.handle_sync_request) {
-      const syncResponse = window.safeWasm.handle_sync_request(JSON.stringify(message));
+      const syncResponse = window.safeWasm.handle_sync_request(message);
       if (syncResponse) {
         const p2pConnection = AppState.p2pConnection;
         if (p2pConnection) {
-          p2pConnection.sendToPeer(peerId, JSON.parse(syncResponse));
+          p2pConnection.sendToPeer(peerId, syncResponse);
         }
-        return;
-      }
-    }
-
-    // Fallback sync handling
-    const roomHistory = AppState.chatHistory.get(roomId);
-    if (!roomHistory || !roomHistory.messages) {
-      return; // No messages to share
-    }
-
-    // Find messages newer than their last sync
-    const messagesToSend = roomHistory.messages.filter(msg =>
-      (msg.timestamp || 0) > lastSync
-    ).slice(0, 20); // Limit to 20 messages per sync
-
-    if (messagesToSend.length > 0) {
-      const syncResponse = {
-        type: 'sync-response',
-        roomId: roomId,
-        messages: messagesToSend,
-        timestamp: Date.now()
-      };
-
-      const p2pConnection = AppState.p2pConnection;
-      if (p2pConnection) {
-        p2pConnection.sendToPeer(peerId, syncResponse);
-        logger.debug(`Sent ${messagesToSend.length} messages to ${peerId} for sync`);
       }
     }
   } catch (error) {
@@ -266,31 +185,30 @@ export function handleSyncRequest(message, peerId) {
  */
 export function handleSyncResponse(message, peerId) {
   try {
-    const { roomId, messages } = message;
-    if (!messages || !Array.isArray(messages)) return;
+    const { roomId, request_type, messages } = message;
 
-    logger.debug(`Received ${messages.length} messages from ${peerId} for sync`);
+    // Check if it's a sync response with messages
+    if (request_type === 'SyncResponse' && messages && Array.isArray(messages)) {
+      logger.debug(`Received ${messages.length} messages from ${peerId} for sync`);
 
-    // Add each message to history
-    messages.forEach(msg => {
-      addMessageToHistory(roomId, msg);
-    });
+      // Add each message to WASM storage
+      messages.forEach(msg => {
+        addMessageToHistory(roomId, msg);
+      });
 
-    // Update last sync timestamp
-    const roomHistory = AppState.chatHistory.get(roomId);
-    if (roomHistory) {
-      roomHistory.lastSync = Math.max(roomHistory.lastSync, Date.now());
+      // Save to storage
       saveChatHistory(roomId);
-    }
 
-    // Refresh UI if this is the current room
-    const currentRoomId = AppState.currentRoomId;
-    if (roomId === currentRoomId) {
-      const { displayChatHistory } = require('./ui.js');
-      displayChatHistory(getChatHistory(roomId));
-    }
+      // Refresh UI if this is the current room
+      const currentRoomId = getCurrentRoomId();
+      if (roomId === currentRoomId) {
+        import('./ui.js').then(({ displayChatHistory }) => {
+          displayChatHistory(getChatHistory(roomId));
+        });
+      }
 
-    log(`Synced ${messages.length} messages from peer`);
+      log(`Synced ${messages.length} messages from peer`);
+    }
   } catch (error) {
     logger.error('Error handling sync response:', error);
   }
@@ -326,17 +244,39 @@ export function retrieveMessages(roomId) {
 export function sendMessage() {
   debugLog(`🚀 ========== SENDMESSAGE STARTED ==========`);
 
+  // Start performance timer
+  if (window.safeWasm && window.safeWasm.start_performance_timer) {
+    window.safeWasm.start_performance_timer('message_send');
+  }
+
   const messageInput = document.getElementById('messageInput');
   const rawMessage = messageInput?.value;
 
   debugLog(`📝 Raw message input: "${rawMessage}"`);
 
-  // Use pure JavaScript validation until WASM serialization is fixed
-  const message = String(rawMessage || '').trim().substring(0, 2000);
+  // Use WASM validation for message
+  const trimmedMessage = String(rawMessage || '').trim();
 
-  if (!message || message.length === 0) {
-    debugLog(`❌ Invalid or empty message, aborting send`);
-    logger.warn('Message failed validation:', rawMessage);
+  if (!window.safeWasm || !window.safeWasm.validate_message) {
+    logger.error('WASM message validation not available');
+    log('Message validation system not ready. Please reload the page.');
+    return;
+  }
+
+  let message;
+  try {
+    const isValid = window.safeWasm.validate_message(trimmedMessage);
+    if (!isValid) {
+      debugLog(`❌ Invalid or empty message, aborting send`);
+      logger.warn('Message failed validation:', rawMessage);
+      return;
+    }
+    // WASM validation passed, but we still need to truncate for now
+    // as the WASM function validates but doesn't truncate
+    message = trimmedMessage.substring(0, 2000);
+  } catch (error) {
+    logger.error('Message validation error:', error);
+    log('Error validating message. Please try again.');
     return;
   }
 
@@ -364,10 +304,27 @@ export function sendMessage() {
     // Generate message ID on client side
     const messageId = generateUUID();
     const rawUserName = document.getElementById('userName')?.value || 'Anonymous';
-    // Use pure JavaScript validation until WASM serialization is fixed
-    const userName = String(rawUserName || '').trim()
-      .split('').filter(c => /[a-zA-Z0-9 _-]/.test(c)).join('')
-      .substring(0, 32) || 'Anonymous';
+    // Use WASM validation for username
+    let userName;
+    if (!window.safeWasm || !window.safeWasm.validate_username) {
+      // Fallback if WASM not ready
+      userName = 'Anonymous';
+    } else {
+      try {
+        const trimmedName = String(rawUserName || '').trim();
+        const isValid = window.safeWasm.validate_username(trimmedName);
+        if (isValid) {
+          // WASM validation passed, but we still need to truncate for now
+          // as the WASM function validates but doesn't truncate
+          userName = trimmedName.substring(0, 32);
+        } else {
+          userName = 'Anonymous';
+        }
+      } catch (error) {
+        logger.error('Username validation error:', error);
+        userName = 'Anonymous';
+      }
+    }
 
     logger.debug(`📝 Sending message: userId=${userId}, userName=${userName}, messageId=${messageId}, roomId=${roomId}`);
 
@@ -460,12 +417,31 @@ export function sendMessage() {
       }
     }
 
+    // End performance timer
+    if (window.safeWasm && window.safeWasm.end_performance_timer) {
+      window.safeWasm.end_performance_timer('message_send');
+    }
+
+    // Record metric
+    if (window.safeWasm && window.safeWasm.record_performance_metric) {
+      try {
+        window.safeWasm.record_performance_metric('messages_sent', 1);
+      } catch (metricError) {
+        logger.debug('Could not record message metric:', metricError);
+      }
+    }
+
     debugLog(`✅ ========== SENDMESSAGE COMPLETED ==========`);
 
   } catch (error) {
     logger.error('Error sending message:', error);
     log(`Failed to send message: ${error.message}`);
     debugLog(`❌ ========== SENDMESSAGE FAILED ==========`);
+
+    // End performance timer even on error
+    if (window.safeWasm && window.safeWasm.end_performance_timer) {
+      window.safeWasm.end_performance_timer('message_send');
+    }
   }
 }
 
@@ -500,7 +476,7 @@ export function handleDraftMessage() {
     }
   }
 
-  // Store draft in WASM if available
+  // Always store draft in WASM
   if (window.safeWasm && window.safeWasm.set_draft_message) {
     try {
       window.safeWasm.set_draft_message(userId, content, userName);

@@ -3,3 +3,5 @@
 /dist
 /logs
 /pkg
+/.playwright-mcp
+.DS_Store

@@ -40,6 +40,7 @@ export function createSafeWasmProxies() {
     join_room: safeWasmCall('join_room', ['roomId', 'signalData']),
     create_room_with_id: safeWasmCall('create_room_with_id', ['roomId']),
     send_message: safeWasmCall('send_message', ['roomId', 'content', 'messageId']),
+    send_typing_indicator: safeWasmCall('send_typing_indicator', ['roomId', 'isTyping'], { isTyping: Boolean }),
     get_messages: safeWasmCall('get_messages', ['roomId']),
 
     // Phase 1: Enhanced State Management Functions
@@ -122,6 +123,19 @@ export function createSafeWasmProxies() {
     handle_connection_failure: safeWasmCall('handle_connection_failure', ['peerId']),
     set_connection_strategy: safeWasmCall('set_connection_strategy', ['strategy']),
     get_best_peers_for_broadcast: safeWasmCall('get_best_peers_for_broadcast', ['maxPeers'], { maxPeers: Number }),
+    get_broadcast_plan: safeWasmCall('get_broadcast_plan', ['messageType']),
+
+    // Message queue functions
+    queue_p2p_message: safeWasmCall('queue_p2p_message', ['targetPeer', 'content', 'messageType', 'priority'], {
+      priority: Number,
+      targetPeer: (v) => v === null || v === undefined ? undefined : v
+    }),
+    process_p2p_queue: safeWasmCall('process_p2p_queue', []),
+    get_p2p_queue_status: safeWasmCall('get_p2p_queue_status', []),
+    clear_p2p_queue_for_peer: safeWasmCall('clear_p2p_queue_for_peer', ['peerId']),
+
+    record_performance_metric: safeWasmCall('record_performance_metric', ['metric', 'value'], { value: Number }),
+    start_performance_monitoring: safeWasmCall('start_performance_monitoring', []),
     // Aliases for functions called in webrtc.js
     add_peer: safeWasmCall('add_known_peer', ['peerId']),
     update_peer_metrics: function(peerId, latency, quality) {
@@ -178,7 +192,19 @@ export function createSafeWasmProxies() {
     cancel_scheduled_task: safeWasmCall('cancel_scheduled_task', ['taskId']),
     get_scheduled_tasks: safeWasmCall('get_scheduled_tasks', []),
     trigger_maintenance_mode: safeWasmCall('trigger_maintenance_mode', ['enabled'], { enabled: Boolean }),
-    get_maintenance_status: safeWasmCall('get_maintenance_status', [])
+    get_maintenance_status: safeWasmCall('get_maintenance_status', []),
+
+    // Storage and persistence functions (previously missing)
+    store_message_persistent: safeWasmCall('store_message_persistent', ['roomId', 'message']),
+    store_room_persistent: safeWasmCall('store_room_persistent', ['roomId', 'roomData']),
+    get_stored_messages: safeWasmCall('get_stored_messages', ['roomId']),
+    get_stored_room: safeWasmCall('get_stored_room', ['roomId']),
+
+    // Encryption functions (previously missing)
+    encrypt_message_content: safeWasmCall('encrypt_message_content', ['content']),
+    decrypt_message_content: safeWasmCall('decrypt_message_content', ['encrypted']),
+    export_encryption_key: safeWasmCall('export_encryption_key', []),
+    import_encryption_key: safeWasmCall('import_encryption_key', ['key'])
   };
 }
 
@@ -192,6 +218,11 @@ export function createSafeWasmProxies() {
 function safeWasmCall(funcName, paramNames = [], paramTransforms = {}) {
   return function(...args) {
     try {
+      // Handle case where no arguments are passed but they're expected
+      if (!args) {
+        args = [];
+      }
+
       // Validate we have the right number of parameters
       if (args.length !== paramNames.length) {
         const message = `${funcName}: expected ${paramNames.length} parameters (${paramNames.join(', ')}), got ${args.length}`;
@@ -257,7 +288,8 @@ function safeWasmCall(funcName, paramNames = [], paramTransforms = {}) {
         error: error.message
       };
 
-      logger.error(`WASM call failed:`, contextInfo);
+      // Use console.error directly to prevent infinite recursion if logger WASM calls fail
+      console.error(`[ERROR] WASM call failed:`, contextInfo);
 
       // Re-throw with enhanced error message
       const enhancedError = new Error(`WASM call failed: ${funcName} - ${error.message}`);
