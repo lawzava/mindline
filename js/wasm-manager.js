@@ -40,30 +40,19 @@ export function createSafeWasmProxies() {
     join_room: safeWasmCall('join_room', ['roomId', 'signalData']),
     create_room_with_id: safeWasmCall('create_room_with_id', ['roomId']),
     send_message: safeWasmCall('send_message', ['roomId', 'content', 'messageId']),
-    send_typing_indicator: safeWasmCall('send_typing_indicator', ['roomId', 'isTyping'], { isTyping: Boolean }),
     get_messages: safeWasmCall('get_messages', ['roomId']),
 
     // Phase 1: Enhanced State Management Functions
     // Core state management
-    get_app_state: safeWasmCall('get_app_state', []),
-    get_app_config: safeWasmCall('get_app_config', []),
     get_current_user_id: safeWasmCall('get_current_user_id', []),
     get_current_room_id: safeWasmCall('get_current_room_id', []),
     set_current_room_id: safeWasmCall('set_current_room_id', ['roomId']),
     update_user_session: safeWasmCall('update_user_session', ['name', 'userId']),
-    set_typing_status: safeWasmCall('set_typing_status', ['isTyping'], { isTyping: Boolean }),
-
-    // Room history management
-    get_room_history_list: safeWasmCall('get_room_history_list', []),
-    add_room_to_history: safeWasmCall('add_room_to_history', ['roomId', 'displayName']),
-    remove_room_from_history: safeWasmCall('remove_room_from_history', ['roomId']),
-    get_room_metadata: safeWasmCall('get_room_metadata', ['roomId']),
 
     // Draft messages management
     get_draft_messages: safeWasmCall('get_draft_messages', []),
     set_draft_message: safeWasmCall('set_draft_message', ['peerId', 'content', 'senderName']),
     clear_draft_message: safeWasmCall('clear_draft_message', ['peerId']),
-    clear_all_draft_messages: safeWasmCall('clear_all_draft_messages', []),
 
     // P2P state management
     get_connected_peers: safeWasmCall('get_connected_peers', []),
@@ -80,26 +69,12 @@ export function createSafeWasmProxies() {
     validate_room_id: safeWasmCall('validate_room_id', ['roomId']),
     validate_username: safeWasmCall('validate_username', ['username']),
     validate_message: safeWasmCall('validate_message', ['message']),
-    sanitize_html_content: safeWasmCall('sanitize_html_content', ['html']),
-    validate_url_param: safeWasmCall('validate_url_param', ['param']),
-    generate_secure_room_id: safeWasmCall('generate_secure_room_id', []),
-    check_rate_limit: safeWasmCall('check_rate_limit', ['key', 'maxAttempts', 'windowMs']),
-    validate_file: safeWasmCall('validate_file', ['fileName', 'fileSize', 'mimeType']),
-    detect_attack_patterns: safeWasmCall('detect_attack_patterns', ['input']),
-    validate_json_input: safeWasmCall('validate_json_input', ['jsonStr', 'maxSize']),
-    validate_input_batch: safeWasmCall('validate_input_batch', ['inputType', 'values']),
 
     // Phase 3: Enhanced Message Processing Functions
     set_message_manager_user: safeWasmCall('set_message_manager_user', ['userId']),
     send_message_enhanced: safeWasmCall('send_message_enhanced', ['roomId', 'content', 'messageId']),
     receive_message_from_peer: safeWasmCall('receive_message_from_peer', ['messageData']),
     get_room_messages: safeWasmCall('get_room_messages', ['roomId', 'limit']),
-    edit_message: safeWasmCall('edit_message', ['roomId', 'messageId', 'newContent']),
-    delete_message: safeWasmCall('delete_message', ['roomId', 'messageId']),
-    add_message_reaction: safeWasmCall('add_message_reaction', ['roomId', 'messageId', 'emoji', 'userId']),
-    handle_typing_indicator: safeWasmCall('handle_typing_indicator', ['roomId', 'userId', 'isTyping'], { isTyping: Boolean }),
-    get_typing_users: safeWasmCall('get_typing_users', ['roomId']),
-    get_messages_for_sync: safeWasmCall('get_messages_for_sync', ['roomId', 'afterTimestamp', 'limit']),
     get_room_message_stats: safeWasmCall('get_room_message_stats', ['roomId']),
     create_sync_request: safeWasmCall('create_sync_request', ['roomId', 'lastSync', 'messageCount']),
     handle_sync_request: safeWasmCall('handle_sync_request', ['requestData']),
@@ -111,9 +86,7 @@ export function createSafeWasmProxies() {
     add_known_peer: safeWasmCall('add_known_peer', ['peerId']),
     remove_peer_from_network: safeWasmCall('remove_peer_from_network', ['peerId']),
     update_peer_connection_state: safeWasmCall('update_peer_connection_state', ['peerId', 'state']),
-    should_initiate_connection_to_peer: safeWasmCall('should_initiate_connection_to_peer', ['peerId']),
     get_connection_decision: safeWasmCall('get_connection_decision', ['peerId']),
-    get_connected_peer_list: safeWasmCall('get_connected_peer_list', []),
     record_peer_message_sent: safeWasmCall('record_peer_message_sent', ['peerId', 'sizeBytes'], { sizeBytes: Number }),
     record_peer_message_received: safeWasmCall('record_peer_message_received', ['peerId', 'sizeBytes'], { sizeBytes: Number }),
     update_peer_latency: safeWasmCall('update_peer_latency', ['peerId', 'latencyMs'], { latencyMs: Number }),
@@ -121,9 +94,7 @@ export function createSafeWasmProxies() {
     get_mesh_repair_plan: safeWasmCall('get_mesh_repair_plan', []),
     get_p2p_network_stats: safeWasmCall('get_p2p_network_stats', []),
     handle_connection_failure: safeWasmCall('handle_connection_failure', ['peerId']),
-    set_connection_strategy: safeWasmCall('set_connection_strategy', ['strategy']),
     get_best_peers_for_broadcast: safeWasmCall('get_best_peers_for_broadcast', ['maxPeers'], { maxPeers: Number }),
-    get_broadcast_plan: safeWasmCall('get_broadcast_plan', ['messageType']),
 
     // Message queue functions
     queue_p2p_message: safeWasmCall('queue_p2p_message', ['targetPeer', 'content', 'messageType', 'priority'], {
@@ -132,7 +103,6 @@ export function createSafeWasmProxies() {
     }),
     process_p2p_queue: safeWasmCall('process_p2p_queue', []),
     get_p2p_queue_status: safeWasmCall('get_p2p_queue_status', []),
-    clear_p2p_queue_for_peer: safeWasmCall('clear_p2p_queue_for_peer', ['peerId']),
 
     record_performance_metric: safeWasmCall('record_performance_metric', ['metric', 'value'], { value: Number }),
     start_performance_monitoring: safeWasmCall('start_performance_monitoring', []),
@@ -162,17 +132,13 @@ export function createSafeWasmProxies() {
     search_logs: safeWasmCall('search_logs', ['query', 'limit'], { limit: Number }),
     get_log_statistics: safeWasmCall('get_log_statistics', []),
     export_logs_json: safeWasmCall('export_logs_json', ['filter']),
-    clear_log_buffer: safeWasmCall('clear_log_buffer', []),
     get_error_summary: safeWasmCall('get_error_summary', ['minutes'], { minutes: Number }),
-    create_debug_report: safeWasmCall('create_debug_report', []),
     configure_logger: safeWasmCall('configure_logger', ['maxEntries', 'consoleOutput', 'bufferLogs', 'autoExportErrors'], {
       maxEntries: Number,
       consoleOutput: Boolean,
       bufferLogs: Boolean,
       autoExportErrors: Boolean
     }),
-    get_logs_by_component: safeWasmCall('get_logs_by_component', ['component', 'limit'], { limit: Number }),
-    export_recent_logs_json: safeWasmCall('export_recent_logs_json', ['count'], { count: Number }),
 
     // Phase 6: Advanced Features
     get_user_preferences: safeWasmCall('get_user_preferences', []),
@@ -192,19 +158,7 @@ export function createSafeWasmProxies() {
     cancel_scheduled_task: safeWasmCall('cancel_scheduled_task', ['taskId']),
     get_scheduled_tasks: safeWasmCall('get_scheduled_tasks', []),
     trigger_maintenance_mode: safeWasmCall('trigger_maintenance_mode', ['enabled'], { enabled: Boolean }),
-    get_maintenance_status: safeWasmCall('get_maintenance_status', []),
-
-    // Storage and persistence functions (previously missing)
-    store_message_persistent: safeWasmCall('store_message_persistent', ['roomId', 'message']),
-    store_room_persistent: safeWasmCall('store_room_persistent', ['roomId', 'roomData']),
-    get_stored_messages: safeWasmCall('get_stored_messages', ['roomId']),
-    get_stored_room: safeWasmCall('get_stored_room', ['roomId']),
-
-    // Encryption functions (previously missing)
-    encrypt_message_content: safeWasmCall('encrypt_message_content', ['content']),
-    decrypt_message_content: safeWasmCall('decrypt_message_content', ['encrypted']),
-    export_encryption_key: safeWasmCall('export_encryption_key', []),
-    import_encryption_key: safeWasmCall('import_encryption_key', ['key'])
+    get_maintenance_status: safeWasmCall('get_maintenance_status', [])
   };
 }
 
