@@ -105,7 +105,13 @@ export function restoreUserInfo() {
         const userNameInput = document.getElementById('userName');
         const mobileUserNameInput = document.getElementById('userNameMobile');
 
-        if (userNameInput) userNameInput.value = savedUserName;
+        if (userNameInput) {
+          userNameInput.value = savedUserName;
+          // Prevent event handler from re-initializing by setting lastInitializedName
+          if (window.setLastInitializedName) {
+            window.setLastInitializedName(savedUserName);
+          }
+        }
         if (mobileUserNameInput) mobileUserNameInput.value = savedUserName;
 
         log(`Restored user: ${savedUserName} with ID: ${savedUserId}`);
