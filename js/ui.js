@@ -228,7 +228,7 @@ export function scrollChatToBottom(behavior = 'smooth', delay = 0) {
 
 /**
  * Update connection status indicator
- * @param {string} status - 'disconnected', 'connecting', 'connected', 'failed', 'reconnecting'
+ * @param {string} status - 'disconnected', 'connecting', 'connected', 'failed', 'reconnecting', 'local'
  */
 export function updateConnectionStatus(status = 'disconnected') {
   const statusElement = document.getElementById('connectionStatus');
@@ -252,6 +252,10 @@ export function updateConnectionStatus(status = 'disconnected') {
     case 'connected':
       statusElement.innerHTML = '<span class="sr-only">Connection status:</span>Connected';
       statusElement.classList.add('status-connected');
+      break;
+    case 'local':
+      statusElement.innerHTML = '<span class="sr-only">Connection status:</span>Local Mode';
+      statusElement.classList.add('status-local');
       break;
     case 'reconnecting':
       statusElement.innerHTML = '<span class="sr-only">Connection status:</span>Reconnecting...';
@@ -361,8 +365,10 @@ export function displayChatHistory(messages) {
   } else {
     // Display all messages with enhanced features
     messages.forEach(message => {
-      const isMe = message.senderId === getCurrentUserId() || message.sender_id === getCurrentUserId();
-      const senderName = message.sender || message.sender_name || 'Unknown';
+      // Handle both camelCase and snake_case field names from WASM
+      const senderId = message.senderId || message.sender_id;
+      const isMe = senderId === getCurrentUserId();
+      const senderName = message.senderName || message.sender_name || message.sender || 'Unknown';
       displayMessage(message.content, isMe, senderName, false, message.timestamp, message); // Pass full message object
     });
 

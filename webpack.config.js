@@ -127,6 +127,7 @@ module.exports = (env = {}) => ({
         hot: true, // Enable hot module replacement
         historyApiFallback: true, // Handle SPAs
         client: {
+            logging: 'warn', // Reduce logging verbosity
             overlay: {
                 errors: true,
                 warnings: false,
@@ -137,7 +138,8 @@ module.exports = (env = {}) => ({
                     }
                     return true;
                 }
-            }
+            },
+            reconnect: 5 // Limit reconnection attempts
         }
     },
 });
