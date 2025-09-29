@@ -20,7 +20,7 @@ import {
   displayChatHistory,
   scrollChatToBottom
 } from './ui.js';
-import { loadChatHistory } from './message-manager.js';
+import { loadChatHistory, retrieveMessages } from './message-manager.js';
 import { addRoomToHistory, generateShareableURL } from './room-history.js';
 import { initializeP2P } from './p2p-manager.js';
 
@@ -61,16 +61,26 @@ export async function createRoom() {
     // Show connecting status
     updateConnectionStatus('connecting');
 
+    // Store messages with user-specific keys to prevent cross-user contamination
+    const currentUserId = localStorage.getItem('userId');
+
     // Create the room in the WASM module
     if (window.safeWasm) {
       window.safeWasm.create_room_with_id(roomId);
     }
 
-    // Initialize P2P connection
-    await initializeP2P(roomId);
+    // Initialize P2P connection (non-fatal - room works even if P2P fails)
+    let p2pConnected = false;
+    try {
+      await initializeP2P(roomId);
+      p2pConnected = true;
+    } catch (p2pError) {
+      logger.warn('P2P initialization failed (non-fatal):', p2pError);
+      // Continue with room creation even if P2P fails
+    }
 
-    // Load and display chat history
-    const messages = loadChatHistory(roomId);
+    // Load and display chat history (will be empty if we cleared it)
+    const messages = retrieveMessages(roomId);
     displayChatHistory(messages);
 
     // Update UI and localStorage
@@ -81,8 +91,9 @@ export async function createRoom() {
     // Add to room history
     addRoomToHistory(roomId);
 
-    // Update connection status
-    updateConnectionStatus('connected');
+    // Update connection status based on P2P
+    // Show 'local' when room is joined but P2P is not connected (still functional for local messages)
+    updateConnectionStatus(p2pConnected ? 'connected' : 'local');
 
     // Show share room button
     const shareRoomBtn = document.getElementById('shareRoomBtn');
@@ -140,16 +151,26 @@ export async function joinRoom(roomId) {
     // Show connecting status
     updateConnectionStatus('connecting');
 
+    // Store messages with user-specific keys to prevent cross-user contamination
+    const currentUserId = localStorage.getItem('userId');
+
     // Join the room
     if (window.safeWasm) {
       const connectionToken = window.safeWasm.join_room(roomId, '{}');
     }
 
-    // Initialize P2P connection
-    await initializeP2P(roomId);
+    // Initialize P2P connection (non-fatal - room works even if P2P fails)
+    let p2pConnected = false;
+    try {
+      await initializeP2P(roomId);
+      p2pConnected = true;
+    } catch (p2pError) {
+      logger.warn('P2P initialization failed (non-fatal):', p2pError);
+      // Continue with room join even if P2P fails
+    }
 
-    // Load and display chat history
-    const messages = loadChatHistory(roomId);
+    // Load and display chat history (will be empty if we cleared it)
+    const messages = retrieveMessages(roomId);
     displayChatHistory(messages);
 
     // Update UI and localStorage
@@ -160,8 +181,9 @@ export async function joinRoom(roomId) {
     // Add to room history
     addRoomToHistory(roomId);
 
-    // Update connection status
-    updateConnectionStatus('connected');
+    // Update connection status based on P2P
+    // Show 'local' when room is joined but P2P is not connected (still functional for local messages)
+    updateConnectionStatus(p2pConnected ? 'connected' : 'local');
 
     // Show share room button
     const shareRoomBtn = document.getElementById('shareRoomBtn');
