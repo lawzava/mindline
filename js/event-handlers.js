@@ -11,6 +11,11 @@ import { generateUUID } from './state.js';
 let initDebounceTimeout = null;
 let lastInitializedName = '';
 
+// Expose function to set lastInitializedName (used by user-manager during restore)
+window.setLastInitializedName = (name) => {
+  lastInitializedName = name;
+};
+
 /**
  * Setup all event handlers for the application
  */

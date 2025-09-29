@@ -285,6 +285,7 @@ class ErrorHandler {
   }
 
   static handleError(event) {
+    // Always log errors
     console.error('Global error:', event.error);
     window.toastManager?.show(
       'Something went wrong. Please try again.',
@@ -294,6 +295,7 @@ class ErrorHandler {
   }
 
   static handlePromiseRejection(event) {
+    // Always log promise rejections
     console.error('Unhandled promise rejection:', event.reason);
     window.toastManager?.show(
       'An unexpected error occurred.',
@@ -304,6 +306,7 @@ class ErrorHandler {
 
   static showError(message, error = null) {
     if (error) {
+      // Always log errors
       console.error('Error:', error);
     }
     window.toastManager?.show(message, 'error', 5000);
@@ -338,7 +341,10 @@ export function initializeUXEnhancements() {
   window.MessageEnhancer = MessageEnhancer;
   window.ErrorHandler = ErrorHandler;
 
-  console.log('🎨 UX Enhancements initialized');
+  // Only log in development
+  if (window.MINDLINE_CONFIG && !window.MINDLINE_CONFIG.IS_PRODUCTION) {
+    console.log('UX Enhancements initialized');
+  }
 }
 
 // Auto-initialize when module loads
