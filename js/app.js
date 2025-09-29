@@ -82,8 +82,16 @@ async function initializeApp() {
         // Record initial metrics
         if (window.safeWasm.record_performance_metric) {
           try {
-            window.safeWasm.record_performance_metric('app_start', Date.now());
-            window.safeWasm.record_performance_metric('memory_usage', performance.memory ? performance.memory.usedJSHeapSize : 0);
+            const now = Date.now();
+            const memUsage = (performance.memory && performance.memory.usedJSHeapSize) ? performance.memory.usedJSHeapSize : 0;
+
+            // Ensure parameters are valid before calling
+            if (now !== undefined && now !== null) {
+              window.safeWasm.record_performance_metric('app_start', now, 'ms', 'computation');
+            }
+            if (memUsage !== undefined && memUsage !== null) {
+              window.safeWasm.record_performance_metric('memory_usage', memUsage, 'bytes', 'memory');
+            }
           } catch (metricError) {
             logger.warn('Could not record initial metrics:', metricError);
           }
@@ -183,3 +191,12 @@ window.addEventListener('beforeunload', () => {
 // For now, re-export the main functions that other modules need
 // These will be properly organized in the next iteration
 export { initializeApp };
+
+// Import retrieveMessages for testing
+import { retrieveMessages } from './message-manager.js';
+
+// Make these functions available globally for testing
+window.displayChatHistory = displayChatHistory;
+window.displayMessage = displayMessage;
+window.getCurrentUserId = getCurrentUserId;
+window.retrieveMessages = retrieveMessages;

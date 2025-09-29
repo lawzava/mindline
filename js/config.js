@@ -25,8 +25,16 @@ function getSignalingServer() {
   // Finally, use default based on hostname
   const hostname = window.location.hostname;
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    console.log('Using default localhost signaling server');
-    return 'localhost:3000';
+    // For local development, default to local mode (no signaling server)
+    // The app will work for local messaging without P2P sync
+    // To enable P2P, either:
+    // 1. Run local signaling server: cd signaling-server && npm start
+    // 2. Use URL parameter: ?signaling_server=your.server.com
+    // 3. Deploy to Glitch/Render/Railway (see SIGNALING_SERVERS.md)
+
+    console.log('Local development mode - P2P disabled by default');
+    console.log('To enable P2P: add ?signaling_server=localhost:3000 to URL or see SIGNALING_SERVERS.md');
+    return null;
   }
 
   // For production, derive from current domain or use a default
