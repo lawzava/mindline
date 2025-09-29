@@ -17,7 +17,8 @@ import {
   handleSyncRequest,
   handleSyncResponse,
   requestMessageSync,
-  addMessageToHistory
+  addMessageToHistory,
+  saveChatHistory
 } from './message-manager.js';
 import { debugLog } from './debug-utils.js';
 import { IndexState, INDEX_CONSTANTS } from './app-state.js';
@@ -40,7 +41,11 @@ export async function initializeP2P(roomId) {
 
   // Clear any corrupted state from localStorage
   const storedUserId = localStorage.getItem('userId');
-  if (storedUserId && (storedUserId.includes(',') || storedUserId.length < 10)) {
+  // Allow test IDs (starting with 'test-') or regular IDs (>= 10 chars)
+  const isTestId = storedUserId && storedUserId.startsWith('test-');
+  const isValidRegularId = storedUserId && storedUserId.length >= 10;
+
+  if (storedUserId && (storedUserId.includes(',') || (!isTestId && !isValidRegularId))) {
     logger.warn('Clearing corrupted stored user ID:', storedUserId);
     localStorage.removeItem('userId');
     localStorage.removeItem('userName');
@@ -302,6 +307,8 @@ function handleChatMessage(message, peerId) {
   const roomId = getCurrentRoomId();
   if (roomId) {
     addMessageToHistory(roomId, messageObj);
+    // Save to localStorage after adding message
+    saveChatHistory(roomId);
   }
 
   // Display the message

@@ -781,6 +781,22 @@ body.dark {
     color: rgba(255,255,255,0.8);
 }
 
+.status-local {
+    background: var(--secondary-color);
+    color: var(--text-color);
+    border-color: var(--secondary-color);
+    box-shadow: var(--medium-shadow) var(--secondary-color);
+}
+
+.status-local::before {
+    background: rgba(255,255,255,0.2);
+}
+
+.status-local::after {
+    content: '◉';
+    color: var(--primary-color);
+}
+
 .status-connecting {
     background: var(--warning-color);
     color: var(--text-color);

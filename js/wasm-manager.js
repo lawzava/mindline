@@ -73,11 +73,11 @@ export function createSafeWasmProxies() {
     // Phase 3: Enhanced Message Processing Functions
     set_message_manager_user: safeWasmCall('set_message_manager_user', ['userId']),
     send_message_enhanced: safeWasmCall('send_message_enhanced', ['roomId', 'content', 'messageId']),
-    receive_message_from_peer: safeWasmCall('receive_message_from_peer', ['messageData']),
+    receive_message_from_peer: safeWasmCall('receive_message_from_peer', ['messageData'], { messageData: (v) => v }),  // Pass object as-is
     get_room_messages: safeWasmCall('get_room_messages', ['roomId', 'limit']),
     get_room_message_stats: safeWasmCall('get_room_message_stats', ['roomId']),
     create_sync_request: safeWasmCall('create_sync_request', ['roomId', 'lastSync', 'messageCount']),
-    handle_sync_request: safeWasmCall('handle_sync_request', ['requestData']),
+    handle_sync_request: safeWasmCall('handle_sync_request', ['requestData'], { requestData: (v) => v }),  // Pass object as-is
     save_room_messages_to_storage: safeWasmCall('save_room_messages_to_storage', ['roomId']),
     load_room_messages_from_storage: safeWasmCall('load_room_messages_from_storage', ['roomId']),
 
@@ -104,7 +104,7 @@ export function createSafeWasmProxies() {
     process_p2p_queue: safeWasmCall('process_p2p_queue', []),
     get_p2p_queue_status: safeWasmCall('get_p2p_queue_status', []),
 
-    record_performance_metric: safeWasmCall('record_performance_metric', ['metric', 'value'], { value: Number }),
+    record_performance_metric: safeWasmCall('record_performance_metric', ['name', 'value', 'unit', 'category'], { value: Number }),
     start_performance_monitoring: safeWasmCall('start_performance_monitoring', []),
     // Aliases for functions called in webrtc.js
     add_peer: safeWasmCall('add_known_peer', ['peerId']),
@@ -172,9 +172,14 @@ export function createSafeWasmProxies() {
 function safeWasmCall(funcName, paramNames = [], paramTransforms = {}) {
   return function(...args) {
     try {
-      // Handle case where no arguments are passed but they're expected
-      if (!args) {
+      // Handle case where arguments might be undefined or not properly spread
+      if (!arguments || arguments.length === 0) {
         args = [];
+      } else if (args === undefined || args === null) {
+        args = [];
+      } else if (!Array.isArray(args)) {
+        // Try to convert arguments to array
+        args = Array.from(arguments);
       }
 
       // Validate we have the right number of parameters
@@ -189,13 +194,26 @@ function safeWasmCall(funcName, paramNames = [], paramTransforms = {}) {
         const paramName = paramNames[index];
         const transform = paramTransforms[paramName];
 
+        // Handle undefined arguments explicitly
+        if (arg === undefined || arg === null) {
+          // For Number transforms, undefined should become 0, not NaN
+          if (transform === Number) {
+            logger.warn(`${funcName}: parameter '${paramName}' is undefined, using 0`);
+            return 0;
+          }
+          // For other transforms, pass through the undefined/null
+          logger.warn(`${funcName}: parameter '${paramName}' is undefined/null`);
+          return arg;
+        }
+
         if (transform) {
           if (transform === Boolean) {
             return Boolean(arg);
           } else if (transform === Number) {
             const num = Number(arg);
             if (isNaN(num)) {
-              throw new Error(`${funcName}: parameter '${paramName}' must be a number, got ${typeof arg}`);
+              logger.warn(`${funcName}: parameter '${paramName}' is NaN, using 0`);
+              return 0; // Use 0 instead of throwing error
             }
             return num;
           } else if (typeof transform === 'function') {
@@ -234,11 +252,12 @@ function safeWasmCall(funcName, paramNames = [], paramTransforms = {}) {
       return result;
 
     } catch (error) {
-      // Enhanced error handling with context
+      // Enhanced error handling with context - ensure args is defined
+      const safeArgs = Array.isArray(args) ? args : [];
       const contextInfo = {
         function: funcName,
         expectedParams: paramNames,
-        receivedArgs: args.map(arg => typeof arg),
+        receivedArgs: safeArgs.map(arg => arg === undefined ? 'undefined' : typeof arg),
         error: error.message
       };
 
