@@ -15,10 +15,13 @@ import { debugLog } from './debug-utils.js';
  */
 export function loadChatHistory(roomId) {
   try {
+    logger.debug(`loadChatHistory: Loading history for room ${roomId}`);
+
     // Always load from WASM storage first
     if (window.safeWasm && window.safeWasm.load_room_messages_from_storage) {
       try {
-        window.safeWasm.load_room_messages_from_storage(roomId);
+        const loadResult = window.safeWasm.load_room_messages_from_storage(roomId);
+        logger.debug(`loadChatHistory: Load from storage result: ${loadResult}`);
       } catch (wasmError) {
         console.warn('Could not load from WASM storage:', wasmError);
       }
@@ -27,13 +30,17 @@ export function loadChatHistory(roomId) {
     // Get messages from WASM (single source of truth)
     if (window.safeWasm && window.safeWasm.get_room_messages) {
       const messages = window.safeWasm.get_room_messages(roomId, 100);
+      logger.debug(`loadChatHistory: Got messages from WASM:`, messages);
       // Handle the returned value which could be an array or need parsing
       if (Array.isArray(messages)) {
+        logger.debug(`loadChatHistory: Returning ${messages.length} messages`);
         return messages;
       }
+      logger.debug(`loadChatHistory: Messages not an array, returning empty`);
       return [];
     }
 
+    logger.debug(`loadChatHistory: No WASM functions available, returning empty`);
     return [];
   } catch (error) {
     logger.error('Error loading chat history:', error);
@@ -75,20 +82,25 @@ export function addMessageToHistory(roomId, message) {
         // Format message for WASM EnhancedMessage type
         const enhancedMessage = {
           id: message.id || message.messageId,
-          sender_id: message.senderId || message.sender_id,
-          sender_name: message.senderName || message.sender || 'Anonymous',
-          message_type: 'Text', // Capitalize for Rust enum
+          sender_id: message.senderId || message.sender_id || 'unknown',
+          sender_name: message.senderName || message.sender || message.sender_name || 'Anonymous',
+          message_type: message.message_type || 'Text', // Use existing type or default to Text
           content: message.content || '',
           timestamp: message.timestamp || Date.now(),
           room_id: roomId,
-          status: 'Sent',
-          edited: false,
-          edit_timestamp: null,
-          original_content: null,
-          reply_to: null,
-          reactions: {}
+          status: message.status || 'Sent',
+          edited: message.edited || false,
+          edit_timestamp: message.edit_timestamp || null,
+          original_content: message.original_content || null,
+          reply_to: message.reply_to || null,
+          reactions: message.reactions || {},
+          mentions: message.mentions || [],
+          local_timestamp: message.local_timestamp || message.timestamp || Date.now(),
+          delivery_attempts: message.delivery_attempts || 0,
+          size_bytes: message.size_bytes || 0
         };
 
+        // Pass the object directly - WASM expects JsValue, not JSON string
         window.safeWasm.receive_message_from_peer(enhancedMessage);
         // Auto-save to storage
         saveChatHistory(roomId);
@@ -107,16 +119,81 @@ export function addMessageToHistory(roomId, message) {
  * @returns {Array} Array of messages
  */
 export function getChatHistory(roomId) {
-  // Always get from WASM (single source of truth)
+  // Try to get from WASM first
+  let wasmMessages = [];
   if (window.safeWasm && window.safeWasm.get_room_messages) {
     const messages = window.safeWasm.get_room_messages(roomId, 100);
-    // Handle the returned value which could be an array or need parsing
     if (Array.isArray(messages)) {
-      return messages;
+      wasmMessages = messages;
     }
-    return [];
   }
-  return [];
+
+  // Also get from localStorage using WASM-compatible key format
+  let localMessages = [];
+  const storageKey = `chatHistory_${roomId}`; // Match WASM storage key format
+
+  // Migration: Check for old user-specific keys and merge them
+  const currentUserId = localStorage.getItem('userId');
+  const oldUserSpecificKey = `room_messages_${roomId}_${currentUserId}`;
+  const oldGlobalKey = `room_messages_${roomId}`;
+
+  try {
+    // Try new WASM-compatible key first
+    let stored = localStorage.getItem(storageKey);
+
+    // If not found, try migrating from old keys
+    if (!stored) {
+      // Try user-specific key
+      stored = localStorage.getItem(oldUserSpecificKey);
+      if (stored) {
+        // Migrate to new key
+        localStorage.setItem(storageKey, stored);
+        localStorage.removeItem(oldUserSpecificKey);
+        logger.debug(`Migrated messages from ${oldUserSpecificKey} to ${storageKey}`);
+      } else {
+        // Try old global key
+        stored = localStorage.getItem(oldGlobalKey);
+        if (stored) {
+          localStorage.setItem(storageKey, stored);
+          localStorage.removeItem(oldGlobalKey);
+          logger.debug(`Migrated messages from ${oldGlobalKey} to ${storageKey}`);
+        }
+      }
+    }
+
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Handle both formats: direct array or RoomMessageState object
+      if (Array.isArray(parsed)) {
+        localMessages = parsed;
+      } else if (parsed && parsed.messages && Array.isArray(parsed.messages)) {
+        // WASM saves RoomMessageState object with messages array
+        localMessages = parsed.messages;
+      } else {
+        logger.warn('Unexpected stored message format:', parsed);
+        localMessages = [];
+      }
+    }
+  } catch (e) {
+    console.warn('Could not parse stored messages:', e);
+  }
+
+  // Merge messages, avoiding duplicates
+  const allMessages = [...wasmMessages];
+  const existingIds = new Set(wasmMessages.map(m => m.id));
+
+  if (Array.isArray(localMessages)) {
+    localMessages.forEach(msg => {
+      if (!existingIds.has(msg.id)) {
+        allMessages.push(msg);
+      }
+    });
+  }
+
+  // Sort by timestamp
+  allMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+  return allMessages;
 }
 
 /**
@@ -143,11 +220,13 @@ export function requestMessageSync(roomId) {
     if (window.safeWasm && window.safeWasm.create_sync_request) {
       const syncRequest = window.safeWasm.create_sync_request(roomId, lastSync, messageCount);
       if (syncRequest) {
+        // Add type field for P2P handling
+        syncRequest.type = 'sync-request';
         // Broadcast sync request to peers
         const p2pConnection = AppState.p2pConnection;
         if (p2pConnection) {
           p2pConnection.broadcast(syncRequest);
-          logger.debug('Sync request sent for room:', roomId);
+          logger.debug('Sync request sent for room:', roomId, syncRequest);
         }
       }
     }
@@ -163,15 +242,57 @@ export function requestMessageSync(roomId) {
  */
 export function handleSyncRequest(message, peerId) {
   try {
+    logger.info('📥 SYNC REQUEST received from peer:', peerId);
+    logger.debug('Sync request details:', message);
+
     // Always use WASM sync handler
     if (window.safeWasm && window.safeWasm.handle_sync_request) {
+      // Pass the message object directly - WASM expects JsValue
       const syncResponse = window.safeWasm.handle_sync_request(message);
-      if (syncResponse) {
+      logger.debug('WASM sync response:', syncResponse);
+
+      if (syncResponse && syncResponse !== null) {
+        // Add type field for P2P handling
+        syncResponse.type = 'sync-response';
+
+        // Get current room messages to include in response
+        const roomId = message.room_id || message.roomId;
+        const messages = getChatHistory(roomId);
+
+        // Include messages in the response if WASM didn't provide them
+        if (!syncResponse.messages && messages.length > 0) {
+          syncResponse.messages = messages;
+        }
+
         const p2pConnection = AppState.p2pConnection;
         if (p2pConnection) {
           p2pConnection.sendToPeer(peerId, syncResponse);
+          logger.info(`📤 SYNC RESPONSE sent to peer ${peerId} with ${syncResponse.messages?.length || 0} messages`);
+        } else {
+          logger.error('No P2P connection available to send sync response');
+        }
+      } else {
+        logger.warn('No sync response generated by WASM for request from:', peerId);
+
+        // Fallback: manually create sync response with messages
+        const roomId = message.room_id || message.roomId;
+        const messages = getChatHistory(roomId);
+        if (messages.length > 0) {
+          const fallbackResponse = {
+            type: 'sync-response',
+            messages: messages,
+            room_id: roomId,
+            timestamp: Date.now()
+          };
+          const p2pConnection = AppState.p2pConnection;
+          if (p2pConnection) {
+            p2pConnection.sendToPeer(peerId, fallbackResponse);
+            logger.info(`📤 FALLBACK SYNC RESPONSE sent to peer ${peerId} with ${messages.length} messages`);
+          }
         }
       }
+    } else {
+      logger.error('WASM handle_sync_request not available');
     }
   } catch (error) {
     logger.error('Error handling sync request:', error);
@@ -185,29 +306,81 @@ export function handleSyncRequest(message, peerId) {
  */
 export function handleSyncResponse(message, peerId) {
   try {
-    const { roomId, request_type, messages } = message;
+    logger.info(`📨 SYNC RESPONSE received from peer ${peerId}`);
+    const { room_id, roomId, request_type } = message;
 
-    // Check if it's a sync response with messages
-    if (request_type === 'SyncResponse' && messages && Array.isArray(messages)) {
-      logger.debug(`Received ${messages.length} messages from ${peerId} for sync`);
+    // Handle both room_id and roomId for compatibility
+    const targetRoomId = room_id || roomId;
 
-      // Add each message to WASM storage
-      messages.forEach(msg => {
-        addMessageToHistory(roomId, msg);
+    // Handle nested structure: request_type can be an object with SyncResponse property
+    let messages = null;
+    if (request_type && typeof request_type === 'object' && request_type.SyncResponse) {
+      messages = request_type.SyncResponse.messages;
+    } else if (request_type === 'SyncResponse' && message.messages) {
+      // Handle flat structure for compatibility
+      messages = message.messages;
+    } else if (message.messages) {
+      // Handle direct messages field (fallback response format)
+      messages = message.messages;
+    }
+
+    // Check if we have messages to process
+    if (messages && Array.isArray(messages) && messages.length > 0) {
+      logger.info(`Received ${messages.length} messages from ${peerId} for sync`);
+
+      // Get existing messages to check for duplicates
+      const existingMessages = getChatHistory(targetRoomId);
+      const existingIds = new Set(existingMessages.map(msg => msg.id));
+
+      logger.debug(`Existing messages in room: ${existingMessages.length}, IDs:`, Array.from(existingIds));
+      logger.debug(`Synced messages to process:`, messages.map(m => ({ id: m.id, content: m.content })));
+
+      // Filter out duplicates and collect new messages
+      const newMessages = messages.filter(msg => {
+        if (!existingIds.has(msg.id)) {
+          logger.debug(`New message to add: ${msg.id}`);
+          return true;
+        } else {
+          logger.debug(`Message ${msg.id} already exists, skipping`);
+          return false;
+        }
       });
 
-      // Save to storage
-      saveChatHistory(roomId);
-
-      // Refresh UI if this is the current room
-      const currentRoomId = getCurrentRoomId();
-      if (roomId === currentRoomId) {
-        import('./ui.js').then(({ displayChatHistory }) => {
-          displayChatHistory(getChatHistory(roomId));
+      // Only proceed if we have new messages to add
+      if (newMessages.length > 0) {
+        // Add each synced message to WASM so it's properly tracked
+        // Use addMessageToHistory which properly formats messages for WASM
+        newMessages.forEach(msg => {
+          try {
+            addMessageToHistory(targetRoomId, msg);
+            logger.debug(`Added synced message to WASM: ${msg.id}`);
+          } catch (e) {
+            logger.error(`Failed to add message ${msg.id} to WASM:`, e);
+          }
         });
       }
 
-      log(`Synced ${messages.length} messages from peer`);
+      // Save to storage and update UI if we added any new messages
+      if (newMessages.length > 0) {
+        saveChatHistory(targetRoomId);
+
+        // Refresh UI if this is the current room
+        const currentRoomId = getCurrentRoomId();
+        if (targetRoomId === currentRoomId) {
+          // Reload all messages in chronological order instead of appending
+          // This ensures synced messages appear in their correct time slots
+          const allMessages = getChatHistory(targetRoomId);
+          import('./ui.js').then(({ displayChatHistory }) => {
+            displayChatHistory(allMessages);
+          });
+        }
+
+        log(`Synced ${newMessages.length} new messages from peer`);
+      } else {
+        logger.debug('No new messages to sync (all duplicates)');
+      }
+    } else {
+      logger.debug('No messages in sync response');
     }
   } catch (error) {
     logger.error('Error handling sync response:', error);
@@ -225,9 +398,11 @@ export function retrieveMessages(roomId) {
   try {
     // Load from storage first
     const messages = loadChatHistory(roomId);
+    logger.debug(`retrieveMessages: Loaded ${messages.length} messages for room ${roomId}`, messages);
 
     // Request sync in background to get any missing messages
     setTimeout(() => {
+      logger.debug(`retrieveMessages: Requesting sync for room ${roomId}`);
       requestMessageSync(roomId);
     }, 1000);
 
@@ -385,6 +560,8 @@ export function sendMessage() {
       if (window.safeWasm && window.safeWasm.send_message_enhanced) {
         window.safeWasm.send_message_enhanced(roomId, message, messageId);
         debugLog(`✅ Stored in WASM enhanced system successfully`);
+        // Save to localStorage
+        saveChatHistory(roomId);
       } else {
         debugLog(`⚠️ WASM enhanced system not available, using fallback`);
         // Store in AppState as fallback
@@ -425,7 +602,7 @@ export function sendMessage() {
     // Record metric
     if (window.safeWasm && window.safeWasm.record_performance_metric) {
       try {
-        window.safeWasm.record_performance_metric('messages_sent', 1);
+        window.safeWasm.record_performance_metric('messages_sent', 1, 'count', 'network');
       } catch (metricError) {
         logger.debug('Could not record message metric:', metricError);
       }
@@ -499,10 +676,12 @@ export function displayReceivedMessage(messageObj) {
 
   displayMessage(messageObj.content, isMe, senderName, true, timestamp, messageObj);
 
-  // Add to message history
+  // Add to message history and save to storage
   const roomId = getCurrentRoomId();
   if (roomId) {
     addMessageToHistory(roomId, messageObj);
+    // Save to localStorage after adding message
+    saveChatHistory(roomId);
   }
 }
 
