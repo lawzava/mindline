@@ -1,0 +1,15 @@
+{
+  "name": "mindline-signaling-server",
+  "version": "1.0.0",
+  "description": "Simple WebRTC signaling server for Mindline",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.13.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
