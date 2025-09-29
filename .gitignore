@@ -5,3 +5,25 @@
 /pkg
 /.playwright-mcp
 .DS_Store
+
+# Test files and outputs
+test-*.js
+test-*.log
+test-output.log
+*.test.js
+/dev-tests
+
+# Environment and config
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
