@@ -363,6 +363,11 @@ export function displayChatHistory(messages) {
       chatArea.appendChild(welcomeMessage.cloneNode(true));
     }
   } else {
+    // Hide the original welcome message when we have messages
+    if (welcomeMessage && welcomeMessage.style.display !== 'none') {
+      welcomeMessage.style.display = 'none';
+    }
+
     // Display all messages with enhanced features
     messages.forEach(message => {
       // Handle both camelCase and snake_case field names from WASM

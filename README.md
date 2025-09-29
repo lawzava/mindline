@@ -223,25 +223,57 @@ Mindline embraces a neobrutalist design philosophy that prioritizes:
 - Encrypted message history
 - Theme preferences
 
-## 🤝 Contributing
+## 🗺 Roadmap
 
-We welcome contributions! Key areas for development:
+### Planned Features
 
-- **Mobile app** using React Native with same Rust core
-- **File sharing** with P2P file transfer
-- **Voice/video calls** integration with WebRTC
-- **Group management** with admin controls
-- **Message formatting** with rich text support
+#### Core Functionality
+- **Export/Import Chat History** - Backup and restore your conversations
+- **Cross-Device Sync** - Keep messages in sync across your devices (without servers!)
+- **Message Editing & Deletion** - Edit typos, remove sent messages
+- **File Sharing** - P2P file transfers with encryption
+- **Voice/Video Calls** - Real-time audio/video integration
+
+#### User Experience
+- **Message Reactions** - React to messages with emoji
+- **Rich Text Formatting** - Markdown support, code blocks, formatting
+- **User Profiles** - Custom avatars and display names
+- **Notification System** - Desktop/mobile notifications for new messages
+- **Internationalization (i18n)** - Multi-language support
+
+#### Advanced Features
+- **Native Mobile Apps** - iOS and Android apps with same Rust core
+- **Group Management** - Admin controls, moderation tools
+- **Message Search** - Search through chat history
+- **Custom Themes** - Create and share color schemes
+- **Browser Extension** - Quick access from toolbar
+
+#### Security Enhancements
+- **Forward Secrecy** - Automatic key rotation for better security
+- **Identity Verification** - Verify room participants with fingerprints
+- **Message Expiry** - Auto-delete messages after set time
+- **Password-Protected Rooms** - Additional layer of room security
+
+Want to contribute? See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines!
+
+## 📚 Documentation
+
+- **[Security Architecture](./SECURITY.md)** - How encryption and privacy work
+- **[Contributing Guide](./CONTRIBUTING.md)** - How to contribute to the project
+- **[Privacy Policy](./PRIVACY.md)** - What we collect (spoiler: nothing!)
+- **[Terms of Service](./TERMS.md)** - Usage terms and conditions
+- **[Changelog](./CHANGELOG.md)** - Version history and releases
 
 ## 📝 License
 
-MIT License - See LICENSE file for details
+MIT License - See [LICENSE](./LICENSE) file for details
 
 ## 🔗 Links
 
-- **Demo**: [Live Demo](https://your-demo-url.com)
-- **Documentation**: [Technical Docs](./docs)
-- **Issues**: [GitHub Issues](./issues)
+- **Source Code**: [GitHub Repository](https://github.com/yourusername/mindline)
+- **Issues**: [Report Bugs](https://github.com/yourusername/mindline/issues)
+- **Discussions**: [Community Forum](https://github.com/yourusername/mindline/discussions)
+- **Security**: [Report Vulnerabilities](./SECURITY.md#responsible-disclosure)
 
 ---
 

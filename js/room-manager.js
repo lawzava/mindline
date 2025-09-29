@@ -4,6 +4,7 @@
  */
 
 import logger from './logger.js';
+import USER_MESSAGES from './user-messages.js';
 import { IndexState, resetReconnectionState } from './app-state.js';
 import {
   CONSTANTS,
@@ -54,7 +55,7 @@ export async function createRoom() {
 
     // Validate the room ID format using WASM
     if (!isValidRoomId(roomId)) {
-      log(`Room ID must be at least 8 alphanumeric characters (can include dashes and underscores)`);
+      log(USER_MESSAGES.room.invalidFormat);
       return null;
     }
 
@@ -104,10 +105,11 @@ export async function createRoom() {
     // Scroll to bottom after room creation
     scrollChatToBottom('auto', 200);
 
-    log(`Created and joined room: ${roomId}`);
+    log(USER_MESSAGES.room.created(roomId));
     return roomId;
   } catch (error) {
-    log(`Error creating room: ${error.message}`);
+    logger.error('Error creating room:', error);
+    log(USER_MESSAGES.room.createFailed);
     updateConnectionStatus('failed');
     return null;
   }
@@ -122,14 +124,14 @@ export async function joinRoom(roomId) {
   logger.info('joinRoom called with roomId:', roomId);
 
   if (!roomId) {
-    log('Please enter a room ID to join');
+    log(USER_MESSAGES.room.enterRoomId);
     return null;
   }
 
   // Use WASM validation
   if (!window.safeWasm || !window.safeWasm.validate_room_id) {
     logger.error('WASM validation not available');
-    log('Room validation system not ready. Please reload the page.');
+    log(USER_MESSAGES.room.validationNotReady);
     return null;
   }
 
@@ -137,13 +139,13 @@ export async function joinRoom(roomId) {
     const isValid = window.safeWasm.validate_room_id(roomId);
     if (!isValid) {
       logger.warn('Room ID validation failed:', roomId);
-      log(`Room ID must be at least 8 alphanumeric characters (can include dashes and underscores)`);
+      log(USER_MESSAGES.room.invalidFormat);
       return null;
     }
     logger.info('Room ID validation passed:', roomId);
   } catch (error) {
     logger.error('Room ID validation error:', error);
-    log('Error validating room ID. Please try again.');
+    log(USER_MESSAGES.room.joinFailed);
     return null;
   }
 
@@ -194,10 +196,11 @@ export async function joinRoom(roomId) {
     // Scroll to bottom after joining room
     scrollChatToBottom('auto', 200);
 
-    log(`Joined room: ${roomId}`);
+    log(USER_MESSAGES.room.joined(roomId));
     return roomId;
   } catch (error) {
-    log(`Error joining room: ${error.message}`);
+    logger.error('Error joining room:', error);
+    log(USER_MESSAGES.room.joinFailed);
     updateConnectionStatus('failed');
     return null;
   }
@@ -209,7 +212,7 @@ export async function joinRoom(roomId) {
  */
 export async function joinRoomFromHistory(roomId) {
   if (!roomId) {
-    log('Invalid room ID');
+    log(USER_MESSAGES.room.invalidFormat);
     return;
   }
 
@@ -224,7 +227,7 @@ export async function joinRoomFromHistory(roomId) {
     await joinRoom(roomId);
   } catch (error) {
     logger.error('Error joining room from history:', error);
-    log(`Failed to join room: ${error.message}`);
+    log(USER_MESSAGES.room.joinFailed);
   }
 }
 
@@ -240,7 +243,7 @@ export async function attemptReconnect() {
   IndexState.isReconnecting = true;
   IndexState.reconnectAttempts++;
 
-  log(`Reconnection attempt ${IndexState.reconnectAttempts}/${IndexState.maxReconnectAttempts}...`);
+  log(USER_MESSAGES.connection.reconnecting(IndexState.reconnectAttempts, IndexState.maxReconnectAttempts));
 
   // Update status to show reconnecting
   const statusElement = document.getElementById('connectionStatus');
@@ -273,12 +276,12 @@ export async function attemptReconnect() {
     }
 
     updateConnectionStatus('connected');
-    log('Reconnected successfully');
+    log(USER_MESSAGES.connection.reconnected);
 
   } catch (error) {
     IndexState.isReconnecting = false;
     if (IndexState.reconnectAttempts >= IndexState.maxReconnectAttempts) {
-      log(`Reconnection failed after ${IndexState.maxReconnectAttempts} attempts`);
+      log(USER_MESSAGES.connection.reconnectFailed);
       updateConnectionStatus('failed');
       if (IndexState.reconnectInterval) {
         clearInterval(IndexState.reconnectInterval);

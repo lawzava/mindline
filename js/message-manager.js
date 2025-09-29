@@ -4,6 +4,7 @@
  */
 
 import logger from './logger.js';
+import USER_MESSAGES from './user-messages.js';
 import { AppState, getCurrentUserId, getCurrentRoomId, generateUUID } from './state.js';
 import { log, clearMessageInput, displayMessage } from './ui.js';
 import { debugLog } from './debug-utils.js';
@@ -434,7 +435,7 @@ export function sendMessage() {
 
   if (!window.safeWasm || !window.safeWasm.validate_message) {
     logger.error('WASM message validation not available');
-    log('Message validation system not ready. Please reload the page.');
+    log(USER_MESSAGES.message.validationNotReady);
     return;
   }
 
@@ -451,7 +452,7 @@ export function sendMessage() {
     message = trimmedMessage.substring(0, 2000);
   } catch (error) {
     logger.error('Message validation error:', error);
-    log('Error validating message. Please try again.');
+    log(USER_MESSAGES.message.validationFailed);
     return;
   }
 
@@ -462,7 +463,7 @@ export function sendMessage() {
   debugLog(`🏠 Current room ID: ${roomId}`);
   if (!roomId) {
     debugLog(`❌ No room ID available`);
-    log('Please create or join a room first');
+    log(USER_MESSAGES.message.noRoom);
     return;
   }
 
@@ -472,7 +473,7 @@ export function sendMessage() {
     debugLog(`👤 Current user ID: ${userId}`);
     if (!userId || userId === 'Not initialized') {
       debugLog(`❌ Cannot send message: User not initialized. userId=${userId}`);
-      log('Please wait for user initialization before sending messages');
+      log(USER_MESSAGES.message.userNotReady);
       return;
     }
 
