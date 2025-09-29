@@ -18,10 +18,134 @@ const rooms = new Map();
 let totalConnections = 0;
 let totalRooms = 0;
 
-wss.on('connection', (ws) => {
+// Rate limiting configuration
+const RATE_LIMITS = {
+  messagesPerSecond: 10,     // Max 10 messages per second per client
+  connectionAttempts: 5,      // Max 5 connection attempts per IP per minute
+  roomJoinsPerMinute: 10     // Max 10 room joins per client per minute
+};
+
+// Rate limiting storage
+const rateLimitStore = {
+  messages: new Map(),        // clientId -> { count, resetTime }
+  connections: new Map(),     // IP -> { count, resetTime }
+  roomJoins: new Map()       // clientId -> { count, resetTime }
+};
+
+// Clean up rate limit storage periodically
+setInterval(() => {
+  const now = Date.now();
+
+  // Clean message rate limits
+  for (const [key, data] of rateLimitStore.messages.entries()) {
+    if (now > data.resetTime) {
+      rateLimitStore.messages.delete(key);
+    }
+  }
+
+  // Clean connection rate limits
+  for (const [key, data] of rateLimitStore.connections.entries()) {
+    if (now > data.resetTime) {
+      rateLimitStore.connections.delete(key);
+    }
+  }
+
+  // Clean room join rate limits
+  for (const [key, data] of rateLimitStore.roomJoins.entries()) {
+    if (now > data.resetTime) {
+      rateLimitStore.roomJoins.delete(key);
+    }
+  }
+}, 60000); // Clean every minute
+
+/**
+ * Check if client has exceeded message rate limit
+ */
+function checkMessageRateLimit(clientId) {
+  const now = Date.now();
+  const limit = rateLimitStore.messages.get(clientId);
+
+  if (!limit || now > limit.resetTime) {
+    // Reset or create new limit
+    rateLimitStore.messages.set(clientId, {
+      count: 1,
+      resetTime: now + 1000 // 1 second window
+    });
+    return true;
+  }
+
+  if (limit.count >= RATE_LIMITS.messagesPerSecond) {
+    return false; // Rate limit exceeded
+  }
+
+  limit.count++;
+  return true;
+}
+
+/**
+ * Check if IP has exceeded connection rate limit
+ */
+function checkConnectionRateLimit(ip) {
+  const now = Date.now();
+  const limit = rateLimitStore.connections.get(ip);
+
+  if (!limit || now > limit.resetTime) {
+    // Reset or create new limit
+    rateLimitStore.connections.set(ip, {
+      count: 1,
+      resetTime: now + 60000 // 1 minute window
+    });
+    return true;
+  }
+
+  if (limit.count >= RATE_LIMITS.connectionAttempts) {
+    return false; // Rate limit exceeded
+  }
+
+  limit.count++;
+  return true;
+}
+
+/**
+ * Check if client has exceeded room join rate limit
+ */
+function checkRoomJoinRateLimit(clientId) {
+  const now = Date.now();
+  const limit = rateLimitStore.roomJoins.get(clientId);
+
+  if (!limit || now > limit.resetTime) {
+    // Reset or create new limit
+    rateLimitStore.roomJoins.set(clientId, {
+      count: 1,
+      resetTime: now + 60000 // 1 minute window
+    });
+    return true;
+  }
+
+  if (limit.count >= RATE_LIMITS.roomJoinsPerMinute) {
+    return false; // Rate limit exceeded
+  }
+
+  limit.count++;
+  return true;
+}
+
+wss.on('connection', (ws, req) => {
   let currentRoom = null;
   let clientId = null;
   let isAlive = true;
+
+  // Get client IP for rate limiting (check Cloudflare headers first)
+  const clientIP = req.headers['cf-connecting-ip'] ||
+                   req.headers['x-forwarded-for']?.split(',')[0] ||
+                   req.socket.remoteAddress;
+
+  // Check connection rate limit
+  if (!checkConnectionRateLimit(clientIP)) {
+    console.log(`⚠️ Connection rate limit exceeded for IP: ${clientIP}`);
+    ws.close(1008, 'Rate limit exceeded');
+    return;
+  }
 
   // Set up keepalive mechanism
   ws.isAlive = true;
@@ -33,8 +157,27 @@ wss.on('connection', (ws) => {
     try {
       const data = JSON.parse(message);
 
+      // Check message rate limit (after we have clientId)
+      if (clientId && !checkMessageRateLimit(clientId)) {
+        console.log(`⚠️ Message rate limit exceeded for client: ${clientId}`);
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Rate limit exceeded. Please slow down.'
+        }));
+        return;
+      }
+
       switch (data.type) {
         case 'join':
+          // Check room join rate limit
+          if (data.clientId && !checkRoomJoinRateLimit(data.clientId)) {
+            console.log(`⚠️ Room join rate limit exceeded for client: ${data.clientId}`);
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: 'Too many room join attempts. Please wait.'
+            }));
+            return;
+          }
           // Leave current room if any
           if (currentRoom && rooms.has(currentRoom)) {
             const room = rooms.get(currentRoom);
