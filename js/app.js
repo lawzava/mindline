@@ -145,15 +145,25 @@ async function initializeApp() {
         log(`Failed to auto-join room from URL: ${error.message}`);
       }
     } else {
-      console.log('No room ID found in URL');
+      logger.debug('No room ID found in URL');
     }
 
     // Update connection status based on restored room state
     roomId = getCurrentRoomId();
     if (roomId) {
-      // A room was restored, but we need to verify P2P connection
+      // A room was restored, load and display its chat history
+      try {
+        const messages = loadChatHistory(roomId);
+        displayChatHistory(messages);
+        updateRoomDisplay(roomId);
+        logger.info(`Restored ${messages.length} messages for room ${roomId}`);
+      } catch (error) {
+        logger.error('Failed to load chat history on init:', error);
+      }
+
+      // Update connection status - we need to verify P2P connection
       const p2pConnection = getP2PConnection();
-      updateConnectionStatus(p2pConnection ? 'connected' : 'connecting');
+      updateConnectionStatus(p2pConnection ? 'connected' : 'local');
     } else {
       updateConnectionStatus('disconnected');
     }
