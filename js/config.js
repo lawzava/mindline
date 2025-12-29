@@ -60,6 +60,27 @@ function getUseSSL() {
   return window.location.protocol === 'https:';
 }
 
+function getTurnServers() {
+  // Check URL parameter (useful for testing)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlTurnServers = urlParams.get('turn_servers');
+  if (urlTurnServers) {
+    try {
+      return JSON.parse(urlTurnServers);
+    } catch (e) {
+      console.warn('Invalid turn_servers URL param');
+    }
+  }
+
+  // Check global configuration (from env-config.js)
+  if (window.MINDLINE_ENV && window.MINDLINE_ENV.TURN_SERVERS) {
+    return window.MINDLINE_ENV.TURN_SERVERS;
+  }
+
+  // No TURN servers configured - STUN only
+  return null;
+}
+
 // Detect environment
 const isProduction = window.location.hostname !== 'localhost' &&
                      window.location.hostname !== '127.0.0.1' &&
@@ -70,7 +91,8 @@ window.MINDLINE_CONFIG = {
   SIGNALING_SERVER: getSignalingServer(),
   USE_SSL: getUseSSL(),
   WEBSOCKET_PATH: '/ws',
-  IS_PRODUCTION: isProduction
+  IS_PRODUCTION: isProduction,
+  TURN_SERVERS: getTurnServers()
 };
 
 // Only log config in development

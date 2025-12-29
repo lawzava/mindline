@@ -29,20 +29,35 @@ export class P2PConnection {
     this.meshCheckInterval = null;
     this.allKnownPeers = new Set(); // Track all peers we should be connected to
 
-    // ICE servers configuration - more robust for mobile devices
-    this.iceConfig = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' }
-      ],
-      iceCandidatePoolSize: 10, // Better for mobile connections
-      // Critical settings for connection stability
+    // Build ICE servers from configuration
+    this.iceConfig = this.buildIceConfig();
+  }
+
+  /**
+   * Build ICE configuration with STUN and optional TURN servers
+   */
+  buildIceConfig() {
+    // Start with STUN servers
+    const iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ];
+
+    // Add TURN servers if configured (required for NAT traversal behind firewalls)
+    const config = window.MINDLINE_CONFIG || {};
+    if (config.TURN_SERVERS && Array.isArray(config.TURN_SERVERS)) {
+      iceServers.push(...config.TURN_SERVERS);
+      logger.info('P2P: TURN servers configured:', config.TURN_SERVERS.length);
+    } else {
+      logger.warn('P2P: No TURN servers configured - connections may fail behind NAT/firewalls');
+    }
+
+    return {
+      iceServers,
+      iceCandidatePoolSize: 10,
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require',
       iceTransportPolicy: 'all',
-      // Restart ICE on connection failures
       iceRestart: true
     };
   }
@@ -353,35 +368,6 @@ export class P2PConnection {
       logger.info(`Data channel opened with ${peerId}`);
       this.dataChannels.set(peerId, dataChannel);
 
-      // Register peer with Rust P2P coordination
-      if (window.safeWasm) {
-        try {
-          logger.debug(`Registering peer ${peerId} with Rust P2P manager`);
-
-          // First add to known peers
-          if (window.safeWasm.add_known_peer) {
-            window.safeWasm.add_known_peer(peerId);
-          }
-
-          // Add to connected peers in state API
-          if (window.safeWasm.add_connected_peer) {
-            window.safeWasm.add_connected_peer(peerId);
-          }
-
-          // Then update connection state to create peer in peers HashMap
-          if (window.safeWasm.update_peer_connection_state) {
-            window.safeWasm.update_peer_connection_state(peerId, 'connected');
-          }
-
-          // Set default quality metrics
-          if (window.safeWasm.update_peer_latency) {
-            window.safeWasm.update_peer_latency(peerId, 50); // 50ms latency
-          }
-        } catch (e) {
-          logger.error(`Failed to register peer ${peerId} with Rust:`, e);
-        }
-      }
-
       if (this.onPeerConnectedCallback) {
         this.onPeerConnectedCallback(peerId);
       }
@@ -396,8 +382,6 @@ export class P2PConnection {
         } catch (error) {
           logger.error('Error parsing message:', error);
         }
-      } else {
-        logger.error(`No onMessageCallback registered - dropping message from ${peerId}`);
       }
     };
 
@@ -406,12 +390,9 @@ export class P2PConnection {
 
       // Don't immediately remove peer for "User-Initiated Abort" errors
       if (error.error?.name === 'OperationError' && error.error?.message?.includes('User-Initiated Abort')) {
-        logger.debug(`Ignoring User-Initiated Abort error for ${peerId}`);
         return;
       }
 
-      // Only handle connection failure for serious errors
-      logger.warn(`Serious data channel error, handling connection failure for ${peerId}`);
       this.handleConnectionFailure(peerId);
     };
 
@@ -423,7 +404,6 @@ export class P2PConnection {
       }
     };
 
-    // Set binary type for better compatibility
     dataChannel.binaryType = 'arraybuffer';
   }
 
@@ -586,118 +566,27 @@ export class P2PConnection {
   }
 
   /**
-   * Send message to all connected peers with delivery confirmation
+   * Send message to all connected peers
    */
   broadcast(message) {
     const messageStr = JSON.stringify(message);
-    const messageSize = new Blob([messageStr]).size;
-    let deliveredCount = 0;
-    let attemptedCount = 0;
-    let queuedCount = 0;
+    const channels = Array.from(this.dataChannels.entries());
+    let successCount = 0;
 
-    // Get optimal peers for broadcast from Rust if available
-    let targetPeers = [];
-    if (window.safeWasm && window.safeWasm.get_best_peers_for_broadcast) {
-      try {
-        const bestPeers = window.safeWasm.get_best_peers_for_broadcast(10);
-        if (bestPeers && bestPeers.length > 0) {
-          targetPeers = bestPeers;
-          logger.debug(`Broadcasting to ${targetPeers.length} optimal peers`);
-        }
-      } catch (e) {
-        logger.warn('Failed to get optimal peers from Rust:', e);
-      }
-    }
-
-    // Fallback to all peers if Rust optimization not available
-    if (targetPeers.length === 0) {
-      targetPeers = Array.from(this.dataChannels.keys());
-      logger.debug(`Broadcasting message type '${message.type}' to ${targetPeers.length} peers`);
-    }
-
-    for (const peerId of targetPeers) {
-      const channel = this.dataChannels.get(peerId);
-      if (!channel) continue;
-
-      attemptedCount++;
-
+    for (const [peerId, channel] of channels) {
       if (channel.readyState === 'open') {
-        // Check if we should send to this peer based on message priority
-        const priority = message.priority || 5; // Default medium priority
-        let shouldSend = true;
-
-        if (window.safeWasm && window.safeWasm.should_send_to_peer) {
-          try {
-            shouldSend = window.safeWasm.should_send_to_peer(peerId, priority);
-          } catch (e) {
-            logger.warn(`Rust P2P check failed for ${peerId}:`, e);
-            shouldSend = true; // Default to sending if check fails
-          }
-        }
-
-        if (shouldSend) {
-          try {
-            channel.send(messageStr);
-            deliveredCount++;
-
-            // Record successful send in Rust
-            if (window.safeWasm && window.safeWasm.record_peer_message_sent) {
-              try {
-                window.safeWasm.record_peer_message_sent(peerId, messageSize);
-              } catch (e) {
-                // Non-critical, continue
-              }
-            }
-          } catch (error) {
-            logger.error(`Error sending to ${peerId}:`, error);
-            // Try to reconnect if send fails
-            this.handleConnectionFailure(peerId);
-
-            // Report failure to Rust
-            if (window.safeWasm && window.safeWasm.handle_connection_failure) {
-              try {
-                window.safeWasm.handle_connection_failure(peerId);
-              } catch (e) {
-                // Non-critical
-              }
-            }
-          }
-        }
-      } else {
-        logger.debug(`Channel to ${peerId} not open: ${channel.readyState}`);
-
-        // Queue message for later delivery
-        if (window.safeWasm && window.safeWasm.queue_p2p_message) {
-          try {
-            const messageType = message.type || 'unknown';
-            const priority = message.priority || 5;
-            const messageId = window.safeWasm.queue_p2p_message(peerId, messageStr, messageType, priority);
-            if (messageId) {
-              queuedCount++;
-            }
-          } catch (e) {
-            logger.warn(`Failed to queue message for ${peerId}:`, e);
-          }
-        }
-
-        // Try to re-establish connection if channel is closed
-        if (channel.readyState === 'closed') {
-          logger.debug(`Attempting to re-establish connection to ${peerId}`);
-          this.createPeerConnection(peerId, true).catch(err => {
-            logger.error(`Failed to re-establish connection to ${peerId}:`, err);
-          });
+        try {
+          channel.send(messageStr);
+          successCount++;
+        } catch (error) {
+          logger.warn(`Failed to send to ${peerId}:`, error);
+          this.handleConnectionFailure(peerId);
         }
       }
     }
 
-    logger.debug(`Broadcast result: ${deliveredCount}/${attemptedCount} delivered, ${queuedCount} queued`);
-
-    // If delivery rate is too low, there might be connection issues
-    if (attemptedCount > 0 && deliveredCount / attemptedCount < 0.5) {
-      logger.warn(`Low delivery rate: ${deliveredCount}/${attemptedCount} - possible connection issues`);
-    }
-
-    return deliveredCount;
+    logger.debug(`Broadcast: ${successCount}/${channels.length} delivered`);
+    return successCount;
   }
 
   /**
@@ -744,24 +633,7 @@ export class P2PConnection {
       this.peers.delete(peerId);
     }
 
-    // Clean up any pending ICE candidates
     this.pendingCandidates.delete(peerId);
-
-    // Remove from Rust P2P manager
-    if (window.safeWasm) {
-      try {
-        if (window.safeWasm.remove_peer_from_network) {
-          window.safeWasm.remove_peer_from_network(peerId);
-        }
-        // Remove from connected peers in state API
-        if (window.safeWasm.remove_connected_peer) {
-          window.safeWasm.remove_connected_peer(peerId);
-        }
-        logger.debug(`Removed peer ${peerId} from Rust P2P manager`);
-      } catch (e) {
-        logger.error(`Failed to remove peer ${peerId} from Rust:`, e);
-      }
-    }
 
     if (this.onPeerDisconnectedCallback) {
       this.onPeerDisconnectedCallback(peerId);
@@ -854,149 +726,43 @@ export class P2PConnection {
   }
 
   /**
-   * Execute connection plan from Rust P2P manager
-   */
-  async executeConnectionPlan(plan) {
-    if (!plan || !Array.isArray(plan)) {
-      logger.warn('Invalid connection plan:', plan);
-      return;
-    }
-
-    for (const decision of plan) {
-      if (decision && decision.should_connect) {
-        const delay = decision.delay_ms || 500;
-        logger.debug(`Scheduled connection to ${decision.peer_id || 'unknown'} (priority: ${decision.priority}, delay: ${delay}ms)`);
-
-        setTimeout(async () => {
-          try {
-            const peerId = decision.peer_id || decision.peerId; // Handle both naming conventions
-            if (peerId) {
-              await this.createPeerConnection(peerId, true);
-            }
-          } catch (error) {
-            logger.error(`Failed to execute connection plan for peer:`, error);
-            if (window.safeWasm && window.safeWasm.handle_connection_failure && decision.peer_id) {
-              window.safeWasm.handle_connection_failure(decision.peer_id);
-            }
-          }
-        }, delay);
-      }
-    }
-  }
-
-  /**
    * Start periodic mesh monitoring
    */
   startMeshMonitoring() {
-    // Clear any existing interval
     if (this.meshCheckInterval) {
       clearInterval(this.meshCheckInterval);
     }
 
-    // Check mesh every 10 seconds
     this.meshCheckInterval = setInterval(() => {
-      // Use Rust mesh repair if available
-      if (window.safeWasm && window.safeWasm.needs_mesh_repair) {
-        try {
-          if (window.safeWasm.needs_mesh_repair()) {
-            logger.debug('Mesh repair needed, getting repair plan');
-            const repairPlan = window.safeWasm.get_mesh_repair_plan();
-            this.executeConnectionPlan(repairPlan);
-          }
-
-          // Clean up stale peers
-          const removedCount = window.safeWasm.cleanup_stale_peers(5); // 5 minute timeout
-          if (removedCount > 0) {
-            logger.info(`Cleaned up ${removedCount} stale peers`);
-          }
-
-          // Log network stats
-          const stats = window.safeWasm.get_p2p_network_stats();
-          if (stats) {
-            logger.debug('Network stats:', stats);
-          }
-        } catch (error) {
-          logger.warn('Failed to use Rust mesh monitoring:', error);
-          // Fallback to JS mesh checking
-          const expectedPeers = Array.from(this.allKnownPeers);
-          if (expectedPeers.length > 0) {
-            logger.debug('JS Fallback: Periodic mesh check');
-            this.ensureFullMesh(expectedPeers);
-          }
-        }
-      } else {
-        // Original JS mesh checking
-        const expectedPeers = Array.from(this.allKnownPeers);
-        if (expectedPeers.length > 0) {
-          logger.debug('Periodic mesh check');
-          this.ensureFullMesh(expectedPeers);
+      const knownPeers = Array.from(this.allKnownPeers);
+      for (const peerId of knownPeers) {
+        if (peerId !== this.clientId && !this.dataChannels.has(peerId)) {
+          this.createPeerConnection(peerId, true);
         }
       }
     }, 10000);
   }
 
   /**
-   * Ensure full mesh connectivity by checking for missing connections
+   * Ensure full mesh connectivity
    */
-  async ensureFullMesh(expectedPeers) {
-    logger.debug('Ensuring full mesh connectivity');
-
+  ensureFullMesh(expectedPeers) {
     const connectedPeers = this.getConnectedPeers();
-    const allExpectedPeers = [...expectedPeers];
-
-    logger.debug('Expected peers:', allExpectedPeers.length);
-    logger.debug('Currently connected:', connectedPeers.length);
-
-    // Find missing connections
-    const missingConnections = allExpectedPeers.filter(peerId =>
+    const missing = expectedPeers.filter(peerId =>
       !connectedPeers.includes(peerId) && peerId !== this.clientId
     );
 
-    if (missingConnections.length > 0) {
-      logger.info('Found missing connections:', missingConnections.length);
-
-      for (const peerId of missingConnections) {
-        try {
-          logger.debug(`Attempting to establish missing connection to ${peerId}`);
-          await this.createPeerConnection(peerId, true);
-        } catch (error) {
-          logger.error(`Failed to establish missing connection to ${peerId}:`, error);
-        }
-      }
-    } else {
-      logger.debug('Full mesh connectivity confirmed');
+    for (const peerId of missing) {
+      this.createPeerConnection(peerId, true);
     }
-
-    // Log final connection status
-    setTimeout(() => {
-      const finalConnected = this.getConnectedPeers();
-      logger.info(`Mesh status: ${finalConnected.length}/${allExpectedPeers.length} peers connected`);
-    }, 3000);
   }
 
   /**
    * Get list of connected peer IDs
    */
   getConnectedPeers() {
-    // First try to get from WASM state
-    if (window.safeWasm && window.safeWasm.get_connected_peers) {
-      try {
-        const peers = window.safeWasm.get_connected_peers();
-        if (peers && Array.isArray(peers)) {
-          return peers;
-        }
-      } catch (error) {
-        logger.error('Failed to get connected peers from WASM:', error);
-      }
-    }
-
-    // Fallback to checking local data channels
-    const connected = [];
-    this.dataChannels.forEach((channel, peerId) => {
-      if (channel.readyState === 'open') {
-        connected.push(peerId);
-      }
-    });
-    return connected;
+    return Array.from(this.dataChannels.entries())
+      .filter(([_, channel]) => channel.readyState === 'open')
+      .map(([peerId]) => peerId);
   }
 }

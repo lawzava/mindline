@@ -15,13 +15,28 @@ export const AppState = {
   messageHistory: new Map()  // Kept for compatibility
 };
 
+// Extended application state (merged from app-state.js)
+export const IndexState = {
+  wasmModule: null,
+  typingTimeout: null,
+  initialized: false,
+  reconnectAttempts: 0,
+  maxReconnectAttempts: 5,
+  reconnectInterval: null,
+  isReconnecting: false,
+  draftTimeouts: new Map()
+};
+
 // Application constants
 export const CONSTANTS = {
-  // Validation constants now handled by WASM
-  // MIN_ROOM_ID_LENGTH, MAX_MESSAGE_LENGTH, MAX_USERNAME_LENGTH moved to Rust
   RECONNECT_DELAY: 2000,
   MAX_RECONNECT_ATTEMPTS: 5,
   MESSAGE_SYNC_TIMEOUT: 5000
+};
+
+// Constants for app initialization (merged from app-state.js)
+export const INDEX_CONSTANTS = {
+  TIMEOUT_DRAFT_CLEAR: 3000
 };
 
 // Helper functions for state management
@@ -228,4 +243,27 @@ export function generateUUID() {
     return window.safeWasm.generate_uuid();
   }
   throw new Error('WASM UUID generation not available');
+}
+
+// App initialization functions (merged from app-state.js)
+export function initializeAppState() {
+  IndexState.initialized = false;
+  IndexState.reconnectAttempts = 0;
+  IndexState.isReconnecting = false;
+  IndexState.draftTimeouts.clear();
+  logger.info('Application state initialized');
+}
+
+export function resetReconnectionState() {
+  IndexState.reconnectAttempts = 0;
+  IndexState.isReconnecting = false;
+  if (IndexState.reconnectInterval) {
+    clearInterval(IndexState.reconnectInterval);
+    IndexState.reconnectInterval = null;
+  }
+}
+
+export function setInitialized(status) {
+  IndexState.initialized = status;
+  logger.debug('App initialization status:', status);
 }

@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build-wasm": "wasm-pack build --target web",
-    "build": "npm run build-wasm && webpack",
-    "build:production": "npm run build-wasm && webpack --mode production",
+    "build": "npm run build-wasm && webpack --env development=true",
+    "build:production": "npm run build-wasm && webpack --env production=true",
     "build:cloudflare": "./cloud_build.sh",
     "start": "webpack serve",
     "start-local": "webpack serve --port 8088",
