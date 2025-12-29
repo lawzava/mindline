@@ -18,7 +18,7 @@ pub mod advanced_api;
 // External modules (Phase 2-6)
 mod sanitizer;
 mod messages;
-mod p2p;
+// mod p2p; // P2P coordination moved to JavaScript
 mod logger;
 mod crypto;
 mod storage;
