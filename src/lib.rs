@@ -2,37 +2,36 @@
 // Version 1.0.1 - Memory access fix applied - Refactored into modules
 
 // Core modules
-pub mod types;
-pub mod state;
 pub mod core;
+pub mod state;
+pub mod types;
 
 // API modules
+pub mod advanced_api;
+pub mod logging_api;
+pub mod message_api;
 pub mod state_api;
 pub mod utils;
 pub mod validation_api;
-pub mod message_api;
-pub mod p2p_api;
-pub mod logging_api;
-pub mod advanced_api;
 
-// External modules (Phase 2-6)
-mod sanitizer;
-mod messages;
-// mod p2p; // P2P coordination moved to JavaScript
-mod logger;
+// Note: p2p_api.rs removed - all P2P coordination now in JavaScript
+
+// Internal modules
 mod crypto;
-mod storage;
+mod logger;
+mod messages;
 mod performance;
+mod sanitizer;
+mod storage;
 
 // Re-export all public functions from modules for backward compatibility
+pub use advanced_api::*;
 pub use core::*;
+pub use logging_api::*;
+pub use message_api::*;
 pub use state_api::*;
 pub use utils::*;
 pub use validation_api::*;
-pub use message_api::*;
-pub use p2p_api::*;
-pub use logging_api::*;
-pub use advanced_api::*;
 
 // Re-export the console_log macro
 pub use core::log;

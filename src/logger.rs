@@ -32,15 +32,14 @@ impl LogLevel {
             LogLevel::Error => "ERROR",
         }
     }
-
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LogComponent {
     Core,
     WebRTC,
-    WASM,
-    UI,
+    Wasm,
+    Ui,
     P2P,
     State,
     Messages,
@@ -55,8 +54,8 @@ impl LogComponent {
         match component.to_lowercase().as_str() {
             "core" => LogComponent::Core,
             "webrtc" => LogComponent::WebRTC,
-            "wasm" => LogComponent::WASM,
-            "ui" => LogComponent::UI,
+            "wasm" => LogComponent::Wasm,
+            "ui" => LogComponent::Ui,
             "p2p" => LogComponent::P2P,
             "state" => LogComponent::State,
             "messages" => LogComponent::Messages,
@@ -71,8 +70,8 @@ impl LogComponent {
         match self {
             LogComponent::Core => "CORE".to_string(),
             LogComponent::WebRTC => "WebRTC".to_string(),
-            LogComponent::WASM => "WASM".to_string(),
-            LogComponent::UI => "UI".to_string(),
+            LogComponent::Wasm => "WASM".to_string(),
+            LogComponent::Ui => "UI".to_string(),
             LogComponent::P2P => "P2P".to_string(),
             LogComponent::State => "STATE".to_string(),
             LogComponent::Messages => "MSGS".to_string(),
@@ -82,7 +81,6 @@ impl LogComponent {
             LogComponent::Custom(name) => name.to_uppercase(),
         }
     }
-
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -135,14 +133,15 @@ impl LogEntry {
         self
     }
 
-
     pub fn format_for_console(&self) -> String {
         let timestamp = format_timestamp(self.timestamp);
         let level_str = self.level.to_str();
         let component_str = self.component.to_str();
 
-        let mut formatted = format!("[{}] [{}] [{}] {}",
-            timestamp, level_str, component_str, self.message);
+        let mut formatted = format!(
+            "[{}] [{}] [{}] {}",
+            timestamp, level_str, component_str, self.message
+        );
 
         if let Some(ref data) = self.data {
             formatted.push_str(&format!(" | Data: {}", data));
@@ -155,10 +154,13 @@ impl LogEntry {
         formatted
     }
 
-
     pub fn get_search_text(&self) -> String {
-        let mut search_text = format!("{} {} {}",
-            self.level.to_str(), self.component.to_str(), self.message);
+        let mut search_text = format!(
+            "{} {} {}",
+            self.level.to_str(),
+            self.component.to_str(),
+            self.message
+        );
 
         if let Some(ref data) = self.data {
             search_text.push_str(&format!(" {}", data));
@@ -187,6 +189,7 @@ pub struct LogFilter {
     pub room_id: Option<String>,
 }
 
+#[allow(dead_code)]
 impl LogFilter {
     pub fn new() -> Self {
         Self {
@@ -279,6 +282,7 @@ impl Default for LoggerConfig {
 pub struct Logger {
     pub config: LoggerConfig,
     log_buffer: VecDeque<LogEntry>,
+    #[allow(dead_code)]
     performance_timers: HashMap<String, u64>,
     group_stack: Vec<String>,
     current_context: LogContext,
@@ -291,6 +295,7 @@ pub struct LogContext {
     pub component: Option<LogComponent>,
 }
 
+#[allow(dead_code)]
 impl Logger {
     pub fn new(config: LoggerConfig) -> Self {
         Self {
@@ -310,9 +315,23 @@ impl Logger {
         self.log_with_data(level, component, message, None);
     }
 
-    pub fn log_with_data(&mut self, level: LogLevel, component: LogComponent, message: &str, data: Option<&str>) {
-        let mut entry = LogEntry::new(level, component, message.to_string(), self.config.session_id.clone())
-            .with_context(self.current_context.user_id.clone(), self.current_context.room_id.clone());
+    pub fn log_with_data(
+        &mut self,
+        level: LogLevel,
+        component: LogComponent,
+        message: &str,
+        data: Option<&str>,
+    ) {
+        let mut entry = LogEntry::new(
+            level,
+            component,
+            message.to_string(),
+            self.config.session_id.clone(),
+        )
+        .with_context(
+            self.current_context.user_id.clone(),
+            self.current_context.room_id.clone(),
+        );
 
         if let Some(data) = data {
             entry = entry.with_data(data);
@@ -362,7 +381,10 @@ impl Logger {
 
     fn output_to_console(&self, entry: &LogEntry) {
         // Only show debug logs in development or when explicitly enabled
-        if entry.level == LogLevel::Debug && !self.config.is_development && !self.config.debug_enabled {
+        if entry.level == LogLevel::Debug
+            && !self.config.is_development
+            && !self.config.debug_enabled
+        {
             return;
         }
 
@@ -379,8 +401,6 @@ impl Logger {
         }
     }
 
-
-
     pub fn group(&mut self, label: &str) {
         self.group_stack.push(label.to_string());
 
@@ -390,10 +410,8 @@ impl Logger {
     }
 
     pub fn group_end(&mut self) {
-        if self.group_stack.pop().is_some() {
-            if self.config.is_development {
-                console::group_end();
-            }
+        if self.group_stack.pop().is_some() && self.config.is_development {
+            console::group_end();
         }
     }
 
@@ -405,7 +423,8 @@ impl Logger {
 
     pub fn get_logs(&self, filter: Option<LogFilter>) -> Vec<LogEntry> {
         if let Some(filter) = filter {
-            self.log_buffer.iter()
+            self.log_buffer
+                .iter()
                 .filter(|entry| filter.matches(entry))
                 .cloned()
                 .collect()
@@ -421,17 +440,16 @@ impl Logger {
 
     pub fn export_logs(&self, filter: Option<LogFilter>) -> String {
         let logs = self.get_logs(filter);
-        serde_json::to_string_pretty(&logs).unwrap_or_else(|_| "Failed to serialize logs".to_string())
+        serde_json::to_string_pretty(&logs)
+            .unwrap_or_else(|_| "Failed to serialize logs".to_string())
     }
 
     pub fn export_recent_logs(&self, count: usize) -> String {
-        let recent_logs: Vec<LogEntry> = self.log_buffer.iter()
-            .rev()
-            .take(count)
-            .cloned()
-            .collect();
+        let recent_logs: Vec<LogEntry> =
+            self.log_buffer.iter().rev().take(count).cloned().collect();
 
-        serde_json::to_string_pretty(&recent_logs).unwrap_or_else(|_| "Failed to serialize logs".to_string())
+        serde_json::to_string_pretty(&recent_logs)
+            .unwrap_or_else(|_| "Failed to serialize logs".to_string())
     }
 
     pub fn get_log_stats(&self) -> LogStats {
@@ -447,7 +465,10 @@ impl Logger {
                 LogLevel::Error => stats.error_count += 1,
             }
 
-            *stats.component_counts.entry(entry.component.clone()).or_insert(0) += 1;
+            *stats
+                .component_counts
+                .entry(entry.component.clone())
+                .or_insert(0) += 1;
         }
 
         if let Some(oldest) = self.log_buffer.front() {
@@ -463,7 +484,8 @@ impl Logger {
 
     pub fn search_logs(&self, query: &str, limit: Option<usize>) -> Vec<LogEntry> {
         let query_lower = query.to_lowercase();
-        let mut results: Vec<LogEntry> = self.log_buffer
+        let mut results: Vec<LogEntry> = self
+            .log_buffer
             .iter()
             .filter(|entry| entry.get_search_text().contains(&query_lower))
             .cloned()
@@ -479,8 +501,13 @@ impl Logger {
         results
     }
 
-    pub fn get_logs_by_component(&self, component: LogComponent, limit: Option<usize>) -> Vec<LogEntry> {
-        let mut results: Vec<LogEntry> = self.log_buffer
+    pub fn get_logs_by_component(
+        &self,
+        component: LogComponent,
+        limit: Option<usize>,
+    ) -> Vec<LogEntry> {
+        let mut results: Vec<LogEntry> = self
+            .log_buffer
             .iter()
             .filter(|entry| entry.component == component)
             .cloned()
@@ -496,9 +523,11 @@ impl Logger {
     }
 
     pub fn get_error_summary(&self, last_n_minutes: u32) -> ErrorSummary {
-        let cutoff_time = (js_sys::Date::now() as u64).saturating_sub(last_n_minutes as u64 * 60 * 1000);
+        let cutoff_time =
+            (js_sys::Date::now() as u64).saturating_sub(last_n_minutes as u64 * 60 * 1000);
 
-        let recent_errors: Vec<&LogEntry> = self.log_buffer
+        let recent_errors: Vec<&LogEntry> = self
+            .log_buffer
             .iter()
             .filter(|entry| entry.level == LogLevel::Error && entry.timestamp >= cutoff_time)
             .collect();
@@ -607,7 +636,8 @@ fn format_timestamp(timestamp: u64) -> String {
     let date = js_sys::Date::new_0();
     date.set_time(timestamp as f64);
 
-    format!("{:02}:{:02}:{:02}.{:03}",
+    format!(
+        "{:02}:{:02}:{:02}.{:03}",
         date.get_hours(),
         date.get_minutes(),
         date.get_seconds(),
@@ -617,7 +647,7 @@ fn format_timestamp(timestamp: u64) -> String {
 
 // Global logger instance
 thread_local! {
-    pub static GLOBAL_LOGGER: std::cell::RefCell<Option<Logger>> = std::cell::RefCell::new(None);
+    pub static GLOBAL_LOGGER: std::cell::RefCell<Option<Logger>> = const { std::cell::RefCell::new(None) };
 }
 
 pub fn with_logger<F, R>(f: F) -> Result<R, JsValue>
