@@ -19,7 +19,11 @@ import {
   updateURLWithRoom,
   setP2PConnection,
   getP2PConnection,
-  AppState
+  AppState,
+  IndexState,
+  INDEX_CONSTANTS,
+  initializeAppState,
+  setInitialized
 } from './state.js';
 
 // Import UI utilities
@@ -36,7 +40,6 @@ import {
 } from './ui.js';
 
 // Import module managers
-import { IndexState, INDEX_CONSTANTS, initializeAppState, setInitialized } from './app-state.js';
 import { updateRoomHistoryUI } from './room-history.js';
 import { loadWasmModule, createSafeWasmProxies } from './wasm-manager.js';
 import { loadChatHistory } from './message-manager.js';
@@ -47,141 +50,78 @@ import { restoreUserState, ensureUserInitialized } from './user-manager.js';
 import { joinRoom, connectNewUIWithWasm } from './room-manager.js';
 
 /**
+ * Initialize WASM and logger
+ */
+function initializeWasm() {
+  const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const debugEnabled = localStorage.getItem('debugEnabled') === 'true';
+
+  if (window.safeWasm?.initialize_logger) {
+    window.safeWasm.initialize_logger(isDevelopment, debugEnabled);
+  }
+  if (window.safeWasm?.start_performance_monitoring) {
+    window.safeWasm.start_performance_monitoring();
+  }
+}
+
+/**
+ * Handle room initialization (URL join or restore)
+ */
+async function handleRoomInit() {
+  const urlRoomId = getRoomFromURL();
+
+  if (urlRoomId) {
+    await ensureUserInitialized();
+    try {
+      await joinRoom(urlRoomId);
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } catch (error) {
+      logger.error('Failed to auto-join room:', error);
+    }
+  } else {
+    const roomId = getCurrentRoomId();
+    if (roomId) {
+      const messages = loadChatHistory(roomId);
+      displayChatHistory(messages);
+      updateRoomDisplay(roomId);
+      updateConnectionStatus('local');
+      scrollChatToBottom('auto', 500);
+    } else {
+      updateConnectionStatus('disconnected');
+    }
+  }
+}
+
+/**
  * Main application initialization
  */
 async function initializeApp() {
   try {
-    // Initialize application state
+    // Step 1: Core setup
     initializeAppState();
-
-    // Initialize theme preference
     initializeTheme();
-
-    // Initialize debug mode
     initializeDebugMode();
 
-    // Load WASM module first
+    // Step 2: WASM initialization
     await loadWasmModule();
     createSafeWasmProxies();
+    initializeWasm();
 
-    // Initialize Rust logger
-    const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const debugEnabled = localStorage.getItem('debugEnabled') === 'true';
-
-    if (window.safeWasm && window.safeWasm.initialize_logger) {
-      window.safeWasm.initialize_logger(isDevelopment, debugEnabled);
-      log("Rust logger initialized");
-    }
-
-    // Start performance monitoring
-    if (window.safeWasm && window.safeWasm.start_performance_monitoring) {
-      try {
-        window.safeWasm.start_performance_monitoring();
-        log("Performance monitoring started");
-
-        // Record initial metrics
-        if (window.safeWasm.record_performance_metric) {
-          try {
-            const now = Date.now();
-            const memUsage = (performance.memory && performance.memory.usedJSHeapSize) ? performance.memory.usedJSHeapSize : 0;
-
-            // Ensure parameters are valid before calling
-            if (now !== undefined && now !== null) {
-              window.safeWasm.record_performance_metric('app_start', now, 'ms', 'computation');
-            }
-            if (memUsage !== undefined && memUsage !== null) {
-              window.safeWasm.record_performance_metric('memory_usage', memUsage, 'bytes', 'memory');
-            }
-          } catch (metricError) {
-            logger.warn('Could not record initial metrics:', metricError);
-          }
-        }
-      } catch (perfError) {
-        logger.warn('Could not start performance monitoring:', perfError);
-      }
-    }
-
-    // Restore user state
+    // Step 3: User and UI setup
     await restoreUserState();
-
-    // Set initial log context
-    const userId = getCurrentUserId();
-    let roomId = getCurrentRoomId();
-    if (window.safeWasm && window.safeWasm.set_log_context) {
-      window.safeWasm.set_log_context(userId, roomId, 'core');
-    }
-
-    // Connect UI elements
     connectNewUIWithWasm();
-
-    // Update room history UI after user state is restored
-    updateRoomHistoryUI();
-
-    // Initialize event handlers
     setupEventHandlers();
 
-    // Check for room ID in URL and auto-join if present
-    const urlRoomId = getRoomFromURL();
-    logger.info('URL Room ID detected:', urlRoomId);
+    // Step 4: Room initialization
+    await handleRoomInit();
 
-    if (urlRoomId) {
-      logger.info('Attempting to auto-join room from URL:', urlRoomId);
-
-      // Ensure user is initialized before joining room
-      await ensureUserInitialized();
-      logger.debug('User initialized for URL room join');
-
-      // Auto-join the room
-      try {
-        logger.debug('Calling joinRoom with URL room ID:', urlRoomId);
-        await joinRoom(urlRoomId);
-        logger.info('Successfully joined room from URL');
-
-        // Clean up URL after successful join (optional)
-        const newURL = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
-        window.history.replaceState({}, document.title, newURL);
-      } catch (error) {
-        logger.error('Failed to auto-join room from URL:', error);
-        log(`Failed to auto-join room from URL: ${error.message}`);
-      }
-    } else {
-      logger.debug('No room ID found in URL');
-    }
-
-    // Update connection status based on restored room state
-    roomId = getCurrentRoomId();
-    if (roomId) {
-      // A room was restored, load and display its chat history
-      try {
-        const messages = loadChatHistory(roomId);
-        displayChatHistory(messages);
-        updateRoomDisplay(roomId);
-        logger.info(`Restored ${messages.length} messages for room ${roomId}`);
-      } catch (error) {
-        logger.error('Failed to load chat history on init:', error);
-      }
-
-      // Update connection status - we need to verify P2P connection
-      const p2pConnection = getP2PConnection();
-      updateConnectionStatus(p2pConnection ? 'connected' : 'local');
-    } else {
-      updateConnectionStatus('disconnected');
-    }
-
-    // Initialize room history UI (with small delay to ensure DOM is ready)
-    setTimeout(() => {
-      updateRoomHistoryUI();
-    }, 100);
-
-    // Ensure chat is scrolled to bottom after full initialization
-    if (roomId) {
-      scrollChatToBottom('auto', 500);
-    }
-
+    // Step 5: Finalize
+    updateRoomHistoryUI();
     setInitialized(true);
-    log('Application initialized successfully');
+    log('App initialized');
   } catch (error) {
-    logger.error('Failed to initialize application:', error);
+    logger.error('Failed to initialize:', error);
   }
 }
 

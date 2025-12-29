@@ -10,7 +10,9 @@ import {
   getCurrentRoomId,
   getP2PConnection,
   setP2PConnection,
-  AppState
+  AppState,
+  IndexState,
+  INDEX_CONSTANTS
 } from './state.js';
 import { log, updateConnectionStatus, updateDraftsDisplay, displayMessage } from './ui.js';
 import {
@@ -21,7 +23,6 @@ import {
   saveChatHistory
 } from './message-manager.js';
 import { debugLog } from './debug-utils.js';
-import { IndexState, INDEX_CONSTANTS } from './app-state.js';
 
 /**
  * Initialize P2P connection for a room
@@ -63,16 +64,6 @@ export async function initializeP2P(roomId) {
   // Ensure userId is a string (safety check)
   const userIdString = Array.isArray(userId) ? userId.join(',') : String(userId);
 
-  // Initialize Rust P2P manager
-  try {
-    if (window.safeWasm && window.safeWasm.initialize_p2p_manager) {
-      window.safeWasm.initialize_p2p_manager(userIdString, roomId);
-      logger.debug(`Rust P2P manager initialized for user ${userIdString} in room ${roomId}`);
-    }
-  } catch (error) {
-    logger.warn('Failed to initialize Rust P2P manager:', error);
-  }
-
   // Create new P2P connection
   logger.debug(`Creating P2PConnection for user ${userIdString} in room ${roomId}`);
   let p2pConnection;
@@ -97,21 +88,10 @@ export async function initializeP2P(roomId) {
     log(`Peer connected: ${peerId}`);
     updatePeerCount();
 
-    // Use WASM to decide connection strategy
-    if (window.safeWasm && window.safeWasm.get_connection_decision) {
-      const decision = window.safeWasm.get_connection_decision(peerId);
-      logger.debug(`Connection decision for ${peerId}: ${decision}`);
-    }
-
-    // Record peer in WASM P2P manager
-    if (window.safeWasm && window.safeWasm.add_known_peer) {
-      window.safeWasm.add_known_peer(peerId);
-    }
-
     // Request message synchronization from new peer
     setTimeout(() => {
       requestMessageSync(roomId);
-    }, 1000); // Small delay to ensure connection is stable
+    }, 1000);
 
     // Send brief connection notification to peers
     setTimeout(() => {
@@ -129,16 +109,6 @@ export async function initializeP2P(roomId) {
   p2pConnection.onPeerDisconnected((peerId) => {
     log(`Peer disconnected: ${peerId}`);
     updatePeerCount();
-
-    // Remove peer from WASM P2P manager
-    if (window.safeWasm && window.safeWasm.remove_peer_from_network) {
-      window.safeWasm.remove_peer_from_network(peerId);
-    }
-
-    // Handle connection failure
-    if (window.safeWasm && window.safeWasm.handle_connection_failure) {
-      window.safeWasm.handle_connection_failure(peerId);
-    }
   });
 
   // Connect to the signaling server
@@ -146,74 +116,11 @@ export async function initializeP2P(roomId) {
     await p2pConnection.connect();
     updateConnectionStatus('connected');
     log(`Connected to room: ${roomId}`);
-
-    // Start message queue processing loop
-    startQueueProcessing(p2pConnection);
   } catch (error) {
     logger.error('Failed to connect to P2P:', error);
     updateConnectionStatus('failed');
     throw error;
   }
-}
-
-/**
- * Start processing messages from the queue
- * @param {P2PConnection} p2pConnection - P2P connection instance
- */
-function startQueueProcessing(p2pConnection) {
-  if (!window.safeWasm || !window.safeWasm.process_p2p_queue) {
-    logger.debug('Queue processing not available');
-    return;
-  }
-
-  // Process queue every 1 second (reduced from 200ms to save CPU)
-  const queueInterval = setInterval(() => {
-    try {
-      const messages = window.safeWasm.process_p2p_queue();
-      if (messages && messages.length > 0) {
-        logger.debug(`Processing ${messages.length} queued messages`);
-
-        for (const msg of messages) {
-          // Send queued messages
-          if (msg.target_peer) {
-            // Unicast to specific peer
-            const channel = p2pConnection.dataChannels.get(msg.target_peer);
-            if (channel && channel.readyState === 'open') {
-              try {
-                channel.send(msg.content);
-                logger.debug(`✅ Sent queued message to ${msg.target_peer}`);
-              } catch (e) {
-                logger.error(`Failed to send queued message to ${msg.target_peer}:`, e);
-              }
-            }
-          } else {
-            // Broadcast to all peers
-            try {
-              const parsedMsg = JSON.parse(msg.content);
-              p2pConnection.broadcast(parsedMsg);
-              logger.debug(`✅ Broadcast queued message type: ${parsedMsg.type}`);
-            } catch (e) {
-              logger.error(`Failed to broadcast queued message:`, e);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('Error processing message queue:', error);
-    }
-
-    // Check if connection is still active, clear interval if not
-    if (!getP2PConnection()) {
-      clearInterval(queueInterval);
-      logger.debug('Queue processing stopped - P2P disconnected');
-    }
-  }, 1000); // Process every 1 second (reduced from 200ms for better CPU usage)
-
-  // Store interval ID for cleanup
-  if (!window.queueIntervals) {
-    window.queueIntervals = [];
-  }
-  window.queueIntervals.push(queueInterval);
 }
 
 /**
@@ -224,12 +131,6 @@ function startQueueProcessing(p2pConnection) {
 export function handleIncomingP2PMessage(message, peerId) {
   try {
     logger.info(`🎯 Received P2P message from ${peerId}:`, message.type, message);
-
-    // Record message received for P2P metrics
-    if (window.safeWasm && window.safeWasm.record_peer_message_received) {
-      const messageSize = JSON.stringify(message).length;
-      window.safeWasm.record_peer_message_received(peerId, messageSize);
-    }
 
     switch (message.type) {
       case 'chat':
@@ -451,13 +352,6 @@ export function disconnectP2P() {
     updateConnectionStatus('disconnected');
     updatePeerCount();
     log('Disconnected from P2P network');
-  }
-
-  // Clean up all queue processing intervals
-  if (window.queueIntervals) {
-    window.queueIntervals.forEach(interval => clearInterval(interval));
-    window.queueIntervals = [];
-    logger.debug('Cleared all queue processing intervals');
   }
 }
 

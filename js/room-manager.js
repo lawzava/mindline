@@ -5,14 +5,15 @@
 
 import logger from './logger.js';
 import USER_MESSAGES from './user-messages.js';
-import { IndexState, resetReconnectionState } from './app-state.js';
 import {
   CONSTANTS,
   getCurrentRoomId,
   setCurrentRoomId,
   generateUUID,
   getP2PConnection,
-  setP2PConnection
+  setP2PConnection,
+  IndexState,
+  resetReconnectionState
 } from './state.js';
 import {
   log,
@@ -25,17 +26,83 @@ import { loadChatHistory, retrieveMessages } from './message-manager.js';
 import { addRoomToHistory, generateShareableURL } from './room-history.js';
 import { initializeP2P } from './p2p-manager.js';
 
-// Room ID validation now uses WASM function
-function isValidRoomId(id) {
-  if (!window.safeWasm || !window.safeWasm.validate_room_id) {
-    // Fallback if WASM not ready
-    return false;
+/**
+ * Enter a room (create if it doesn't exist, or join if it does)
+ * This is the unified function that handles both create and join operations
+ * @param {string|null} roomId - Room ID to join/create (null to auto-generate)
+ * @param {Object} options - Options for entering the room
+ * @param {boolean} options.isCreate - Whether this is a create operation (affects logging)
+ * @returns {string|null} The room ID or null if failed
+ */
+async function enterRoom(roomId = null, { isCreate = false } = {}) {
+  // If no room ID, generate one (create operation)
+  if (!roomId) {
+    roomId = generateUUID();
+    isCreate = true;
   }
+
+  // Validate room ID
+  if (!window.safeWasm?.validate_room_id) {
+    logger.error('WASM validation not available');
+    log(USER_MESSAGES.room.validationNotReady);
+    return null;
+  }
+
   try {
-    return window.safeWasm.validate_room_id(id);
+    if (!window.safeWasm.validate_room_id(roomId)) {
+      logger.warn('Room ID validation failed:', roomId);
+      log(USER_MESSAGES.room.invalidFormat);
+      return null;
+    }
   } catch (error) {
     logger.error('Room ID validation error:', error);
-    return false;
+    log(USER_MESSAGES.room.joinFailed);
+    return null;
+  }
+
+  try {
+    updateConnectionStatus('connecting');
+
+    // Register room in WASM (create_room_with_id and join_room are now equivalent)
+    if (window.safeWasm) {
+      if (isCreate) {
+        window.safeWasm.create_room_with_id(roomId);
+      } else {
+        window.safeWasm.join_room(roomId, '{}');
+      }
+    }
+
+    // Initialize P2P (non-fatal)
+    let p2pConnected = false;
+    try {
+      await initializeP2P(roomId);
+      p2pConnected = true;
+    } catch (p2pError) {
+      logger.warn('P2P initialization failed (non-fatal):', p2pError);
+    }
+
+    // Load and display chat history
+    const messages = retrieveMessages(roomId);
+    displayChatHistory(messages);
+
+    // Update state
+    updateRoomDisplay(roomId);
+    localStorage.setItem('currentRoomId', roomId);
+    setCurrentRoomId(roomId);
+    addRoomToHistory(roomId);
+
+    // Update UI
+    updateConnectionStatus(p2pConnected ? 'connected' : 'local');
+    document.getElementById('shareRoomBtn')?.classList.remove('hidden');
+    scrollChatToBottom('auto', 200);
+
+    log(isCreate ? USER_MESSAGES.room.created(roomId) : USER_MESSAGES.room.joined(roomId));
+    return roomId;
+  } catch (error) {
+    logger.error(`Error ${isCreate ? 'creating' : 'joining'} room:`, error);
+    log(isCreate ? USER_MESSAGES.room.createFailed : USER_MESSAGES.room.joinFailed);
+    updateConnectionStatus('failed');
+    return null;
   }
 }
 
@@ -44,75 +111,8 @@ function isValidRoomId(id) {
  * @returns {string|null} The room ID or null if failed
  */
 export async function createRoom() {
-  try {
-    // Get the user-provided room ID if available
-    let roomId = document.getElementById('roomIdInput')?.value;
-
-    // If no room ID is provided, generate a UUID
-    if (!roomId) {
-      roomId = generateUUID();
-    }
-
-    // Validate the room ID format using WASM
-    if (!isValidRoomId(roomId)) {
-      log(USER_MESSAGES.room.invalidFormat);
-      return null;
-    }
-
-    // Show connecting status
-    updateConnectionStatus('connecting');
-
-    // Store messages with user-specific keys to prevent cross-user contamination
-    const currentUserId = localStorage.getItem('userId');
-
-    // Create the room in the WASM module
-    if (window.safeWasm) {
-      window.safeWasm.create_room_with_id(roomId);
-    }
-
-    // Initialize P2P connection (non-fatal - room works even if P2P fails)
-    let p2pConnected = false;
-    try {
-      await initializeP2P(roomId);
-      p2pConnected = true;
-    } catch (p2pError) {
-      logger.warn('P2P initialization failed (non-fatal):', p2pError);
-      // Continue with room creation even if P2P fails
-    }
-
-    // Load and display chat history (will be empty if we cleared it)
-    const messages = retrieveMessages(roomId);
-    displayChatHistory(messages);
-
-    // Update UI and localStorage
-    updateRoomDisplay(roomId);
-    localStorage.setItem('currentRoomId', roomId);
-    setCurrentRoomId(roomId);
-
-    // Add to room history
-    addRoomToHistory(roomId);
-
-    // Update connection status based on P2P
-    // Show 'local' when room is joined but P2P is not connected (still functional for local messages)
-    updateConnectionStatus(p2pConnected ? 'connected' : 'local');
-
-    // Show share room button
-    const shareRoomBtn = document.getElementById('shareRoomBtn');
-    if (shareRoomBtn) {
-      shareRoomBtn.classList.remove('hidden');
-    }
-
-    // Scroll to bottom after room creation
-    scrollChatToBottom('auto', 200);
-
-    log(USER_MESSAGES.room.created(roomId));
-    return roomId;
-  } catch (error) {
-    logger.error('Error creating room:', error);
-    log(USER_MESSAGES.room.createFailed);
-    updateConnectionStatus('failed');
-    return null;
-  }
+  const roomId = document.getElementById('roomIdInput')?.value || null;
+  return enterRoom(roomId, { isCreate: true });
 }
 
 /**
@@ -121,89 +121,11 @@ export async function createRoom() {
  * @returns {string|null} The room ID or null if failed
  */
 export async function joinRoom(roomId) {
-  logger.info('joinRoom called with roomId:', roomId);
-
   if (!roomId) {
     log(USER_MESSAGES.room.enterRoomId);
     return null;
   }
-
-  // Use WASM validation
-  if (!window.safeWasm || !window.safeWasm.validate_room_id) {
-    logger.error('WASM validation not available');
-    log(USER_MESSAGES.room.validationNotReady);
-    return null;
-  }
-
-  try {
-    const isValid = window.safeWasm.validate_room_id(roomId);
-    if (!isValid) {
-      logger.warn('Room ID validation failed:', roomId);
-      log(USER_MESSAGES.room.invalidFormat);
-      return null;
-    }
-    logger.info('Room ID validation passed:', roomId);
-  } catch (error) {
-    logger.error('Room ID validation error:', error);
-    log(USER_MESSAGES.room.joinFailed);
-    return null;
-  }
-
-  try {
-    // Show connecting status
-    updateConnectionStatus('connecting');
-
-    // Store messages with user-specific keys to prevent cross-user contamination
-    const currentUserId = localStorage.getItem('userId');
-
-    // Join the room
-    if (window.safeWasm) {
-      const connectionToken = window.safeWasm.join_room(roomId, '{}');
-    }
-
-    // Initialize P2P connection (non-fatal - room works even if P2P fails)
-    let p2pConnected = false;
-    try {
-      await initializeP2P(roomId);
-      p2pConnected = true;
-    } catch (p2pError) {
-      logger.warn('P2P initialization failed (non-fatal):', p2pError);
-      // Continue with room join even if P2P fails
-    }
-
-    // Load and display chat history (will be empty if we cleared it)
-    const messages = retrieveMessages(roomId);
-    displayChatHistory(messages);
-
-    // Update UI and localStorage
-    updateRoomDisplay(roomId);
-    localStorage.setItem('currentRoomId', roomId);
-    setCurrentRoomId(roomId);
-
-    // Add to room history
-    addRoomToHistory(roomId);
-
-    // Update connection status based on P2P
-    // Show 'local' when room is joined but P2P is not connected (still functional for local messages)
-    updateConnectionStatus(p2pConnected ? 'connected' : 'local');
-
-    // Show share room button
-    const shareRoomBtn = document.getElementById('shareRoomBtn');
-    if (shareRoomBtn) {
-      shareRoomBtn.classList.remove('hidden');
-    }
-
-    // Scroll to bottom after joining room
-    scrollChatToBottom('auto', 200);
-
-    log(USER_MESSAGES.room.joined(roomId));
-    return roomId;
-  } catch (error) {
-    logger.error('Error joining room:', error);
-    log(USER_MESSAGES.room.joinFailed);
-    updateConnectionStatus('failed');
-    return null;
-  }
+  return enterRoom(roomId, { isCreate: false });
 }
 
 /**
