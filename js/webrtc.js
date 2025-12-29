@@ -28,6 +28,7 @@ export class P2PConnection {
     this.onConnectionLostCallback = null;
     this.meshCheckInterval = null;
     this.allKnownPeers = new Set(); // Track all peers we should be connected to
+    this.relayPeers = new Set(); // Peers where P2P failed, use WebSocket relay
 
     // Build ICE servers from configuration
     this.iceConfig = this.buildIceConfig();
@@ -218,6 +219,18 @@ export class P2PConnection {
       case 'peer-left':
         logger.info('Peer left:', message.clientId);
         this.removePeer(message.clientId);
+        break;
+
+      case 'relay':
+        // Handle relayed message (P2P fallback via WebSocket)
+        logger.debug('Received relay message from:', message.fromId);
+        if (this.onMessageCallback && message.data) {
+          try {
+            this.onMessageCallback(message.data, message.fromId);
+          } catch (error) {
+            logger.error('Error handling relay message:', error);
+          }
+        }
         break;
     }
   }
@@ -566,27 +579,60 @@ export class P2PConnection {
   }
 
   /**
-   * Send message to all connected peers
+   * Send message to all connected peers (P2P + relay fallback)
    */
   broadcast(message) {
-    const messageStr = JSON.stringify(message);
-    const channels = Array.from(this.dataChannels.entries());
     let successCount = 0;
 
-    for (const [peerId, channel] of channels) {
+    // Send via P2P data channels
+    for (const [peerId, channel] of this.dataChannels.entries()) {
       if (channel.readyState === 'open') {
         try {
-          channel.send(messageStr);
+          channel.send(JSON.stringify(message));
           successCount++;
         } catch (error) {
-          logger.warn(`Failed to send to ${peerId}:`, error);
+          logger.warn(`P2P send failed to ${peerId}, switching to relay:`, error);
+          this.relayPeers.add(peerId);
           this.handleConnectionFailure(peerId);
         }
       }
     }
 
-    logger.debug(`Broadcast: ${successCount}/${channels.length} delivered`);
+    // Send via WebSocket relay for peers without P2P
+    for (const peerId of this.relayPeers) {
+      if (peerId !== this.clientId && this.allKnownPeers.has(peerId)) {
+        this.sendRelay(message, peerId);
+        successCount++;
+      }
+    }
+
+    // Also relay to any known peers not in dataChannels (P2P never established)
+    for (const peerId of this.allKnownPeers) {
+      if (peerId !== this.clientId &&
+          !this.dataChannels.has(peerId) &&
+          !this.relayPeers.has(peerId)) {
+        this.sendRelay(message, peerId);
+        successCount++;
+      }
+    }
+
+    logger.debug(`Broadcast: ${successCount} delivered (P2P + relay)`);
     return successCount;
+  }
+
+  /**
+   * Send message via WebSocket relay (fallback when P2P fails)
+   */
+  sendRelay(message, targetId = null) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const relayMessage = {
+        type: 'relay',
+        data: message,
+        targetId: targetId
+      };
+      this.ws.send(JSON.stringify(relayMessage));
+      logger.debug(`Relay sent to ${targetId || 'all'}`);
+    }
   }
 
   /**
@@ -634,6 +680,8 @@ export class P2PConnection {
     }
 
     this.pendingCandidates.delete(peerId);
+    this.relayPeers.delete(peerId);
+    this.allKnownPeers.delete(peerId);
 
     if (this.onPeerDisconnectedCallback) {
       this.onPeerDisconnectedCallback(peerId);
