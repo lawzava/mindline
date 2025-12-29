@@ -246,6 +246,35 @@ wss.on('connection', (ws, req) => {
           }
           break;
 
+        case 'relay':
+          // Relay encrypted messages when P2P fails (fallback)
+          // Server just forwards - content stays E2E encrypted
+          if (currentRoom && rooms.has(currentRoom)) {
+            const room = rooms.get(currentRoom);
+            const relayMessage = JSON.stringify({
+              type: 'relay',
+              data: data.data,
+              fromId: clientId
+            });
+
+            if (data.targetId) {
+              // Send to specific peer
+              room.forEach(client => {
+                if (client.clientId === data.targetId && client.readyState === WebSocket.OPEN) {
+                  client.send(relayMessage);
+                }
+              });
+            } else {
+              // Broadcast to all peers in room
+              room.forEach(client => {
+                if (client !== ws && client.readyState === WebSocket.OPEN) {
+                  client.send(relayMessage);
+                }
+              });
+            }
+          }
+          break;
+
         case 'leave':
           if (currentRoom && rooms.has(currentRoom)) {
             const room = rooms.get(currentRoom);
