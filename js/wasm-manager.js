@@ -4,7 +4,7 @@
  */
 
 import logger from './logger.js';
-import { IndexState } from './app-state.js';
+import { IndexState } from './state.js';
 
 /**
  * Load the WebAssembly module
@@ -81,41 +81,14 @@ export function createSafeWasmProxies() {
     save_room_messages_to_storage: safeWasmCall('save_room_messages_to_storage', ['roomId']),
     load_room_messages_from_storage: safeWasmCall('load_room_messages_from_storage', ['roomId']),
 
-    // Phase 4: P2P Network Coordination Functions
-    initialize_p2p_manager: safeWasmCall('initialize_p2p_manager', ['clientId', 'roomId']),
-    add_known_peer: safeWasmCall('add_known_peer', ['peerId']),
-    remove_peer_from_network: safeWasmCall('remove_peer_from_network', ['peerId']),
-    update_peer_connection_state: safeWasmCall('update_peer_connection_state', ['peerId', 'state']),
-    get_connection_decision: safeWasmCall('get_connection_decision', ['peerId']),
-    record_peer_message_sent: safeWasmCall('record_peer_message_sent', ['peerId', 'sizeBytes'], { sizeBytes: Number }),
-    record_peer_message_received: safeWasmCall('record_peer_message_received', ['peerId', 'sizeBytes'], { sizeBytes: Number }),
-    update_peer_latency: safeWasmCall('update_peer_latency', ['peerId', 'latencyMs'], { latencyMs: Number }),
-    needs_mesh_repair: safeWasmCall('needs_mesh_repair', []),
-    get_mesh_repair_plan: safeWasmCall('get_mesh_repair_plan', []),
-    get_p2p_network_stats: safeWasmCall('get_p2p_network_stats', []),
-    handle_connection_failure: safeWasmCall('handle_connection_failure', ['peerId']),
-    get_best_peers_for_broadcast: safeWasmCall('get_best_peers_for_broadcast', ['maxPeers'], { maxPeers: Number }),
+    // Encryption
+    decrypt_message_content: safeWasmCall('decrypt_message_content', ['content']),
 
-    // Message queue functions
-    queue_p2p_message: safeWasmCall('queue_p2p_message', ['targetPeer', 'content', 'messageType', 'priority'], {
-      priority: Number,
-      targetPeer: (v) => v === null || v === undefined ? undefined : v
-    }),
-    process_p2p_queue: safeWasmCall('process_p2p_queue', []),
-    get_p2p_queue_status: safeWasmCall('get_p2p_queue_status', []),
-
+    // Performance
     record_performance_metric: safeWasmCall('record_performance_metric', ['name', 'value', 'unit', 'category'], { value: Number }),
     start_performance_monitoring: safeWasmCall('start_performance_monitoring', []),
-    // Aliases for functions called in webrtc.js
-    add_peer: safeWasmCall('add_known_peer', ['peerId']),
-    update_peer_metrics: function(peerId, latency, quality) {
-      // Since we don't have a direct quality metric, just update latency
-      return this.update_peer_latency(peerId, latency);
-    },
-    should_send_to_peer: safeWasmCall('should_send_to_peer', ['peerId', 'priority'], { priority: Number }),
-    cleanup_stale_peers: safeWasmCall('cleanup_stale_peers', ['timeoutMinutes'], { timeoutMinutes: Number }),
 
-    // Phase 5: Logging Functions
+    // Logging Functions
     initialize_logger: safeWasmCall('initialize_logger', ['developmentMode', 'debugEnabled'], { developmentMode: Boolean, debugEnabled: Boolean }),
     log_info: safeWasmCall('log_info', ['component', 'message']),
     log_warn: safeWasmCall('log_warn', ['component', 'message']),
@@ -138,27 +111,7 @@ export function createSafeWasmProxies() {
       consoleOutput: Boolean,
       bufferLogs: Boolean,
       autoExportErrors: Boolean
-    }),
-
-    // Phase 6: Advanced Features
-    get_user_preferences: safeWasmCall('get_user_preferences', []),
-    set_user_preference: safeWasmCall('set_user_preference', ['key', 'value']),
-    export_user_data: safeWasmCall('export_user_data', ['format']),
-    import_user_data: safeWasmCall('import_user_data', ['data', 'format']),
-    clear_user_data: safeWasmCall('clear_user_data', []),
-    get_room_analytics: safeWasmCall('get_room_analytics', ['roomId', 'timeRange']),
-    create_room_backup: safeWasmCall('create_room_backup', ['roomId']),
-    restore_room_backup: safeWasmCall('restore_room_backup', ['backupData']),
-    get_system_diagnostics: safeWasmCall('get_system_diagnostics', []),
-    run_system_self_test: safeWasmCall('run_system_self_test', []),
-    get_feature_flags: safeWasmCall('get_feature_flags', []),
-    enable_feature_flag: safeWasmCall('enable_feature_flag', ['flag']),
-    disable_feature_flag: safeWasmCall('disable_feature_flag', ['flag']),
-    schedule_task: safeWasmCall('schedule_task', ['taskType', 'delay', 'data']),
-    cancel_scheduled_task: safeWasmCall('cancel_scheduled_task', ['taskId']),
-    get_scheduled_tasks: safeWasmCall('get_scheduled_tasks', []),
-    trigger_maintenance_mode: safeWasmCall('trigger_maintenance_mode', ['enabled'], { enabled: Boolean }),
-    get_maintenance_status: safeWasmCall('get_maintenance_status', [])
+    })
   };
 }
 

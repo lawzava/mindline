@@ -4,114 +4,95 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mindline is a secure P2P chat application combining Rust/WebAssembly for core functionality with JavaScript for the frontend. The application features real-time typing indicators, encrypted messaging, and room-based communication.
+Mindline is a P2P real-time chat application featuring "radical transparency" - users see each other's messages as they type, character by character. It uses a hybrid Rust/WebAssembly + JavaScript architecture.
 
-## Architecture
-
-### Technology Stack
-- **Backend/Core**: Rust compiled to WebAssembly
-- **Frontend**: Vanilla JavaScript with Webpack bundling
-- **Styling**: CSS with Tailwind-inspired utility classes
-- **Build Tools**: wasm-pack for Rust→WASM, Webpack for bundling
-
-### Key Components
-
-1. **Rust/WASM Module** (`src/lib.rs`):
-   - `ChatManager`: Singleton managing rooms and user state
-   - Message handling with types (Text, Typing, Edit, Delete, Media)
-   - Room management with encryption keys
-   - Exposed functions: `initialize`, `send_message`, `join_room`, `create_room_with_id`, `send_typing_indicator`, `get_messages`
-
-2. **JavaScript Layer** (`js/index.js`):
-   - WASM module loading and safe proxy creation
-   - UI event handling and state management
-   - LocalStorage persistence for user/room data
-   - Theme management (light/dark modes)
-
-## Development Commands
+## Build & Development Commands
 
 ```bash
-# Build WASM module
-npm run build-wasm
-
-# Build entire project (WASM + webpack)
-npm run build
-
-# Start development server (port 8080)
-npm start
-
 # Install dependencies
 npm install
 
-# Generate PWA icons (after creating/updating icons/icon.svg)
-node generate-icons.js
+# Build WASM module only
+npm run build-wasm
+
+# Build entire project (WASM + Webpack)
+npm run build
+
+# Production build
+npm run build:production
+
+# Development server (port 8080)
+npm start
+
+# Signaling server (port 3000) - run in separate terminal
+npm run signaling
+
+# Run both servers for production
+npm run start:production
 ```
 
-## PWA Features
+### Rust Commands
+```bash
+cargo fmt --check    # Check formatting
+cargo clippy         # Lint Rust code
+cargo test           # Run Rust unit tests
+```
 
-Mindline is now a Progressive Web App (PWA) with:
+## Architecture
 
-### Mobile-First Design
-- Responsive layout optimized for mobile devices
-- Touch-friendly buttons and inputs (minimum 44px touch targets)
-- Safe area insets support for notched devices
-- Viewport meta tag with `user-scalable=no` for consistent mobile experience
-- Font size minimum 16px to prevent iOS zoom
+### Two-Layer Design
+- **Rust/WASM Core** (`src/`): Encryption, message handling, state management
+- **JavaScript Layer** (`js/`): UI, WebRTC P2P, event handling
 
-### PWA Capabilities
-- **Service Worker**: Provides offline functionality and caching
-- **Web App Manifest**: Enables "Add to Home Screen" functionality
-- **App Icons**: Complete icon set for various platforms (16x16 to 512x512)
-- **Install Prompts**: Smart install prompts for Chrome/Edge and iOS Safari
-- **Standalone Display**: Runs fullscreen like a native app
-- **Theme Colors**: Consistent branding with Nord color scheme
+### Key Components
 
-### Installation Experience
-- Automatic install prompt after user interaction (3 clicks/taps)
-- iOS-specific installation instructions
-- Install prompt respects user preferences (won't show again if dismissed)
-- Update notifications when new versions are available
+**Rust Modules (`src/`):**
+- `core.rs` - Initialization and message handling
+- `crypto.rs` - AES-256-GCM encryption
+- `messages.rs` - Message types and state
+- `p2p.rs` - P2P coordination logic
+- `state.rs` - Global state with Mutex
+- `*_api.rs` files - API bindings for JavaScript
 
-### Performance Optimizations
-- CSS performance improvements with `will-change` and `backface-visibility`
-- Reduced animations on touch devices
-- High DPI display optimizations
-- Code splitting and caching strategies
+**JavaScript Modules (`js/`):**
+- `app.js` - Main entry point
+- `webrtc.js` - WebRTC P2P connections (largest file)
+- `message-manager.js` - Message handling
+- `room-manager.js` - Room creation/joining
+- `wasm-manager.js` - WASM loading and safe proxies
+- `state.js` - Application state
+- `ui.js` - UI rendering
 
-## Working with the Codebase
+**Server Components:**
+- `signaling-server.js` - WebSocket server for peer discovery only (does NOT relay messages)
 
-### Adding New WASM Functions
-1. Define the function in `src/lib.rs` with `#[wasm_bindgen]` attribute
-2. Create a safe proxy in `js/index.js` using the `safeWasmCall` factory
-3. Add to `window.safeWasm` object for global access
+### Data Flow
+1. User types → Character broadcast to peers via WebRTC
+2. Enter key → WASM encrypts message → P2P broadcast → Local storage
+3. Reconnection → Automatic message sync between peers
 
-### Message Flow
-1. User actions trigger JavaScript event handlers
-2. JS validates input and calls WASM functions via safe proxies
-3. WASM processes data and stores in thread-local `ChatManager`
-4. Results return to JS for UI updates
+## Conventions
 
-### State Management
-- User state: Stored in localStorage (`userId`, `userName`)
-- Room state: Stored in localStorage (`currentRoomId`)
-- Messages: Maintained in WASM memory, retrieved via `get_messages`
+### Branch Naming
+- `feature/description` - New features
+- `fix/description` - Bug fixes
+- `docs/description` - Documentation
+- `perf/description` - Performance
 
-## Important Patterns
+### Commit Format
+```
+type(scope): brief description
+```
+Types: feat, fix, docs, style, refactor, perf, test, chore
 
-### Error Handling
-- WASM functions return `Result<T, JsValue>` for proper error propagation
-- JavaScript uses try-catch blocks around WASM calls
-- All errors logged to both console and debug output area
+### Code Style
+- **Rust**: snake_case, explicit error handling (no unwrap in production)
+- **JavaScript**: ES6+, const/let only, async/await, JSDoc comments
+- Safe WASM proxy pattern: JavaScript wraps WASM functions with error handling
 
-### Parameter Validation
-- JavaScript validates before calling WASM (see `safeWasmCall`)
-- Rust validates parameters with `validate_js_string_param`
-- Room IDs must be alphanumeric with dashes/underscores, minimum 8 characters
+## Key Patterns
 
-### Logging
-- Rust: Use `console_log!` macro for browser console output
-- JavaScript: Use `log()` function for console + debug area output
-- When testing UI/ux features always use playwrith mcp
-- when testing functionality before submitting the solution always make sure to test with at least 3 users talking to each other
-- before testing with playwrith mcp review html files to know exact selector ids to use
-- Create two separate browser contexts for testing - one for each user. Each context should be isolated with its own storage.
+- Messages encrypted with AES-256-GCM, per-room keys
+- State: WASM uses Mutex for thread safety, JS uses localStorage
+- P2P: WebRTC DataChannels, signaling server for discovery only
+- UI: Neobrutalist design, supports light/dark modes
