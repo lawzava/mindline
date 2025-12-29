@@ -142,7 +142,18 @@ export class P2PConnection {
    */
   async handleSignalingMessage(message) {
     switch (message.type) {
+      case 'client-id':
+        // Server assigns a secure client ID to prevent spoofing
+        logger.info('Received server-assigned client ID');
+        this.serverClientId = message.clientId;
+        break;
+
       case 'room-joined':
+        // Update to server-assigned ID if provided (security enhancement)
+        if (message.yourId) {
+          this.serverClientId = message.yourId;
+          logger.info('Using server-assigned ID:', message.yourId.slice(0, 8) + '...');
+        }
         logger.info('Joined room:', message.roomId, 'with', message.peers.length, 'existing peers');
 
         // Track all known peers
@@ -664,18 +675,39 @@ export class P2PConnection {
   }
 
   /**
-   * Remove peer connection
+   * Remove peer connection and clean up all resources
    */
   removePeer(peerId) {
     const channel = this.dataChannels.get(peerId);
     if (channel) {
-      channel.close();
+      // Null handlers before closing to prevent memory leaks
+      channel.onopen = null;
+      channel.onmessage = null;
+      channel.onerror = null;
+      channel.onclose = null;
+      try {
+        channel.close();
+      } catch (e) {
+        // Ignore errors on already-closed channels
+      }
       this.dataChannels.delete(peerId);
     }
 
     const pc = this.peers.get(peerId);
     if (pc) {
-      pc.close();
+      // Null handlers before closing to prevent memory leaks
+      pc.onicecandidate = null;
+      pc.ondatachannel = null;
+      pc.onconnectionstatechange = null;
+      pc.oniceconnectionstatechange = null;
+      pc.onicegatheringstatechange = null;
+      pc.onsignalingstatechange = null;
+      pc.onnegotiationneeded = null;
+      try {
+        pc.close();
+      } catch (e) {
+        // Ignore errors on already-closed connections
+      }
       this.peers.delete(peerId);
     }
 

@@ -7,6 +7,123 @@ import logger from './logger.js';
 import { IndexState } from './state.js';
 
 /**
+ * Web Crypto API Bridge for WASM
+ * Provides real AES-256-GCM encryption that Rust can call via JavaScript interop
+ */
+
+/**
+ * Encrypt data using AES-256-GCM via Web Crypto API
+ * @param {Uint8Array} plaintext - Data to encrypt
+ * @param {Uint8Array} key - 32-byte AES key
+ * @param {Uint8Array} iv - 12-byte initialization vector (nonce)
+ * @returns {Promise<Uint8Array>} Ciphertext with 16-byte auth tag appended
+ */
+window.webcryptoEncrypt = async function(plaintext, key, iv) {
+  try {
+    // Import the raw key for AES-GCM
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      key,
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt']
+    );
+
+    // Encrypt with AES-256-GCM (produces ciphertext + 16-byte auth tag)
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv, tagLength: 128 },
+      cryptoKey,
+      plaintext
+    );
+
+    return new Uint8Array(ciphertext);
+  } catch (error) {
+    console.error('Web Crypto encryption failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Decrypt data using AES-256-GCM via Web Crypto API
+ * @param {Uint8Array} ciphertext - Ciphertext with auth tag appended
+ * @param {Uint8Array} key - 32-byte AES key
+ * @param {Uint8Array} iv - 12-byte initialization vector (nonce)
+ * @returns {Promise<Uint8Array>} Decrypted plaintext
+ */
+window.webcryptoDecrypt = async function(ciphertext, key, iv) {
+  try {
+    // Import the raw key for AES-GCM
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      key,
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+
+    // Decrypt with AES-256-GCM (verifies auth tag automatically)
+    const plaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv, tagLength: 128 },
+      cryptoKey,
+      ciphertext
+    );
+
+    return new Uint8Array(plaintext);
+  } catch (error) {
+    console.error('Web Crypto decryption failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Derive a key from password using PBKDF2 via Web Crypto API
+ * @param {string} password - User password
+ * @param {Uint8Array} salt - Salt for key derivation
+ * @param {number} iterations - Number of PBKDF2 iterations (minimum 600000 recommended)
+ * @returns {Promise<Uint8Array>} 32-byte derived key
+ */
+window.webcryptoDeriveKey = async function(password, salt, iterations = 600000) {
+  try {
+    // Import password as key material
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+
+    // Derive 256 bits (32 bytes) using PBKDF2
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: iterations,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      256
+    );
+
+    return new Uint8Array(derivedBits);
+  } catch (error) {
+    console.error('Web Crypto key derivation failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Generate cryptographically secure random bytes
+ * @param {number} length - Number of bytes to generate
+ * @returns {Uint8Array} Random bytes
+ */
+window.webcryptoRandomBytes = function(length) {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return bytes;
+};
+
+/**
  * Load the WebAssembly module
  * @returns {Promise<boolean>} Whether the module loaded successfully
  */
@@ -195,29 +312,40 @@ function safeWasmCall(funcName, paramNames = [], paramTransforms = {}) {
       // Call the function with transformed arguments
       const result = wasmFunc.apply(IndexState.wasmModule, transformedArgs);
 
-      // Log successful calls in development mode
+      // Log successful calls in development mode (without sensitive data)
       if (process.env.NODE_ENV === 'development') {
-        logger.debug(`WASM call successful: ${funcName}(${transformedArgs.map(arg =>
-          typeof arg === 'string' ? `"${arg}"` : arg
-        ).join(', ')})`);
+        // Sanitize logging - don't log room IDs, user IDs, or message content
+        const sensitiveParams = ['roomId', 'userId', 'content', 'messageId', 'peerId', 'password', 'key'];
+        const sanitizedArgs = transformedArgs.map((arg, index) => {
+          const paramName = paramNames[index];
+          if (sensitiveParams.some(s => paramName?.toLowerCase().includes(s.toLowerCase()))) {
+            return '"[REDACTED]"';
+          }
+          if (typeof arg === 'string' && arg.length > 20) {
+            return `"${arg.slice(0, 8)}..."`;
+          }
+          return typeof arg === 'string' ? `"${arg}"` : arg;
+        });
+        logger.debug(`WASM call: ${funcName}(${sanitizedArgs.join(', ')})`);
       }
 
       return result;
 
     } catch (error) {
-      // Enhanced error handling with context - ensure args is defined
+      // Enhanced error handling with context - don't log actual argument values
       const safeArgs = Array.isArray(args) ? args : [];
       const contextInfo = {
         function: funcName,
         expectedParams: paramNames,
-        receivedArgs: safeArgs.map(arg => arg === undefined ? 'undefined' : typeof arg),
+        receivedCount: safeArgs.length,
+        receivedTypes: safeArgs.map(arg => arg === undefined ? 'undefined' : typeof arg),
         error: error.message
       };
 
       // Use console.error directly to prevent infinite recursion if logger WASM calls fail
-      console.error(`[ERROR] WASM call failed:`, contextInfo);
+      console.error(`[ERROR] WASM call failed: ${funcName}`, contextInfo.error);
 
-      // Re-throw with enhanced error message
+      // Re-throw with enhanced error message (no sensitive data in error object)
       const enhancedError = new Error(`WASM call failed: ${funcName} - ${error.message}`);
       enhancedError.context = contextInfo;
       throw enhancedError;
