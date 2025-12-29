@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use wasm_bindgen::prelude::*;
 
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PerformanceMetric {
     pub id: String,
@@ -24,7 +23,7 @@ pub enum MetricCategory {
     Computation,
     Storage,
     P2P,
-    WASM,
+    Wasm,
     Custom,
 }
 
@@ -115,22 +114,42 @@ impl PerformanceMonitor {
 
         // Collect memory metrics if available
         if let Ok(memory) = self.get_memory_info() {
-            self.record_metric("js_heap_used", memory.used_js_heap_size as f64 / 1024.0 / 1024.0, "MB", MetricCategory::Memory);
-            self.record_metric("js_heap_total", memory.total_js_heap_size as f64 / 1024.0 / 1024.0, "MB", MetricCategory::Memory);
-            self.record_metric("js_heap_limit", memory.js_heap_size_limit as f64 / 1024.0 / 1024.0, "MB", MetricCategory::Memory);
+            self.record_metric(
+                "js_heap_used",
+                memory.used_js_heap_size as f64 / 1024.0 / 1024.0,
+                "MB",
+                MetricCategory::Memory,
+            );
+            self.record_metric(
+                "js_heap_total",
+                memory.total_js_heap_size as f64 / 1024.0 / 1024.0,
+                "MB",
+                MetricCategory::Memory,
+            );
+            self.record_metric(
+                "js_heap_limit",
+                memory.js_heap_size_limit as f64 / 1024.0 / 1024.0,
+                "MB",
+                MetricCategory::Memory,
+            );
         }
 
         // Collect WASM memory metrics
         if let Ok(wasm_memory) = self.get_wasm_memory_usage() {
-            self.record_metric("wasm_memory", wasm_memory, "MB", MetricCategory::WASM);
+            self.record_metric("wasm_memory", wasm_memory, "MB", MetricCategory::Wasm);
         }
 
         // Create performance sample
         let sample = PerformanceSample {
             timestamp: now,
-            memory_usage_mb: self.get_memory_info().map(|m| m.used_js_heap_size as f64 / 1024.0 / 1024.0).unwrap_or(0.0),
+            memory_usage_mb: self
+                .get_memory_info()
+                .map(|m| m.used_js_heap_size as f64 / 1024.0 / 1024.0)
+                .unwrap_or(0.0),
             wasm_memory_mb: self.get_wasm_memory_usage().unwrap_or(0.0),
-            message_processing_time_ms: self.get_average_metric("message_processing_time", 10000).unwrap_or(0.0),
+            message_processing_time_ms: self
+                .get_average_metric("message_processing_time", 10000)
+                .unwrap_or(0.0),
             p2p_latency_ms: self.get_average_metric("p2p_latency", 30000).unwrap_or(0.0),
             active_connections: self.get_counter("active_connections") as u32,
             messages_per_second: self.calculate_messages_per_second(),
@@ -157,12 +176,11 @@ impl PerformanceMonitor {
         }
     }
 
-
-
     pub fn get_average_metric(&self, name: &str, time_window_ms: u64) -> Option<f64> {
         let cutoff_time = (js_sys::Date::now() as u64).saturating_sub(time_window_ms);
 
-        let values: Vec<f64> = self.metrics
+        let values: Vec<f64> = self
+            .metrics
             .iter()
             .filter(|m| m.name == name && m.timestamp >= cutoff_time)
             .map(|m| m.value)
@@ -179,14 +197,28 @@ impl PerformanceMonitor {
         let recent_sample = self.samples.back().cloned();
 
         PerformanceSummary {
-            current_memory_mb: recent_sample.as_ref().map(|s| s.memory_usage_mb).unwrap_or(0.0),
-            current_wasm_memory_mb: recent_sample.as_ref().map(|s| s.wasm_memory_mb).unwrap_or(0.0),
-            average_message_time_ms: self.get_average_metric("message_processing_time", 60000).unwrap_or(0.0),
+            current_memory_mb: recent_sample
+                .as_ref()
+                .map(|s| s.memory_usage_mb)
+                .unwrap_or(0.0),
+            current_wasm_memory_mb: recent_sample
+                .as_ref()
+                .map(|s| s.wasm_memory_mb)
+                .unwrap_or(0.0),
+            average_message_time_ms: self
+                .get_average_metric("message_processing_time", 60000)
+                .unwrap_or(0.0),
             average_p2p_latency_ms: self.get_average_metric("p2p_latency", 60000).unwrap_or(0.0),
             total_messages_processed: self.get_counter("messages_processed"),
-            active_connections: recent_sample.as_ref().map(|s| s.active_connections).unwrap_or(0),
+            active_connections: recent_sample
+                .as_ref()
+                .map(|s| s.active_connections)
+                .unwrap_or(0),
             current_frame_rate: recent_sample.as_ref().map(|s| s.frame_rate).unwrap_or(0.0),
-            cpu_usage_percent: recent_sample.as_ref().map(|s| s.cpu_usage_percent).unwrap_or(0.0),
+            cpu_usage_percent: recent_sample
+                .as_ref()
+                .map(|s| s.cpu_usage_percent)
+                .unwrap_or(0.0),
             uptime_seconds: self.calculate_uptime(),
         }
     }
@@ -194,14 +226,19 @@ impl PerformanceMonitor {
     // Helper methods for system metrics collection
     fn get_memory_info(&self) -> Result<MemoryInfo, JsValue> {
         let window = web_sys::window().ok_or_else(|| JsValue::from_str("No window object"))?;
-        let performance = window.performance().ok_or_else(|| JsValue::from_str("No performance object"))?;
+        let performance = window
+            .performance()
+            .ok_or_else(|| JsValue::from_str("No performance object"))?;
 
         // Try to get memory info (only available in some browsers)
         if let Ok(memory) = js_sys::Reflect::get(&performance, &"memory".into()) {
             if !memory.is_undefined() {
-                let used_heap = js_sys::Reflect::get(&memory, &"usedJSHeapSize".into()).unwrap_or(JsValue::from(0));
-                let total_heap = js_sys::Reflect::get(&memory, &"totalJSHeapSize".into()).unwrap_or(JsValue::from(0));
-                let heap_limit = js_sys::Reflect::get(&memory, &"jsHeapSizeLimit".into()).unwrap_or(JsValue::from(0));
+                let used_heap = js_sys::Reflect::get(&memory, &"usedJSHeapSize".into())
+                    .unwrap_or(JsValue::from(0));
+                let total_heap = js_sys::Reflect::get(&memory, &"totalJSHeapSize".into())
+                    .unwrap_or(JsValue::from(0));
+                let heap_limit = js_sys::Reflect::get(&memory, &"jsHeapSizeLimit".into())
+                    .unwrap_or(JsValue::from(0));
 
                 return Ok(MemoryInfo {
                     used_js_heap_size: used_heap.as_f64().unwrap_or(0.0) as u64,
@@ -254,7 +291,9 @@ impl PerformanceMonitor {
 
     fn estimate_cpu_usage(&self) -> f64 {
         // Rough CPU usage estimation based on processing time
-        let recent_processing_time = self.get_average_metric("total_processing_time", 1000).unwrap_or(0.0);
+        let recent_processing_time = self
+            .get_average_metric("total_processing_time", 1000)
+            .unwrap_or(0.0);
         (recent_processing_time / 1000.0 * 100.0).min(100.0)
     }
 
@@ -299,6 +338,6 @@ where
 {
     PERFORMANCE_MONITOR.with(|monitor| {
         let mut monitor_ref = monitor.borrow_mut();
-        Ok(f(&mut *monitor_ref))
+        Ok(f(&mut monitor_ref))
     })
 }

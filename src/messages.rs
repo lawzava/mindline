@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use wasm_bindgen::prelude::*;
 use std::sync::{Arc, Mutex};
+use wasm_bindgen::prelude::*;
 use web_sys::window;
 
 // Simple macro for logging to browser console
@@ -63,7 +63,7 @@ pub struct EnhancedMessage {
     pub original_content: Option<String>,
     pub reply_to: Option<String>, // Message ID this is replying to
     pub reactions: HashMap<String, MessageReaction>, // emoji -> reaction data
-    pub mentions: Vec<String>, // user IDs mentioned in this message
+    pub mentions: Vec<String>,    // user IDs mentioned in this message
 
     // Metadata
     pub local_timestamp: u64, // When message was created locally
@@ -71,6 +71,7 @@ pub struct EnhancedMessage {
     pub size_bytes: usize,
 }
 
+#[allow(dead_code)]
 impl EnhancedMessage {
     pub fn new(
         id: String,
@@ -84,7 +85,8 @@ impl EnhancedMessage {
         #[cfg(test)]
         let timestamp = 1000u64; // Fixed timestamp for tests
 
-        let size_bytes = content.len() + id.len() + sender_id.len() + sender_name.len() + room_id.len();
+        let size_bytes =
+            content.len() + id.len() + sender_id.len() + sender_name.len() + room_id.len();
 
         Self {
             id,
@@ -120,13 +122,14 @@ impl EnhancedMessage {
     }
 
     pub fn add_reaction(&mut self, emoji: &str, user_id: &str) {
-        let reaction = self.reactions.entry(emoji.to_string()).or_insert_with(|| {
-            MessageReaction {
+        let reaction = self
+            .reactions
+            .entry(emoji.to_string())
+            .or_insert_with(|| MessageReaction {
                 emoji: emoji.to_string(),
                 users: Vec::new(),
                 count: 0,
-            }
-        });
+            });
 
         if !reaction.users.contains(&user_id.to_string()) {
             reaction.users.push(user_id.to_string());
@@ -134,15 +137,25 @@ impl EnhancedMessage {
         }
     }
 
+    pub fn remove_reaction(&mut self, emoji: &str, user_id: &str) {
+        if let Some(reaction) = self.reactions.get_mut(emoji) {
+            reaction.users.retain(|u| u != user_id);
+            reaction.count = reaction.users.len();
+            if reaction.count == 0 {
+                self.reactions.remove(emoji);
+            }
+        }
+    }
+
     pub fn extract_mentions(&mut self) {
         // Extract @username mentions from content
         // Simple regex-like pattern matching without regex crate for now
         let mut mentions = Vec::new();
-        let mut chars = self.content.chars().peekable();
+        let chars = self.content.chars();
         let mut current_mention = String::new();
         let mut in_mention = false;
 
-        while let Some(ch) = chars.next() {
+        for ch in chars {
             if ch == '@' {
                 in_mention = true;
                 current_mention.clear();
@@ -186,17 +199,28 @@ pub struct MessageSyncRequest {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum SyncRequestType {
-    RequestSync { last_sync: u64, message_count: usize },
-    SyncResponse { messages: Vec<EnhancedMessage> },
-    RequestHistory { before_timestamp: Option<u64>, limit: usize },
-    HistoryResponse { messages: Vec<EnhancedMessage>, has_more: bool },
+    RequestSync {
+        last_sync: u64,
+        message_count: usize,
+    },
+    SyncResponse {
+        messages: Vec<EnhancedMessage>,
+    },
+    RequestHistory {
+        before_timestamp: Option<u64>,
+        limit: usize,
+    },
+    HistoryResponse {
+        messages: Vec<EnhancedMessage>,
+        has_more: bool,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RoomMessageState {
     pub room_id: String,
     pub messages: Vec<EnhancedMessage>, // Ordered by timestamp
-    pub message_ids: HashSet<String>, // Quick lookup for duplicate checking
+    pub message_ids: HashSet<String>,   // Quick lookup for duplicate checking
     pub last_sync: u64,
     pub total_messages: usize,
     pub unread_count: usize,
@@ -206,6 +230,7 @@ pub struct RoomMessageState {
     pub pending_messages: Vec<EnhancedMessage>, // Messages waiting for delivery
 }
 
+#[allow(dead_code)]
 impl RoomMessageState {
     pub fn new(room_id: String) -> Self {
         #[cfg(not(test))]
@@ -237,7 +262,8 @@ impl RoomMessageState {
         message.extract_mentions();
 
         // Find insertion point to maintain chronological order
-        let insert_index = self.messages
+        let insert_index = self
+            .messages
             .iter()
             .position(|m| m.timestamp > message.timestamp)
             .unwrap_or(self.messages.len());
@@ -254,9 +280,11 @@ impl RoomMessageState {
     }
 
     pub fn get_message_mut(&mut self, message_id: &str) -> Option<&mut EnhancedMessage> {
-        self.messages
-            .iter_mut()
-            .find(|m| m.id == message_id)
+        self.messages.iter_mut().find(|m| m.id == message_id)
+    }
+
+    pub fn get_message(&self, message_id: &str) -> Option<&EnhancedMessage> {
+        self.messages.iter().find(|m| m.id == message_id)
     }
 
     pub fn edit_message(&mut self, message_id: &str, new_content: String) -> bool {
@@ -288,22 +316,16 @@ impl RoomMessageState {
 
     pub fn get_recent_messages(&self, limit: usize) -> Vec<EnhancedMessage> {
         // Return messages in chronological order (oldest to newest)
-        let all_messages: Vec<EnhancedMessage> = self.messages
-            .iter()
-            .cloned()
-            .collect();
+        let all_messages: Vec<EnhancedMessage> = self.messages.to_vec();
 
         // If we have more messages than the limit, take the most recent ones
         if all_messages.len() > limit && limit > 0 {
             let skip_count = all_messages.len().saturating_sub(limit);
-            all_messages.into_iter()
-                .skip(skip_count)
-                .collect()
+            all_messages.into_iter().skip(skip_count).collect()
         } else {
             all_messages
         }
     }
-
 
     pub fn add_typing_user(&mut self, user_id: String) {
         self.typing_users.insert(user_id);
@@ -313,6 +335,9 @@ impl RoomMessageState {
         self.typing_users.remove(user_id);
     }
 
+    pub fn clear_typing_users(&mut self) {
+        self.typing_users.clear();
+    }
 }
 
 pub struct MessageManager {
@@ -321,6 +346,7 @@ pub struct MessageManager {
     pub message_cache_size: usize,
 }
 
+#[allow(dead_code)]
 impl MessageManager {
     pub fn new() -> Self {
         Self {
@@ -335,7 +361,8 @@ impl MessageManager {
     }
 
     pub fn get_or_create_room(&mut self, room_id: &str) -> &mut RoomMessageState {
-        self.rooms.entry(room_id.to_string())
+        self.rooms
+            .entry(room_id.to_string())
             .or_insert_with(|| RoomMessageState::new(room_id.to_string()))
     }
 
@@ -346,7 +373,9 @@ impl MessageManager {
         message_id: &str,
         sender_name: &str,
     ) -> Result<EnhancedMessage, JsValue> {
-        let user_id = self.current_user_id.as_ref()
+        let user_id = self
+            .current_user_id
+            .as_ref()
             .ok_or_else(|| JsValue::from_str("No current user set"))?;
 
         let message = EnhancedMessage::new(
@@ -470,14 +499,15 @@ impl MessageManager {
     }
 
     pub fn get_room_stats(&self, room_id: &str) -> Option<(usize, usize, u64)> {
-        self.rooms.get(room_id).map(|room| {
-            (room.total_messages, room.unread_count, room.last_sync)
-        })
+        self.rooms
+            .get(room_id)
+            .map(|room| (room.total_messages, room.unread_count, room.last_sync))
     }
 
     pub fn save_room_to_storage(&self, room_id: &str) -> Result<(), JsValue> {
         let window = window().ok_or_else(|| JsValue::from_str("No window object"))?;
-        let storage = window.local_storage()
+        let storage = window
+            .local_storage()
             .map_err(|_| JsValue::from_str("No localStorage"))?
             .ok_or_else(|| JsValue::from_str("localStorage not available"))?;
 
@@ -486,7 +516,8 @@ impl MessageManager {
                 .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?;
 
             let storage_key = format!("chatHistory_{}", room_id);
-            storage.set_item(&storage_key, &serialized)
+            storage
+                .set_item(&storage_key, &serialized)
                 .map_err(|_| JsValue::from_str("Failed to save to localStorage"))?;
 
             console_log!("Saved room {} to localStorage", room_id);
@@ -497,7 +528,8 @@ impl MessageManager {
 
     pub fn load_room_from_storage(&mut self, room_id: &str) -> Result<bool, JsValue> {
         let window = window().ok_or_else(|| JsValue::from_str("No window object"))?;
-        let storage = window.local_storage()
+        let storage = window
+            .local_storage()
             .map_err(|_| JsValue::from_str("No localStorage"))?
             .ok_or_else(|| JsValue::from_str("localStorage not available"))?;
 
@@ -509,7 +541,7 @@ impl MessageManager {
                     self.rooms.insert(room_id.to_string(), room_state);
                     console_log!("Loaded room {} from localStorage", room_id);
                     Ok(true)
-                },
+                }
                 Err(e) => {
                     console_log!("Failed to deserialize room data: {}, clearing old data", e);
                     // Clear corrupted/old format data
@@ -537,9 +569,10 @@ where
     F: FnOnce(&mut MessageManager) -> R,
 {
     MESSAGE_MANAGER.with(|manager| {
-        let mut manager = manager.lock().map_err(|_|
-            JsValue::from_str("Failed to lock message manager"))?;
-        Ok(f(&mut *manager))
+        let mut manager = manager
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock message manager"))?;
+        Ok(f(&mut manager))
     })
 }
 
@@ -588,7 +621,10 @@ mod tests {
 
         assert_eq!(message.content, "Edited content");
         assert!(message.edited);
-        assert_eq!(message.original_content, Some("Original content".to_string()));
+        assert_eq!(
+            message.original_content,
+            Some("Original content".to_string())
+        );
         assert!(message.edit_timestamp.is_some());
         assert_eq!(message.status, MessageStatus::Edited);
     }
@@ -617,7 +653,11 @@ mod tests {
 
     #[test]
     fn test_mention_extraction() {
-        let mut message = create_test_message("msg-1", "Hello @alice and @bob, how are you @charlie?", 1000);
+        let mut message = create_test_message(
+            "msg-1",
+            "Hello @alice and @bob, how are you @charlie?",
+            1000,
+        );
 
         message.extract_mentions();
 
@@ -746,12 +786,7 @@ mod tests {
         let mut manager = MessageManager::new();
         manager.set_current_user("user-1".to_string());
 
-        let result = manager.send_message(
-            "room-1",
-            "Test message",
-            "msg-1",
-            "Test User"
-        );
+        let result = manager.send_message("room-1", "Test message", "msg-1", "Test User");
 
         assert!(result.is_ok());
         let message = result.unwrap();
@@ -785,10 +820,14 @@ mod tests {
         manager.set_current_user("user-1".to_string());
 
         // Send a message first
-        manager.send_message("room-1", "Test", "msg-1", "User").unwrap();
+        manager
+            .send_message("room-1", "Test", "msg-1", "User")
+            .unwrap();
 
         // Add reaction
-        assert!(manager.add_reaction("room-1", "msg-1", "👍", "user-2").is_ok());
+        assert!(manager
+            .add_reaction("room-1", "msg-1", "👍", "user-2")
+            .is_ok());
 
         let messages = manager.get_messages("room-1", None);
         assert_eq!(messages[0].reactions.get("👍").unwrap().count, 1);
@@ -841,12 +880,14 @@ mod tests {
 
         // Add some messages
         for i in 0..3 {
-            manager.send_message(
-                "room-1",
-                &format!("Message {}", i),
-                &format!("msg-{}", i),
-                "User"
-            ).unwrap();
+            manager
+                .send_message(
+                    "room-1",
+                    &format!("Message {}", i),
+                    &format!("msg-{}", i),
+                    "User",
+                )
+                .unwrap();
         }
 
         let stats = manager.get_room_stats("room-1");

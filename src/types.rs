@@ -93,7 +93,7 @@ pub struct AppState {
     pub current_room_id: Option<String>,
     pub room_histories: HashMap<String, RoomHistory>,
     pub draft_messages: HashMap<String, DraftMessage>, // peer_id -> draft
-    pub message_history: HashMap<String, Message>, // message_id -> message (for deduplication)
+    pub message_history: HashMap<String, Message>,     // message_id -> message (for deduplication)
     pub p2p_connected_peers: Vec<String>,
     pub is_wasm_loaded: bool,
 }
@@ -120,12 +120,18 @@ pub struct ChatManager {
     pub current_room_id: Option<String>,
 }
 
-impl ChatManager {
-    pub fn new() -> Self {
+impl Default for ChatManager {
+    fn default() -> Self {
         Self {
             user_id: "default-user-id".to_string(),
             user_name: "Anonymous".to_string(),
             current_room_id: None,
         }
+    }
+}
+
+impl ChatManager {
+    pub fn new() -> Self {
+        Self::default()
     }
 }

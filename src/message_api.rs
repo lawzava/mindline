@@ -1,10 +1,10 @@
 // src/message_api.rs
 // Phase 3: Enhanced Message Processing WASM Bindings
 
-use crate::messages::{EnhancedMessage, MessageSyncRequest, SyncRequestType, with_message_manager};
-use crate::state_api::get_current_user_id;
-use crate::state::APP_STATE;
 use crate::console_log;
+use crate::messages::{with_message_manager, EnhancedMessage, MessageSyncRequest, SyncRequestType};
+use crate::state::APP_STATE;
+use crate::state_api::get_current_user_id;
 use wasm_bindgen::prelude::*;
 
 // ========== Phase 3: Enhanced Message Processing Functions ==========
@@ -26,7 +26,9 @@ pub fn send_message_enhanced(
     // Get the sender name from APP_STATE
     let sender_name = APP_STATE.with(|state| {
         let state = state.lock().unwrap();
-        state.user_session.as_ref()
+        state
+            .user_session
+            .as_ref()
             .map(|session| session.name.clone())
             .unwrap_or_else(|| "Anonymous".to_string())
     });
@@ -44,15 +46,17 @@ pub fn receive_message_from_peer(message_data: &JsValue) -> Result<bool, JsValue
     let message: EnhancedMessage = serde_wasm_bindgen::from_value(message_data.clone())
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize message: {}", e)))?;
 
-    with_message_manager(|manager| {
-        manager.receive_message(message)
-    })
+    with_message_manager(|manager| manager.receive_message(message))
 }
 
 #[wasm_bindgen]
 pub fn get_room_messages(room_id: &str, limit: Option<u32>) -> JsValue {
     // Debug logging to see what we're receiving
-    console_log!("[WASM] get_room_messages called with room_id: {}, limit: {:?}", room_id, limit);
+    console_log!(
+        "[WASM] get_room_messages called with room_id: {}, limit: {:?}",
+        room_id,
+        limit
+    );
 
     // Handle the case where wasm-bindgen might pass a sentinel value
     // The JS binding uses 0x100000001 as a sentinel for None
@@ -70,20 +74,16 @@ pub fn get_room_messages(room_id: &str, limit: Option<u32>) -> JsValue {
         None
     };
 
-    let messages = with_message_manager(|manager| {
-        manager.get_messages(room_id, safe_limit)
-    }).unwrap_or_default();
+    let messages = with_message_manager(|manager| manager.get_messages(room_id, safe_limit))
+        .unwrap_or_default();
 
     console_log!("[WASM] Returning {} messages", messages.len());
     serde_wasm_bindgen::to_value(&messages).unwrap_or(JsValue::NULL)
 }
 
-
 #[wasm_bindgen]
 pub fn get_room_message_stats(room_id: &str) -> JsValue {
-    let stats = with_message_manager(|manager| {
-        manager.get_room_stats(room_id)
-    }).unwrap_or_default();
+    let stats = with_message_manager(|manager| manager.get_room_stats(room_id)).unwrap_or_default();
 
     if let Some((total, unread, last_sync)) = stats {
         let stats_obj = js_sys::Object::new();
@@ -123,7 +123,8 @@ pub fn handle_sync_request(request_data: &JsValue) -> JsValue {
         SyncRequestType::RequestSync { last_sync, .. } => {
             let messages = with_message_manager(|manager| {
                 manager.get_messages_for_sync(&request.room_id, last_sync, 50)
-            }).unwrap_or_default();
+            })
+            .unwrap_or_default();
 
             let response = MessageSyncRequest {
                 request_type: SyncRequestType::SyncResponse { messages },
@@ -133,21 +134,17 @@ pub fn handle_sync_request(request_data: &JsValue) -> JsValue {
             };
 
             serde_wasm_bindgen::to_value(&response).unwrap_or(JsValue::NULL)
-        },
+        }
         _ => JsValue::NULL,
     }
 }
 
 #[wasm_bindgen]
 pub fn save_room_messages_to_storage(room_id: &str) -> Result<(), JsValue> {
-    with_message_manager(|manager| {
-        manager.save_room_to_storage(room_id)
-    })?
+    with_message_manager(|manager| manager.save_room_to_storage(room_id))?
 }
 
 #[wasm_bindgen]
 pub fn load_room_messages_from_storage(room_id: &str) -> Result<bool, JsValue> {
-    with_message_manager(|manager| {
-        manager.load_room_from_storage(room_id)
-    })?
+    with_message_manager(|manager| manager.load_room_from_storage(room_id))?
 }

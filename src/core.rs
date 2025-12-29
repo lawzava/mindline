@@ -1,8 +1,8 @@
 // src/core.rs
 // Core WASM functions and utilities
 
-use crate::types::{Message, MessageType, RoomHistory, RoomMetadata, UserSession};
 use crate::state::{APP_STATE, CHAT_MANAGER};
+use crate::types::{Message, MessageType, RoomHistory, RoomMetadata, UserSession};
 use wasm_bindgen::prelude::*;
 
 // Configure the WASM crate
@@ -33,8 +33,9 @@ pub fn initialize(user_name: &str, user_id: &str) -> Result<(), JsValue> {
 
     // Update old CHAT_MANAGER for compatibility
     CHAT_MANAGER.with(|cm| {
-        let mut manager = cm.lock().map_err(|_|
-            JsValue::from_str("Failed to lock chat manager"))?;
+        let mut manager = cm
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock chat manager"))?;
 
         manager.user_name = user_name.to_string();
         manager.user_id = user_id.to_string();
@@ -43,8 +44,9 @@ pub fn initialize(user_name: &str, user_id: &str) -> Result<(), JsValue> {
 
     // Also update the new APP_STATE
     APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
+        let mut state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))?;
 
         let now = js_sys::Date::now() as u64;
         let session = UserSession {
@@ -77,7 +79,10 @@ pub fn validate_js_string_param(param: &JsValue, param_name: &str) -> Result<Str
     })?;
 
     if value.is_empty() {
-        return Err(JsValue::from_str(&format!("{} cannot be empty", param_name)));
+        return Err(JsValue::from_str(&format!(
+            "{} cannot be empty",
+            param_name
+        )));
     }
 
     Ok(value)
@@ -86,7 +91,11 @@ pub fn validate_js_string_param(param: &JsValue, param_name: &str) -> Result<Str
 // DEPRECATED: Use send_message_enhanced instead
 // Send a message to the current room (legacy function - will be removed)
 #[wasm_bindgen]
-pub fn send_message(room_id: &JsValue, content: &JsValue, message_id: &JsValue) -> Result<(), JsValue> {
+pub fn send_message(
+    room_id: &JsValue,
+    content: &JsValue,
+    message_id: &JsValue,
+) -> Result<(), JsValue> {
     let room_id = validate_js_string_param(room_id, "room ID")?;
     let content = validate_js_string_param(content, "message content")?;
     let message_id = validate_js_string_param(message_id, "message ID")?;
@@ -100,8 +109,9 @@ pub fn send_message(room_id: &JsValue, content: &JsValue, message_id: &JsValue) 
 
     // Use new APP_STATE system for better user data
     APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
+        let mut state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))?;
 
         // Get user data from session, fallback to reasonable defaults
         let (user_id, user_name) = if let Some(ref session) = state.user_session {
@@ -128,7 +138,9 @@ pub fn send_message(room_id: &JsValue, content: &JsValue, message_id: &JsValue) 
         // Add to room history
         let peer_count = state.p2p_connected_peers.len();
         let now = js_sys::Date::now() as u64;
-        let room_history = state.room_histories.entry(room_id.clone())
+        let room_history = state
+            .room_histories
+            .entry(room_id.clone())
             .or_insert_with(|| RoomHistory {
                 messages: Vec::new(),
                 last_sync: 0,
@@ -150,7 +162,6 @@ pub fn send_message(room_id: &JsValue, content: &JsValue, message_id: &JsValue) 
     })
 }
 
-
 // DEPRECATED: Use get_room_messages instead
 // Get messages from a room (legacy function - will be removed)
 #[wasm_bindgen]
@@ -159,7 +170,7 @@ pub fn get_messages(room_id: &JsValue) -> JsValue {
         Some(id) if !id.is_empty() => id,
         _ => {
             console_log!("Invalid room ID provided for get_messages");
-            return JsValue::from_str(&"[]".to_string()); // Return empty array for invalid input
+            return JsValue::from_str("[]"); // Return empty array for invalid input
         }
     };
 
@@ -167,8 +178,10 @@ pub fn get_messages(room_id: &JsValue) -> JsValue {
 
     // Use new APP_STATE system for message retrieval
     APP_STATE.with(|state| {
-        let state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state")).unwrap();
+        let state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))
+            .unwrap();
 
         // Get messages from room history
         let messages = match state.room_histories.get(&room_id) {
@@ -178,7 +191,7 @@ pub fn get_messages(room_id: &JsValue) -> JsValue {
                     "Room {} not found in APP_STATE, returning empty array",
                     room_id
                 );
-                return JsValue::from_str(&"[]".to_string());
+                return JsValue::from_str("[]");
             }
         };
 
@@ -214,8 +227,9 @@ pub fn join_room(room_id: &JsValue, signal_data: &str) -> Result<String, JsValue
     );
 
     CHAT_MANAGER.with(|cm| {
-        let mut manager = cm.lock().map_err(|_|
-            JsValue::from_str("Failed to lock chat manager"))?;
+        let mut manager = cm
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock chat manager"))?;
 
         // Set as current room
         manager.current_room_id = Some(room_id.to_string());
