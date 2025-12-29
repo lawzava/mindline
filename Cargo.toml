@@ -56,3 +56,10 @@ wasm-bindgen-futures = "0.4"
 sha2 = "0.10"
 base64 = "0.21"
 futures = "0.3"
+
+# Optimize for small WASM size in release builds
+[profile.release]
+opt-level = "z"         # Optimize for size
+lto = true              # Link Time Optimization for smaller binary
+codegen-units = 1       # Single codegen unit for better optimization
+panic = "abort"         # Remove unwinding code

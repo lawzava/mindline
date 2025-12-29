@@ -8,12 +8,14 @@ pub struct InputSanitizer {
     javascript_regex: Regex,
 }
 
+#[allow(dead_code)]
 impl InputSanitizer {
     pub fn new() -> Result<Self, JsValue> {
         Ok(Self {
             dangerous_html_regex: Regex::new(
-                r"(?i)<script|on\w+\s*=|javascript:|vbscript:|data:|<iframe|<object|<embed|<form"
-            ).map_err(|e| JsValue::from_str(&format!("Failed to create HTML regex: {}", e)))?,
+                r"(?i)<script|on\w+\s*=|javascript:|vbscript:|data:|<iframe|<object|<embed|<form",
+            )
+            .map_err(|e| JsValue::from_str(&format!("Failed to create HTML regex: {}", e)))?,
             javascript_regex: Regex::new(r"(?i)javascript:|data:|vbscript:")
                 .map_err(|e| JsValue::from_str(&format!("Failed to create JS regex: {}", e)))?,
         })
@@ -107,7 +109,10 @@ impl InputSanitizer {
         let mut sanitized = self.dangerous_html_regex.replace_all(input, "").to_string();
 
         // Remove javascript: protocols
-        sanitized = self.javascript_regex.replace_all(&sanitized, "").to_string();
+        sanitized = self
+            .javascript_regex
+            .replace_all(&sanitized, "")
+            .to_string();
 
         // HTML entity encoding for remaining content
         sanitized = sanitized
@@ -118,7 +123,8 @@ impl InputSanitizer {
             .replace('\'', "&#x27;");
 
         // Remove null bytes and other control characters
-        sanitized.chars()
+        sanitized
+            .chars()
             .filter(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
             .collect()
     }
@@ -145,21 +151,19 @@ impl InputSanitizer {
     /// Generate cryptographically secure room ID
     pub fn generate_secure_room_id(&self) -> Result<String, JsValue> {
         // Get window crypto
-        let window = web_sys::window()
-            .ok_or_else(|| JsValue::from_str("No window object"))?;
-        let crypto = window.crypto()
+        let window = web_sys::window().ok_or_else(|| JsValue::from_str("No window object"))?;
+        let crypto = window
+            .crypto()
             .map_err(|_| JsValue::from_str("No crypto object"))?;
 
         // Generate 16 random bytes (128 bits)
         let mut array = [0u8; 16];
-        crypto.get_random_values_with_u8_array(&mut array)
+        crypto
+            .get_random_values_with_u8_array(&mut array)
             .map_err(|_| JsValue::from_str("Failed to generate random bytes"))?;
 
         // Convert to hex string
-        let hex: String = array
-            .iter()
-            .map(|byte| format!("{:02x}", byte))
-            .collect();
+        let hex: String = array.iter().map(|byte| format!("{:02x}", byte)).collect();
 
         // Add readable prefix
         Ok(format!("room-{}", hex))
@@ -184,29 +188,36 @@ impl InputSanitizer {
 
         // Allowed MIME types
         let allowed_types = [
-            "image/jpeg", "image/png", "image/gif", "image/webp",
-            "text/plain", "application/pdf",
-            "audio/mpeg", "audio/wav", "audio/ogg",
-            "video/mp4", "video/webm", "video/ogg"
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "text/plain",
+            "application/pdf",
+            "audio/mpeg",
+            "audio/wav",
+            "audio/ogg",
+            "video/mp4",
+            "video/webm",
+            "video/ogg",
         ];
 
         allowed_types.contains(&mime_type)
     }
 
-
     /// Detect potential SQL injection patterns (for future database features)
     pub fn detect_sql_injection(&self, input: &str) -> bool {
         let lower_input = input.to_lowercase();
         // Simple detection of common SQL injection patterns
-        lower_input.contains("union") ||
-        lower_input.contains("select") ||
-        lower_input.contains("insert") ||
-        lower_input.contains("update") ||
-        lower_input.contains("delete") ||
-        lower_input.contains("drop") ||
-        input.contains('\'') ||
-        input.contains('"') ||
-        input.contains(';')
+        lower_input.contains("union")
+            || lower_input.contains("select")
+            || lower_input.contains("insert")
+            || lower_input.contains("update")
+            || lower_input.contains("delete")
+            || lower_input.contains("drop")
+            || input.contains('\'')
+            || input.contains('"')
+            || input.contains(';')
     }
 
     /// Validate and sanitize JSON input
@@ -255,7 +266,7 @@ impl InputSanitizer {
 
 // Global sanitizer instance
 thread_local! {
-    pub static SANITIZER: std::cell::RefCell<Option<InputSanitizer>> = std::cell::RefCell::new(None);
+    pub static SANITIZER: std::cell::RefCell<Option<InputSanitizer>> = const { std::cell::RefCell::new(None) };
 }
 
 pub fn with_sanitizer<F, R>(f: F) -> Result<R, JsValue>

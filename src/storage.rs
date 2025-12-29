@@ -1,8 +1,8 @@
 // src/storage.rs - Simplified IndexedDB persistence system for Phase 6
 
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::prelude::*;
 use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
 use crate::console_log;
 
@@ -42,11 +42,13 @@ pub struct StorageConfig {
 // Simplified storage manager using in-memory storage for now
 // In production, this would use IndexedDB via JavaScript interop
 pub struct IndexedDBManager {
+    #[allow(dead_code)]
     config: StorageConfig,
     messages: HashMap<String, Vec<StoredMessage>>,
     rooms: HashMap<String, StoredRoom>,
 }
 
+#[allow(dead_code)]
 impl IndexedDBManager {
     pub fn new(config: StorageConfig) -> Self {
         Self {
@@ -57,12 +59,13 @@ impl IndexedDBManager {
     }
 
     pub async fn store_message(&mut self, message: &StoredMessage) -> Result<(), JsValue> {
-        let room_messages = self.messages.entry(message.room_id.clone()).or_insert_with(Vec::new);
+        let room_messages = self.messages.entry(message.room_id.clone()).or_default();
         room_messages.push(message.clone());
 
         // Keep only the last max_messages_per_room messages
         if room_messages.len() > self.config.max_messages_per_room as usize {
-            room_messages.drain(0..room_messages.len() - self.config.max_messages_per_room as usize);
+            room_messages
+                .drain(0..room_messages.len() - self.config.max_messages_per_room as usize);
         }
 
         // Update room statistics
@@ -72,8 +75,14 @@ impl IndexedDBManager {
         Ok(())
     }
 
-    pub async fn get_messages(&self, room_id: &str, limit: Option<u32>) -> Result<Vec<StoredMessage>, JsValue> {
-        let messages = self.messages.get(room_id)
+    pub async fn get_messages(
+        &self,
+        room_id: &str,
+        limit: Option<u32>,
+    ) -> Result<Vec<StoredMessage>, JsValue> {
+        let messages = self
+            .messages
+            .get(room_id)
             .map(|msgs| {
                 let mut sorted = msgs.clone();
                 sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -104,8 +113,11 @@ impl IndexedDBManager {
         Ok(rooms)
     }
 
-
-    async fn update_room_stats(&mut self, room_id: &str, message_increment: u32) -> Result<(), JsValue> {
+    async fn update_room_stats(
+        &mut self,
+        room_id: &str,
+        message_increment: u32,
+    ) -> Result<(), JsValue> {
         if let Some(room) = self.rooms.get_mut(room_id) {
             room.message_count += message_increment;
             room.last_activity = js_sys::Date::now() as u64;
@@ -114,7 +126,8 @@ impl IndexedDBManager {
     }
 
     pub async fn cleanup_old_data(&mut self, days_old: u32) -> Result<u32, JsValue> {
-        let cutoff_time = (js_sys::Date::now() as u64).saturating_sub(days_old as u64 * 24 * 60 * 60 * 1000);
+        let cutoff_time =
+            (js_sys::Date::now() as u64).saturating_sub(days_old as u64 * 24 * 60 * 60 * 1000);
         let mut deleted_count = 0;
 
         for messages in self.messages.values_mut() {
@@ -126,9 +139,6 @@ impl IndexedDBManager {
         console_log!("Cleaned up {} old records", deleted_count);
         Ok(deleted_count)
     }
-
-
-
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -141,7 +151,7 @@ pub struct StorageUsage {
 
 // Global storage manager
 thread_local! {
-    pub static STORAGE_MANAGER: std::cell::RefCell<Option<IndexedDBManager>> = std::cell::RefCell::new(None);
+    pub static STORAGE_MANAGER: std::cell::RefCell<Option<IndexedDBManager>> = const { std::cell::RefCell::new(None) };
 }
 
 pub fn init_storage_manager(config: StorageConfig) {

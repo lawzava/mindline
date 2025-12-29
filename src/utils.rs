@@ -15,10 +15,7 @@ pub fn generate_uuid() -> String {
 
 #[wasm_bindgen]
 pub fn get_room_from_url() -> Option<String> {
-    let window = match web_sys::window() {
-        Some(w) => w,
-        None => return None,
-    };
+    let window = web_sys::window()?;
 
     let location = window.location();
     let search = match location.search() {
@@ -52,14 +49,15 @@ pub fn get_room_from_url() -> Option<String> {
 
 #[wasm_bindgen]
 pub fn update_url_with_room(room_id: &str) -> Result<(), JsValue> {
-    let window = web_sys::window().ok_or_else(||
-        JsValue::from_str("No window object"))?;
+    let window = web_sys::window().ok_or_else(|| JsValue::from_str("No window object"))?;
     let location = window.location();
-    let history = window.history().map_err(|_|
-        JsValue::from_str("No history object"))?;
+    let history = window
+        .history()
+        .map_err(|_| JsValue::from_str("No history object"))?;
 
-    let pathname = location.pathname().map_err(|_|
-        JsValue::from_str("Failed to get pathname"))?;
+    let pathname = location
+        .pathname()
+        .map_err(|_| JsValue::from_str("Failed to get pathname"))?;
 
     let new_url = if room_id.is_empty() {
         pathname
@@ -68,7 +66,8 @@ pub fn update_url_with_room(room_id: &str) -> Result<(), JsValue> {
         format!("{}?r={}", pathname, encoded_room_id)
     };
 
-    history.replace_state_with_url(&JsValue::NULL, "", Some(&new_url))
+    history
+        .replace_state_with_url(&JsValue::NULL, "", Some(&new_url))
         .map_err(|_| JsValue::from_str("Failed to update URL"))?;
 
     console_log!("URL updated with room ID: {}", room_id);

@@ -1,8 +1,8 @@
 // src/logging_api.rs
 // Phase 5: Logging System WASM Bindings
 
-use crate::logger::{self, with_logger, LogLevel, LogComponent, LogContext, LogFilter};
 use crate::console_log;
+use crate::logger::{self, with_logger, LogComponent, LogContext, LogFilter, LogLevel};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
@@ -21,12 +21,20 @@ pub fn initialize_logger(is_development: bool, debug_enabled: bool) -> Result<()
         *logger_ref = Some(logger::Logger::new(config));
     });
 
-    console_log!("Logger initialized - dev: {}, debug: {}", is_development, debug_enabled);
+    console_log!(
+        "Logger initialized - dev: {}, debug: {}",
+        is_development,
+        debug_enabled
+    );
     Ok(())
 }
 
 #[wasm_bindgen]
-pub fn set_log_context(user_id: Option<String>, room_id: Option<String>, component: Option<String>) -> Result<(), JsValue> {
+pub fn set_log_context(
+    user_id: Option<String>,
+    room_id: Option<String>,
+    component: Option<String>,
+) -> Result<(), JsValue> {
     let context = LogContext {
         user_id,
         room_id,
@@ -81,12 +89,22 @@ pub fn log_error(component: &str, message: &str) {
 }
 
 #[wasm_bindgen]
-pub fn log_with_data(level: &str, component: &str, message: &str, data: &str) -> Result<(), JsValue> {
-    let log_level = LogLevel::from_str(level)
-        .ok_or_else(|| JsValue::from_str("Invalid log level"))?;
+pub fn log_with_data(
+    level: &str,
+    component: &str,
+    message: &str,
+    data: &str,
+) -> Result<(), JsValue> {
+    let log_level =
+        LogLevel::from_str(level).ok_or_else(|| JsValue::from_str("Invalid log level"))?;
 
     with_logger(|logger| {
-        logger.log_with_data(log_level, LogComponent::from_str(component), message, Some(data));
+        logger.log_with_data(
+            log_level,
+            LogComponent::from_str(component),
+            message,
+            Some(data),
+        );
     })?;
 
     Ok(())
@@ -118,33 +136,23 @@ pub fn log_table(data: &JsValue) -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub fn get_log_entries(filter_json: Option<String>) -> JsValue {
-    let filter = filter_json
-        .and_then(|json| serde_json::from_str::<LogFilter>(&json).ok());
+    let filter = filter_json.and_then(|json| serde_json::from_str::<LogFilter>(&json).ok());
 
-    let logs = with_logger(|logger| {
-        logger.get_logs(filter)
-    }).unwrap_or_default();
+    let logs = with_logger(|logger| logger.get_logs(filter)).unwrap_or_default();
 
     serde_wasm_bindgen::to_value(&logs).unwrap_or(JsValue::NULL)
 }
 
-
 #[wasm_bindgen]
 pub fn export_logs_json(filter_json: Option<String>) -> String {
-    let filter = filter_json
-        .and_then(|json| serde_json::from_str::<LogFilter>(&json).ok());
+    let filter = filter_json.and_then(|json| serde_json::from_str::<LogFilter>(&json).ok());
 
-    with_logger(|logger| {
-        logger.export_logs(filter)
-    }).unwrap_or_else(|_| "[]".to_string())
+    with_logger(|logger| logger.export_logs(filter)).unwrap_or_else(|_| "[]".to_string())
 }
-
 
 #[wasm_bindgen]
 pub fn get_log_statistics() -> JsValue {
-    let stats = with_logger(|logger| {
-        logger.get_log_stats()
-    }).unwrap_or_default();
+    let stats = with_logger(|logger| logger.get_log_stats()).unwrap_or_default();
 
     serde_wasm_bindgen::to_value(&stats).unwrap_or(JsValue::NULL)
 }
@@ -187,28 +195,26 @@ pub fn configure_logger(
 
 #[wasm_bindgen]
 pub fn search_logs(query: &str, limit: Option<u32>) -> JsValue {
-    let results = with_logger(|logger| {
-        logger.search_logs(query, limit.map(|l| l as usize))
-    }).unwrap_or_default();
+    let results = with_logger(|logger| logger.search_logs(query, limit.map(|l| l as usize)))
+        .unwrap_or_default();
 
     serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
 }
 
-
 #[wasm_bindgen]
 pub fn get_error_summary(last_n_minutes: u32) -> JsValue {
-    let summary = with_logger(|logger| {
-        logger.get_error_summary(last_n_minutes)
-    }).unwrap_or_else(|_| logger::ErrorSummary {
-        total_errors: 0,
-        unique_errors: 0,
-        error_counts: HashMap::new(),
-        component_errors: HashMap::new(),
-        time_range_minutes: last_n_minutes,
-        first_error_time: None,
-        last_error_time: None,
-    });
+    let summary =
+        with_logger(|logger| logger.get_error_summary(last_n_minutes)).unwrap_or_else(|_| {
+            logger::ErrorSummary {
+                total_errors: 0,
+                unique_errors: 0,
+                error_counts: HashMap::new(),
+                component_errors: HashMap::new(),
+                time_range_minutes: last_n_minutes,
+                first_error_time: None,
+                last_error_time: None,
+            }
+        });
 
     serde_wasm_bindgen::to_value(&summary).unwrap_or(JsValue::NULL)
 }
-

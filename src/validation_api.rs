@@ -1,8 +1,8 @@
 // src/validation_api.rs
 // Phase 2: Input Sanitization and Validation WASM Bindings
 
-use crate::sanitizer::with_sanitizer;
 use crate::console_log;
+use crate::sanitizer::with_sanitizer;
 use wasm_bindgen::prelude::*;
 
 // ========== Phase 2: Input Sanitization and Validation ==========
@@ -14,7 +14,7 @@ pub fn validate_room_id(room_id: &str) -> String {
         Ok(None) => {
             console_log!("Room ID validation failed, returning empty string");
             String::new()
-        },
+        }
         Err(_) => {
             console_log!("Error in room ID validation, returning empty string");
             String::new()
@@ -29,7 +29,7 @@ pub fn validate_username(username: &str) -> String {
         Ok(None) => {
             console_log!("Username validation failed, returning empty string");
             String::new()
-        },
+        }
         Err(_) => {
             console_log!("Error in username validation, returning empty string");
             String::new()
@@ -44,11 +44,10 @@ pub fn validate_message(message: &str) -> String {
         Ok(None) => {
             console_log!("Message validation failed, returning empty string");
             String::new()
-        },
+        }
         Err(_) => {
             console_log!("Error in message validation, returning empty string");
             String::new()
         }
     }
 }
-

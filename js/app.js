@@ -7,6 +7,18 @@ import '../css/main.css';
 import { P2PConnection } from './webrtc.js';
 import logger from './logger.js';
 
+// Global error handlers to prevent silent failures
+window.addEventListener('unhandledrejection', (event) => {
+  logger.error('Unhandled promise rejection:', event.reason);
+  // Prevent default logging to console (we handle it ourselves)
+  event.preventDefault();
+});
+
+window.addEventListener('error', (event) => {
+  logger.error('Uncaught error:', event.error?.message || event.message);
+  // Don't prevent default - let the error show in console for debugging
+});
+
 // Import state management
 import {
   CONSTANTS,

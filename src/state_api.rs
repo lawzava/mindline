@@ -1,23 +1,24 @@
 // src/state_api.rs
 // Phase 1: Enhanced State Management WASM Bindings
 
-use crate::types::{DraftMessage, RoomHistory, RoomMetadata, UserSession};
-use crate::state::APP_STATE;
 use crate::console_log;
+use crate::state::APP_STATE;
+use crate::types::{DraftMessage, UserSession};
 use wasm_bindgen::prelude::*;
 
 // ========== Phase 1: Enhanced State Management Functions ==========
 
 // Core state management functions
 
-
 #[wasm_bindgen]
 pub fn get_current_user_id() -> String {
     APP_STATE.with(|state| {
         let state = state.lock().unwrap();
-        state.user_session.as_ref()
+        state
+            .user_session
+            .as_ref()
             .map(|session| session.id.clone())
-            .unwrap_or_else(|| String::new())
+            .unwrap_or_default()
     })
 }
 
@@ -25,15 +26,16 @@ pub fn get_current_user_id() -> String {
 pub fn get_current_room_id() -> String {
     APP_STATE.with(|state| {
         let state = state.lock().unwrap();
-        state.current_room_id.clone().unwrap_or_else(|| String::new())
+        state.current_room_id.clone().unwrap_or_default()
     })
 }
 
 #[wasm_bindgen]
 pub fn set_current_room_id(room_id: &str) -> Result<(), JsValue> {
     APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
+        let mut state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))?;
 
         state.current_room_id = if room_id.is_empty() {
             None
@@ -60,8 +62,9 @@ pub fn update_user_session(name: &str, user_id: &str) -> Result<(), JsValue> {
     }
 
     APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
+        let mut state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))?;
 
         let now = js_sys::Date::now() as u64;
 
@@ -71,7 +74,9 @@ pub fn update_user_session(name: &str, user_id: &str) -> Result<(), JsValue> {
             current_room_id: state.current_room_id.clone(),
             last_activity: now,
             is_typing: false,
-            created_at: state.user_session.as_ref()
+            created_at: state
+                .user_session
+                .as_ref()
                 .map(|s| s.created_at)
                 .unwrap_or(now),
         };
@@ -81,7 +86,6 @@ pub fn update_user_session(name: &str, user_id: &str) -> Result<(), JsValue> {
         Ok(())
     })
 }
-
 
 // Draft messages management
 
@@ -100,8 +104,9 @@ pub fn set_draft_message(peer_id: &str, content: &str, sender_name: &str) -> Res
     }
 
     APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
+        let mut state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))?;
 
         if content.trim().is_empty() {
             // Remove draft if content is empty
@@ -123,14 +128,14 @@ pub fn set_draft_message(peer_id: &str, content: &str, sender_name: &str) -> Res
 #[wasm_bindgen]
 pub fn clear_draft_message(peer_id: &str) -> Result<(), JsValue> {
     APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
+        let mut state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))?;
 
         state.draft_messages.remove(peer_id);
         Ok(())
     })
 }
-
 
 // P2P state management
 
@@ -149,8 +154,9 @@ pub fn add_connected_peer(peer_id: &str) -> Result<(), JsValue> {
     }
 
     APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
+        let mut state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))?;
 
         if !state.p2p_connected_peers.contains(&peer_id.to_string()) {
             state.p2p_connected_peers.push(peer_id.to_string());
@@ -173,8 +179,9 @@ pub fn add_connected_peer(peer_id: &str) -> Result<(), JsValue> {
 #[wasm_bindgen]
 pub fn remove_connected_peer(peer_id: &str) -> Result<(), JsValue> {
     APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
+        let mut state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))?;
 
         state.p2p_connected_peers.retain(|p| p != peer_id);
 
@@ -197,8 +204,9 @@ pub fn remove_connected_peer(peer_id: &str) -> Result<(), JsValue> {
 #[wasm_bindgen]
 pub fn clear_all_connected_peers() -> Result<(), JsValue> {
     APP_STATE.with(|state| {
-        let mut state = state.lock().map_err(|_|
-            JsValue::from_str("Failed to lock app state"))?;
+        let mut state = state
+            .lock()
+            .map_err(|_| JsValue::from_str("Failed to lock app state"))?;
 
         state.p2p_connected_peers.clear();
         state.draft_messages.clear();
