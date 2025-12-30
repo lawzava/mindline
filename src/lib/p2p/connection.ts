@@ -13,6 +13,13 @@ import type {
 } from './types';
 import { DEFAULT_CONFIG } from './types';
 
+/** Queued offer with metadata for collision handling */
+interface QueuedOffer {
+	offer: RTCSessionDescriptionInit;
+	retryCount: number;
+	queuedAt: number;
+}
+
 export class P2PConnection {
 	// Identity
 	private clientId: string;
@@ -39,6 +46,19 @@ export class P2PConnection {
 	// ICE restart tracking for exponential backoff
 	private iceRestartAttempts: Map<string, number> = new Map();
 	private readonly MAX_ICE_RESTARTS = 3;
+
+	// Deduplication: prevent double disconnect callbacks
+	private disconnectingPeers: Set<string> = new Set();
+
+	// Connection state tracking: prevent concurrent negotiations
+	private negotiatingPeers: Set<string> = new Set();
+	private pendingOffers: Map<string, QueuedOffer> = new Map();
+	private readonly MAX_COLLISION_RETRIES = 3;
+	private readonly OFFER_TTL_MS = 30000; // 30 seconds max queue time
+
+	// Mesh retry tracking: prevent infinite reconnection attempts
+	private meshConnectionAttempts: Map<string, number> = new Map();
+	private readonly MAX_MESH_ATTEMPTS = 3;
 
 	// Callbacks
 	private onMessageCallback: MessageCallback | null = null;
@@ -339,6 +359,9 @@ export class P2PConnection {
 		const pc = new RTCPeerConnection(this.iceConfig);
 		this.peers.set(peerId, pc);
 
+		// Track negotiation state
+		this.negotiatingPeers.add(peerId);
+
 		// Handle ICE candidates
 		pc.onicecandidate = (event) => {
 			if (event.candidate) {
@@ -417,14 +440,20 @@ export class P2PConnection {
 
 			if (pc.connectionState === 'connected') {
 				console.log(`[P2P] Successfully connected to peer ${peerId}`);
+				// Clear negotiation state and process any queued offers
+				this.negotiatingPeers.delete(peerId);
+				this.processQueuedOffer(peerId);
 			} else if (pc.connectionState === 'failed') {
 				console.warn(`[P2P] Connection failed with peer ${peerId}`);
+				this.negotiatingPeers.delete(peerId);
 				this.removePeer(peerId);
+				this.processQueuedOffer(peerId);
 				if (this.onPeerDisconnectedCallback) {
 					this.onPeerDisconnectedCallback(peerId);
 				}
 			} else if (pc.connectionState === 'disconnected') {
 				console.warn(`[P2P] Peer ${peerId} disconnected, removing connection`);
+				this.negotiatingPeers.delete(peerId);
 				this.removePeer(peerId);
 			}
 		};
@@ -538,10 +567,11 @@ export class P2PConnection {
 
 		dataChannel.onclose = () => {
 			console.log(`[P2P] Data channel closed with ${peerId}`);
+			// Only clean up the channel reference - let removePeer handle the callback
+			// to prevent double callback firing (connection state change also triggers removal)
 			this.dataChannels.delete(peerId);
-			if (this.onPeerDisconnectedCallback) {
-				this.onPeerDisconnectedCallback(peerId);
-			}
+			// Trigger full peer removal through the deduplication-safe method
+			this.removePeer(peerId);
 		};
 
 		dataChannel.binaryType = 'arraybuffer';
@@ -552,6 +582,29 @@ export class P2PConnection {
 	 */
 	private async handleOffer(peerId: string, offer: RTCSessionDescriptionInit): Promise<void> {
 		try {
+			// If peer is already in negotiation, queue the offer
+			if (this.negotiatingPeers.has(peerId)) {
+				const existingQueued = this.pendingOffers.get(peerId);
+				const retryCount = existingQueued?.retryCount ?? 0;
+
+				if (retryCount >= this.MAX_COLLISION_RETRIES) {
+					console.warn(
+						`[P2P] Max collision retries (${this.MAX_COLLISION_RETRIES}) reached for ${peerId}, dropping offer`
+					);
+					return;
+				}
+
+				console.log(
+					`[P2P] Peer ${peerId} in negotiation, queueing offer (retry ${retryCount + 1}/${this.MAX_COLLISION_RETRIES})`
+				);
+				this.pendingOffers.set(peerId, {
+					offer,
+					retryCount: retryCount + 1,
+					queuedAt: Date.now()
+				});
+				return;
+			}
+
 			let pc = this.peers.get(peerId);
 
 			if (pc) {
@@ -600,7 +653,7 @@ export class P2PConnection {
 					console.log(`[P2P] Ignoring offer from ${peerId} (we have priority)`);
 					return;
 				} else {
-					console.log(`[P2P] Restarting connection for ${peerId} (they have priority)`);
+					console.log(`[P2P] Rolling back for ${peerId} (they have priority)`);
 
 					try {
 						await pc.setLocalDescription({ type: 'rollback' });
@@ -617,7 +670,28 @@ export class P2PConnection {
 						});
 					} catch (collisionError) {
 						console.error(`[P2P] Error resolving offer collision with ${peerId}:`, collisionError);
-						this.removePeer(peerId);
+
+						// Queue for retry instead of immediate removal
+						const existingQueued = this.pendingOffers.get(peerId);
+						const retryCount = existingQueued?.retryCount ?? 0;
+
+						if (retryCount < this.MAX_COLLISION_RETRIES) {
+							console.log(
+								`[P2P] Queueing offer for retry after collision error (${retryCount + 1}/${this.MAX_COLLISION_RETRIES})`
+							);
+							this.pendingOffers.set(peerId, {
+								offer,
+								retryCount: retryCount + 1,
+								queuedAt: Date.now()
+							});
+
+							// Schedule retry with exponential backoff: 500ms, 1s, 2s
+							const delay = Math.pow(2, retryCount) * 500;
+							setTimeout(() => this.processQueuedOffer(peerId), delay);
+						} else {
+							console.warn(`[P2P] Max collision retries reached for ${peerId}, removing peer`);
+							this.removePeer(peerId);
+						}
 						return;
 					}
 				}
@@ -639,8 +713,15 @@ export class P2PConnection {
 				try {
 					await pc.setRemoteDescription(new RTCSessionDescription(answer));
 					await this.processQueuedCandidates(peerId);
+
+					// Clear negotiation state - we've received an answer
+					this.negotiatingPeers.delete(peerId);
+
+					// Process any queued offers now that negotiation is complete
+					this.processQueuedOffer(peerId);
 				} catch (error) {
 					console.error(`[P2P] Error setting remote answer for ${peerId}:`, error);
+					this.negotiatingPeers.delete(peerId);
 				}
 			} else {
 				console.warn(`[P2P] Received answer in wrong state (${pc.signalingState}) for peer ${peerId}`);
@@ -648,6 +729,40 @@ export class P2PConnection {
 		} else {
 			console.warn(`[P2P] No peer connection found for ${peerId}`);
 		}
+	}
+
+	/**
+	 * Process queued offer for a peer after negotiation completes
+	 */
+	private async processQueuedOffer(peerId: string): Promise<void> {
+		const queued = this.pendingOffers.get(peerId);
+		if (!queued) {
+			return;
+		}
+
+		// Check if offer is stale (queued too long ago)
+		if (Date.now() - queued.queuedAt > this.OFFER_TTL_MS) {
+			console.log(`[P2P] Discarding stale queued offer for ${peerId}`);
+			this.pendingOffers.delete(peerId);
+			return;
+		}
+
+		// Check if peer is still negotiating
+		if (this.negotiatingPeers.has(peerId)) {
+			console.log(`[P2P] Peer ${peerId} still negotiating, will retry queued offer later`);
+			// Schedule another check with backoff
+			const delay = Math.pow(2, queued.retryCount) * 500;
+			setTimeout(() => this.processQueuedOffer(peerId), delay);
+			return;
+		}
+
+		console.log(
+			`[P2P] Processing queued offer for ${peerId} (retry ${queued.retryCount}/${this.MAX_COLLISION_RETRIES})`
+		);
+		this.pendingOffers.delete(peerId);
+
+		// Re-enter handleOffer with the queued offer
+		await this.handleOffer(peerId, queued.offer);
 	}
 
 	/**
@@ -785,8 +900,18 @@ export class P2PConnection {
 
 	/**
 	 * Remove peer connection and clean up all resources
+	 * Uses deduplication to prevent double callback firing
 	 */
 	private removePeer(peerId: string): void {
+		// Deduplication: check if already disconnecting this peer
+		if (this.disconnectingPeers.has(peerId)) {
+			console.log(`[P2P] Already disconnecting peer ${peerId}, skipping duplicate removal`);
+			return;
+		}
+
+		// Mark as disconnecting to prevent duplicate callbacks
+		this.disconnectingPeers.add(peerId);
+
 		const channel = this.dataChannels.get(peerId);
 		if (channel) {
 			channel.onopen = null;
@@ -818,10 +943,20 @@ export class P2PConnection {
 		this.pendingCandidates.delete(peerId);
 		this.relayPeers.delete(peerId);
 		this.allKnownPeers.delete(peerId);
+		this.negotiatingPeers.delete(peerId);
+		this.pendingOffers.delete(peerId);
+		this.meshConnectionAttempts.delete(peerId);
 
+		// Fire callback only once per peer
 		if (this.onPeerDisconnectedCallback) {
 			this.onPeerDisconnectedCallback(peerId);
 		}
+
+		// Clear the disconnecting flag after a short delay
+		// This prevents rapid reconnect/disconnect cycles from being deduplicated
+		setTimeout(() => {
+			this.disconnectingPeers.delete(peerId);
+		}, 1000);
 	}
 
 	/**
@@ -908,7 +1043,7 @@ export class P2PConnection {
 	}
 
 	/**
-	 * Start periodic mesh monitoring
+	 * Start periodic mesh monitoring with retry limits
 	 */
 	private startMeshMonitoring(): void {
 		if (this.meshCheckInterval) {
@@ -919,7 +1054,25 @@ export class P2PConnection {
 			const knownPeers = Array.from(this.allKnownPeers);
 			for (const peerId of knownPeers) {
 				if (peerId !== this.clientId && !this.dataChannels.has(peerId)) {
+					// Check retry count to prevent infinite connection attempts
+					const attempts = this.meshConnectionAttempts.get(peerId) ?? 0;
+
+					if (attempts >= this.MAX_MESH_ATTEMPTS) {
+						// Skip peers that have failed too many times
+						// They'll be retried when they rejoin or after a longer timeout
+						continue;
+					}
+
+					// Track the attempt
+					this.meshConnectionAttempts.set(peerId, attempts + 1);
+					console.log(
+						`[P2P] Mesh reconnect attempt ${attempts + 1}/${this.MAX_MESH_ATTEMPTS} for peer ${peerId}`
+					);
+
 					this.createPeerConnection(peerId, true);
+				} else if (this.dataChannels.has(peerId)) {
+					// Reset attempt counter on successful connection
+					this.meshConnectionAttempts.delete(peerId);
 				}
 			}
 		}, 10000);

@@ -261,6 +261,33 @@ export const wasm = {
 	decryptMessageContent: (content: string) =>
 		createSafeCall<[string], string>('decrypt_message_content', ['content'])(content),
 
+	encryptMessageContent: (roomId: string, content: string) =>
+		createSafeCall<[string, string], string>('encrypt_message_content', ['roomId', 'content'])(
+			roomId,
+			content
+		),
+
+	// Encryption key management
+	initializeRoomEncryption: (roomId: string) =>
+		createSafeCall<[string], boolean>('initialize_room_encryption', ['roomId'])(roomId),
+
+	generateRoomKey: (roomId: string) =>
+		createSafeCall<[string], string>('generate_room_encryption_key', ['roomId'])(roomId),
+
+	saveRoomKeyToStorage: (roomId: string) =>
+		createSafeCall<[string], void>('save_room_key_to_storage', ['roomId'])(roomId),
+
+	loadRoomKeyFromStorage: (roomId: string) =>
+		createSafeCall<[string], boolean>('load_room_key_from_storage', ['roomId'])(roomId),
+
+	hasRoomKeyInStorage: (roomId: string) =>
+		createSafeCall<[string], boolean>('has_room_key_in_storage', ['roomId'])(roomId),
+
+	hasRoomKey: (roomId: string) =>
+		createSafeCall<[string], boolean>('has_room_key', ['roomId'])(roomId),
+
+	listEncryptionKeys: () => createSafeCall<[], unknown[]>('list_encryption_keys', [])(),
+
 	// Logging
 	initializeLogger: (developmentMode: boolean, debugEnabled: boolean) =>
 		createSafeCall<[boolean, boolean], void>('initialize_logger', [
