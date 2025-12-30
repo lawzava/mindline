@@ -48,6 +48,7 @@
 		bind:ref={inputRef}
 		type="text"
 		placeholder="Type a message..."
+		aria-label="Message input"
 		bind:value={message}
 		onkeydown={handleKeydown}
 		oninput={handleInput}

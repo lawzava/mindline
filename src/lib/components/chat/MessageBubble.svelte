@@ -126,13 +126,14 @@
 						type="text"
 						bind:value={editContent}
 						onkeydown={handleKeydown}
+						aria-label="Edit message content"
 						class="h-7 min-w-[200px] text-sm bg-background text-foreground"
 						autofocus
 					/>
-					<Button variant="ghost" size="icon" onclick={saveEdit} class="h-7 w-7">
+					<Button variant="ghost" size="icon" onclick={saveEdit} class="h-7 w-7" aria-label="Save edit">
 						<Check class="h-4 w-4" />
 					</Button>
-					<Button variant="ghost" size="icon" onclick={cancelEdit} class="h-7 w-7">
+					<Button variant="ghost" size="icon" onclick={cancelEdit} class="h-7 w-7" aria-label="Cancel edit">
 						<X class="h-4 w-4" />
 					</Button>
 				</div>

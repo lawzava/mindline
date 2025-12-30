@@ -77,6 +77,7 @@
 					{#each emojis as emoji}
 						<button
 							onclick={() => handleReaction(emoji)}
+							aria-label={`React with ${emoji}`}
 							class="flex h-8 w-8 items-center justify-center rounded text-lg transition-colors hover:bg-muted"
 						>
 							{emoji}
