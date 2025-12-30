@@ -293,7 +293,7 @@
 		</div>
 	</div>
 {:else}
-	<div class="flex flex-1 flex-col">
+	<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col">
 		<!-- Connection Status Bar -->
 		<div class="flex items-center justify-between border-b px-4 py-2">
 			<div class="flex items-center gap-2">
