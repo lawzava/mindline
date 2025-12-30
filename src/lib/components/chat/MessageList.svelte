@@ -30,7 +30,7 @@
 <div class="flex-1 overflow-hidden">
 	<div
 		bind:this={scrollRef}
-		class="h-full overflow-y-auto px-4 py-4"
+		class="h-full overflow-y-auto px-4 py-4 sm:px-6"
 	>
 		{#if messages.length === 0}
 			<div class="flex h-full items-center justify-center">
