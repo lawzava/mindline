@@ -31,6 +31,9 @@
 		{#each reactionList as reaction}
 			<button
 				onclick={() => onToggleReaction(reaction.emoji)}
+				aria-label={reaction.hasReacted
+					? `Remove ${reaction.emoji} reaction (${reaction.count} total)`
+					: `React with ${reaction.emoji} (${reaction.count} total)`}
 				class={cn(
 					'flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors',
 					reaction.hasReacted
