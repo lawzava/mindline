@@ -40,13 +40,15 @@ export function has_room_key(room_id: string): boolean;
  */
 export function initialize_room_encryption(room_id: string): boolean;
 /**
- * Encrypt message content using room key
+ * Encrypt message content using room key (async - returns Promise)
+ * Uses real AES-256-GCM via Web Crypto API
  */
-export function encrypt_message_content(room_id: string, content: string): string;
+export function encrypt_message_content(room_id: string, content: string): Promise<any>;
 /**
- * Decrypt message content using room key
+ * Decrypt message content using room key (async - returns Promise)
+ * Uses real AES-256-GCM via Web Crypto API
  */
-export function decrypt_message_content(encrypted_json: string): string;
+export function decrypt_message_content(encrypted_json: string): Promise<any>;
 export function initialize_logger(is_development: boolean, debug_enabled: boolean): void;
 export function set_log_context(user_id?: string | null, room_id?: string | null, component?: string | null): void;
 export function log_debug(component: string, message: string): void;
@@ -122,8 +124,8 @@ export interface InitOutput {
   readonly has_room_key_in_storage: (a: number, b: number) => [number, number, number];
   readonly has_room_key: (a: number, b: number) => number;
   readonly initialize_room_encryption: (a: number, b: number) => [number, number, number];
-  readonly encrypt_message_content: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-  readonly decrypt_message_content: (a: number, b: number) => [number, number, number, number];
+  readonly encrypt_message_content: (a: number, b: number, c: number, d: number) => any;
+  readonly decrypt_message_content: (a: number, b: number) => any;
   readonly initialize_logger: (a: number, b: number) => [number, number];
   readonly set_log_context: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
   readonly log_debug: (a: number, b: number, c: number, d: number) => void;
@@ -179,7 +181,10 @@ export interface InitOutput {
   readonly __externref_table_alloc: () => number;
   readonly __wbindgen_export_5: WebAssembly.Table;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_export_7: WebAssembly.Table;
   readonly __externref_table_dealloc: (a: number) => void;
+  readonly closure246_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure107_externref_shim: (a: number, b: number, c: any, d: any) => void;
   readonly __wbindgen_start: () => void;
 }
 

@@ -22,13 +22,13 @@ pub fn send_message_enhanced(
     message_id: &str,
 ) -> Result<JsValue, JsValue> {
     // Get the sender name from APP_STATE
-    let sender_name = APP_STATE.with(|state| {
-        let state = state.lock().unwrap();
-        state
+    let sender_name = APP_STATE.with(|state| match state.lock() {
+        Ok(state) => state
             .user_session
             .as_ref()
             .map(|session| session.name.clone())
-            .unwrap_or_else(|| "Anonymous".to_string())
+            .unwrap_or_else(|| "Anonymous".to_string()),
+        Err(_) => "Anonymous".to_string(),
     });
 
     let message = with_message_manager(|manager| {
@@ -76,9 +76,10 @@ pub fn get_room_message_stats(room_id: &str) -> JsValue {
 
     if let Some((total, unread, last_sync)) = stats {
         let stats_obj = js_sys::Object::new();
-        js_sys::Reflect::set(&stats_obj, &"totalMessages".into(), &(total as u32).into()).unwrap();
-        js_sys::Reflect::set(&stats_obj, &"unreadCount".into(), &(unread as u32).into()).unwrap();
-        js_sys::Reflect::set(&stats_obj, &"lastSync".into(), &(last_sync as f64).into()).unwrap();
+        // Use ok() to ignore errors - if setting fails, we still return partial object
+        let _ = js_sys::Reflect::set(&stats_obj, &"totalMessages".into(), &(total as u32).into());
+        let _ = js_sys::Reflect::set(&stats_obj, &"unreadCount".into(), &(unread as u32).into());
+        let _ = js_sys::Reflect::set(&stats_obj, &"lastSync".into(), &(last_sync as f64).into());
         stats_obj.into()
     } else {
         JsValue::NULL

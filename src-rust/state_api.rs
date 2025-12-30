@@ -12,21 +12,21 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub fn get_current_user_id() -> String {
-    APP_STATE.with(|state| {
-        let state = state.lock().unwrap();
-        state
+    APP_STATE.with(|state| match state.lock() {
+        Ok(state) => state
             .user_session
             .as_ref()
             .map(|session| session.id.clone())
-            .unwrap_or_default()
+            .unwrap_or_default(),
+        Err(_) => String::new(),
     })
 }
 
 #[wasm_bindgen]
 pub fn get_current_room_id() -> String {
-    APP_STATE.with(|state| {
-        let state = state.lock().unwrap();
-        state.current_room_id.clone().unwrap_or_default()
+    APP_STATE.with(|state| match state.lock() {
+        Ok(state) => state.current_room_id.clone().unwrap_or_default(),
+        Err(_) => String::new(),
     })
 }
 
@@ -91,9 +91,9 @@ pub fn update_user_session(name: &str, user_id: &str) -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub fn get_draft_messages() -> JsValue {
-    APP_STATE.with(|state| {
-        let state = state.lock().unwrap();
-        serde_wasm_bindgen::to_value(&state.draft_messages).unwrap_or(JsValue::NULL)
+    APP_STATE.with(|state| match state.lock() {
+        Ok(state) => serde_wasm_bindgen::to_value(&state.draft_messages).unwrap_or(JsValue::NULL),
+        Err(_) => JsValue::NULL,
     })
 }
 
@@ -141,9 +141,11 @@ pub fn clear_draft_message(peer_id: &str) -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub fn get_connected_peers() -> JsValue {
-    APP_STATE.with(|state| {
-        let state = state.lock().unwrap();
-        serde_wasm_bindgen::to_value(&state.p2p_connected_peers).unwrap_or(JsValue::NULL)
+    APP_STATE.with(|state| match state.lock() {
+        Ok(state) => {
+            serde_wasm_bindgen::to_value(&state.p2p_connected_peers).unwrap_or(JsValue::NULL)
+        }
+        Err(_) => JsValue::NULL,
     })
 }
 
