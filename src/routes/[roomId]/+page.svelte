@@ -56,7 +56,6 @@
 			// Load existing messages from storage
 			wasm.loadRoomMessagesFromStorage(roomId);
 			const messagesData = wasm.getRoomMessages(roomId, 100);
-			console.log('[DEBUG] Loaded messages from WASM:', JSON.stringify(messagesData, null, 2));
 			// WASM returns a JS array directly via serde_wasm_bindgen, not a JSON string
 			if (messagesData && Array.isArray(messagesData) && messagesData.length > 0) {
 				messages.setRoomMessages(roomId, messagesData as Message[]);
@@ -124,7 +123,7 @@
 				content,
 				timestamp: Date.now(),
 				room_id: roomId,
-				status: 'Sent',
+				status: 'Sending',
 				edited: false,
 				edit_timestamp: null,
 				original_content: null,
@@ -136,22 +135,29 @@
 				size_bytes: new TextEncoder().encode(content).length
 			};
 
-			// Add to local messages
-			messages.addMessage(roomId, message);
-
-			// Send via WASM (use enhanced message system for proper persistence)
+			// Send via WASM first for persistence (before UI update to prevent data loss)
 			try {
 				wasm.sendMessageEnhanced(roomId, content, messageId);
 				wasm.saveRoomMessagesToStorage(roomId);
+				// Mark as sent after successful persistence
+				message.status = 'Sent';
 			} catch (error) {
-				console.error('Failed to send message:', error);
-				toast.error('Failed to send message');
-				// Update message status to failed
-				messages.updateMessage(roomId, messageId, { status: 'Failed' });
+				console.error('Failed to persist message:', error);
+				message.status = 'Failed';
 			}
 
-			// Broadcast via P2P
-			broadcastChat(content, messageId);
+			// Add to local messages (after persistence attempt)
+			messages.addMessage(roomId, message);
+
+			// Show error toast if persistence failed
+			if (message.status === 'Failed') {
+				toast.error('Failed to send message');
+			}
+
+			// Broadcast via P2P (even if persistence failed, try to send to peers)
+			if (message.status !== 'Failed') {
+				broadcastChat(content, messageId);
+			}
 
 			// Clear typing indicator
 			broadcastTyping('');
@@ -223,7 +229,7 @@
 					if (stored) {
 						const roomState = JSON.parse(stored);
 						const msgIndex = roomState.messages?.findIndex((m: Message) => m.id === messageId);
-						if (msgIndex !== -1 && roomState.messages) {
+						if (msgIndex !== undefined && msgIndex !== -1 && roomState.messages) {
 							roomState.messages[msgIndex].content = newContent;
 							roomState.messages[msgIndex].edited = true;
 							roomState.messages[msgIndex].edit_timestamp = Date.now();
@@ -280,7 +286,7 @@
 					if (stored) {
 						const roomState = JSON.parse(stored);
 						const msgIndex = roomState.messages?.findIndex((m: Message) => m.id === messageId);
-						if (msgIndex !== -1 && roomState.messages) {
+						if (msgIndex !== undefined && msgIndex !== -1 && roomState.messages) {
 							roomState.messages[msgIndex].content = '[Message deleted]';
 							roomState.messages[msgIndex].message_type = 'Deleted';
 							localStorage.setItem(storageKey, JSON.stringify(roomState));
