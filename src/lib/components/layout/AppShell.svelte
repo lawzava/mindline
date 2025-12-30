@@ -25,6 +25,7 @@
 			try {
 				const { wasm } = await import('$lib/wasm');
 				wasm.initialize($user.name, $user.id);
+				wasm.setMessageManagerUser($user.id);
 			} catch (e) {
 				console.error('Failed to initialize user:', e);
 			}

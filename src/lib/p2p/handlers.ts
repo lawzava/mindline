@@ -41,8 +41,6 @@ export function setSendToPeerFn(fn: (peerId: string, message: TypedP2PMessage) =
  */
 export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void {
 	try {
-		console.log(`[P2P Handler] Received ${message.type} message from ${peerId}`);
-
 		switch (message.type) {
 			case 'chat':
 				handleChatMessage(message, peerId);
@@ -84,14 +82,6 @@ export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void 
  */
 function handleChatMessage(message: ChatMessage, peerId: string): void {
 	const { content, senderName, senderId, messageId, timestamp, roomId, encrypted } = message;
-
-	console.log('[P2P Handler] Chat message:', {
-		content: encrypted ? '[encrypted]' : content,
-		senderName,
-		senderId,
-		messageId,
-		timestamp
-	});
 
 	if (!content || (!senderName && !senderId)) {
 		console.warn('[P2P Handler] Invalid chat message received');
@@ -143,12 +133,15 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 	if (targetRoomId) {
 		messages.addMessage(targetRoomId, messageObj);
 
-		// Also save to WASM storage
+		// Store in WASM state and save to localStorage
 		if (isWasmReady()) {
 			try {
+				// First add to WASM's internal state so it can be persisted
+				wasm.receiveMessageFromPeer(messageObj);
+				// Then save to localStorage
 				wasm.saveRoomMessagesToStorage(targetRoomId);
 			} catch (error) {
-				console.warn('[P2P Handler] Failed to save to WASM storage:', error);
+				console.error('[P2P Handler] Failed to save to WASM storage:', error);
 			}
 		}
 
@@ -164,7 +157,6 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 			};
 
 			sendToPeerFn(peerId, ack);
-			console.log('[P2P Handler] Sent delivery ack for message:', messageObj.id);
 		}
 	}
 
@@ -177,8 +169,6 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
  */
 function handleTypingMessage(message: TypingMessage, peerId: string): void {
 	const { content, senderName, senderId } = message;
-
-	console.log('[P2P Handler] Typing message:', { content, senderName, senderId });
 
 	const displayName = senderName || senderId || peerId;
 
@@ -200,8 +190,6 @@ function handleTypingMessage(message: TypingMessage, peerId: string): void {
  * Handle sync request from peer
  */
 function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
-	console.log('[P2P Handler] Sync request from:', peerId, message);
-
 	const roomId = message.roomId || get(currentRoomId);
 	if (!roomId) {
 		console.warn('[P2P Handler] No room ID for sync request');
@@ -247,11 +235,6 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 		// Send response to requesting peer
 		if (sendToPeerFn) {
 			sendToPeerFn(peerId, syncResponse);
-			console.log(
-				`[P2P Handler] Encrypted sync response sent to ${peerId} with ${roomMessages.length} messages`
-			);
-		} else {
-			console.warn('[P2P Handler] No sendToPeer function available');
 		}
 	} catch (error) {
 		console.error('[P2P Handler] Error handling sync request:', error);
@@ -262,8 +245,6 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
  * Handle sync response from peer
  */
 function handleSyncResponse(message: SyncResponseMessage, peerId: string): void {
-	console.log('[P2P Handler] Sync response from:', peerId);
-
 	const { roomId, messages: syncedMessages, encrypted } = message;
 	const targetRoomId = roomId || get(currentRoomId);
 
@@ -273,12 +254,10 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 	}
 
 	if (!syncedMessages || !Array.isArray(syncedMessages) || syncedMessages.length === 0) {
-		console.log('[P2P Handler] No messages in sync response');
 		return;
 	}
 
 	const totalMessages = syncedMessages.length;
-	console.log(`[P2P Handler] Received ${totalMessages} messages from ${peerId} for sync`);
 
 	// Start sync tracking
 	connection.startSync(peerId);
@@ -322,6 +301,14 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 
 		if (!existingIds.has(msg.id)) {
 			messages.addMessage(targetRoomId, msg);
+			// Also add to WASM state for persistence
+			if (isWasmReady()) {
+				try {
+					wasm.receiveMessageFromPeer(msg);
+				} catch {
+					// Continue even if individual message fails
+				}
+			}
 			newCount++;
 		}
 
@@ -332,8 +319,6 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 	}
 
 	if (newCount > 0) {
-		console.log(`[P2P Handler] Added ${newCount} new messages from sync`);
-
 		// Save to WASM storage
 		if (isWasmReady()) {
 			try {
@@ -342,8 +327,6 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 				console.warn('[P2P Handler] Failed to save synced messages to storage:', error);
 			}
 		}
-	} else {
-		console.log('[P2P Handler] No new messages to sync (all duplicates)');
 	}
 
 	// End sync with short delay for UI visibility
@@ -357,7 +340,6 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
  */
 function handleUserConnected(message: UserConnectedMessage, peerId: string): void {
 	const { senderName, senderId } = message;
-	console.log('[P2P Handler] User connected:', senderName || peerId);
 
 	// Store the peer's name using the WebRTC peerId (not senderId)
 	// This ensures $peerNames matches $connectedPeers which uses WebRTC peer IDs
@@ -376,8 +358,6 @@ function handleUserConnected(message: UserConnectedMessage, peerId: string): voi
  */
 function handleEditMessage(message: EditMessage, peerId: string): void {
 	const { messageId, roomId, newContent, senderId, timestamp } = message;
-
-	console.log('[P2P Handler] Edit message:', { messageId, roomId, newContent });
 
 	const targetRoomId = roomId || get(currentRoomId);
 	if (!targetRoomId || !messageId) {
@@ -416,8 +396,6 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
 function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
 	const { messageId, roomId, senderId } = message;
 
-	console.log('[P2P Handler] Delete message:', { messageId, roomId });
-
 	const targetRoomId = roomId || get(currentRoomId);
 	if (!targetRoomId || !messageId) {
 		console.warn('[P2P Handler] Invalid delete message');
@@ -452,8 +430,6 @@ function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
  */
 function handleReactionMessage(message: ReactionMessage, peerId: string): void {
 	const { messageId, roomId, reaction, senderId, senderName, action } = message;
-
-	console.log('[P2P Handler] Reaction message:', { messageId, roomId, reaction, action });
 
 	const targetRoomId = roomId || get(currentRoomId);
 	if (!targetRoomId || !messageId || !reaction) {
@@ -505,8 +481,6 @@ function handleReactionMessage(message: ReactionMessage, peerId: string): void {
  */
 function handleDeliveryAck(message: DeliveryAckMessage, peerId: string): void {
 	const { messageId } = message;
-
-	console.log('[P2P Handler] Delivery ack received:', { messageId, peerId });
 
 	// Record the delivery in our tracking store
 	delivery.recordDelivery(messageId, peerId);
