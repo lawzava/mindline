@@ -43,7 +43,7 @@
 	});
 </script>
 
-<div class="flex items-center gap-2 border-t border-border bg-card p-4">
+<div class="flex shrink-0 items-center gap-2 border-t border-border bg-card p-4">
 	<Input
 		bind:ref={inputRef}
 		type="text"

@@ -7,7 +7,7 @@
 
 {#if $draftsList.length > 0}
 	<div
-		class="flex flex-col gap-2 border-t border-border bg-muted/30 px-4 py-3"
+		class="flex shrink-0 flex-col gap-2 border-t border-border bg-muted/30 px-4 py-3"
 		transition:fade={{ duration: 150 }}
 	>
 		{#each $draftsList as draft (draft.peerId)}
