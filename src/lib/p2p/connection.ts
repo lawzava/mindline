@@ -856,12 +856,19 @@ export class P2PConnection {
 	broadcast(message: TypedP2PMessage): number {
 		let successCount = 0;
 
+		// Debug: Log channel state
+		console.log(`[P2P] Broadcast ${message.type}: dataChannels=${this.dataChannels.size}, peers=${this.peers.size}, allKnown=${this.allKnownPeers.size}`);
+		for (const [peerId, channel] of this.dataChannels.entries()) {
+			console.log(`[P2P]   Channel to ${peerId.slice(0, 8)}: state=${channel.readyState}`);
+		}
+
 		// Send via P2P data channels
 		for (const [peerId, channel] of this.dataChannels.entries()) {
 			if (channel.readyState === 'open') {
 				try {
 					channel.send(JSON.stringify(message));
 					successCount++;
+					console.log(`[P2P]   Sent to ${peerId.slice(0, 8)} via P2P`);
 				} catch (error) {
 					console.warn(`[P2P] P2P send failed to ${peerId}, switching to relay:`, error);
 					this.relayPeers.add(peerId);
