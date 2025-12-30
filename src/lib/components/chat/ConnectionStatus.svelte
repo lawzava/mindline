@@ -29,11 +29,11 @@
 				};
 			case 'disconnected':
 				return {
-					label: 'Disconnected',
+					label: 'Offline',
 					variant: 'outline' as const,
 					icon: WifiOff,
 					iconClass: 'text-muted-foreground',
-					tooltip: 'Not connected to signaling server'
+					tooltip: 'Not connected. Click Reconnect to try again.'
 				};
 			case 'failed':
 				return {
@@ -45,11 +45,11 @@
 				};
 			case 'local':
 				return {
-					label: 'Local',
+					label: 'Local Only',
 					variant: 'outline' as const,
 					icon: Wifi,
-					iconClass: 'text-muted-foreground',
-					tooltip: "Working offline. Messages won't sync with other users."
+					iconClass: 'text-yellow-500',
+					tooltip: "You're working offline. Messages are saved locally but won't sync with other users until you reconnect."
 				};
 			default:
 				return {

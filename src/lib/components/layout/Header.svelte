@@ -4,24 +4,9 @@
 	import { user, connectionStatus, peerCount, currentRoomId } from '$lib/stores';
 	import { Sun, Moon, Users, Share2, Wifi, WifiOff, Loader2 } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
+	import { toggleMode, mode } from 'mode-watcher';
 
-	let isDark = $state(false);
 	let userName = $state($user.name);
-
-	// Sync with system preference on mount
-	$effect(() => {
-		if (typeof window !== 'undefined') {
-			isDark = document.documentElement.classList.contains('dark');
-		}
-	});
-
-	function toggleTheme() {
-		isDark = !isDark;
-		if (typeof window !== 'undefined') {
-			document.documentElement.classList.toggle('dark', isDark);
-			localStorage.setItem('theme', isDark ? 'dark' : 'light');
-		}
-	}
 
 	function handleNameChange() {
 		const trimmed = userName.trim();
@@ -59,10 +44,10 @@
 </script>
 
 <header class="border-b border-border bg-card">
-	<div class="mx-auto flex h-16 max-w-4xl items-center justify-between px-4">
+	<div class="mx-auto flex h-14 sm:h-16 max-w-4xl items-center justify-between px-2 sm:px-4">
 		<!-- Logo -->
-		<div class="flex items-center gap-3">
-			<h1 class="text-2xl font-bold tracking-tight">MINDLINE</h1>
+		<div class="flex items-center gap-2 sm:gap-3">
+			<h1 class="text-xl sm:text-2xl font-bold tracking-tight">MINDLINE</h1>
 			{#if $currentRoomId}
 				<div class="flex items-center gap-2 text-sm text-muted-foreground">
 					{#if $connectionStatus === 'connected'}
@@ -83,7 +68,7 @@
 		</div>
 
 		<!-- Controls -->
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2 sm:gap-3">
 			<!-- Username input -->
 			<Input
 				type="text"
@@ -91,7 +76,7 @@
 				bind:value={userName}
 				onblur={handleNameChange}
 				onkeydown={(e) => e.key === 'Enter' && handleNameChange()}
-				class="h-9 w-32 text-sm"
+				class="w-24 sm:w-32 text-sm"
 			/>
 
 			<!-- Share button (only when in a room) -->
@@ -103,8 +88,8 @@
 			{/if}
 
 			<!-- Theme toggle -->
-			<Button variant="ghost" size="icon" onclick={toggleTheme} class="h-9 w-9">
-				{#if isDark}
+			<Button variant="ghost" size="icon" onclick={toggleMode} class="h-9 w-9">
+				{#if mode.current === 'dark'}
 					<Sun class="h-4 w-4" />
 				{:else}
 					<Moon class="h-4 w-4" />
