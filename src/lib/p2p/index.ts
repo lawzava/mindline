@@ -59,3 +59,6 @@ export {
 
 // Handler utilities
 export { emitToast } from './handlers';
+
+// Configuration utilities
+export { getP2PConfig, getSignalingConfig, isMobileDevice, isMobileNetwork, getDevConfig } from './config';

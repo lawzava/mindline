@@ -15,8 +15,9 @@ let p2pConnection: P2PConnection | null = null;
 let reconnectAttempts = 0;
 let reconnectInterval: ReturnType<typeof setInterval> | null = null;
 
-const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_INTERVAL_MS = 8000;
+const MAX_RECONNECT_ATTEMPTS = 7;
+const BASE_RECONNECT_DELAY = 1000;
+const MAX_RECONNECT_DELAY = 30000;
 
 /**
  * Initialize P2P connection for a room
@@ -319,35 +320,46 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 		return;
 	}
 
-	console.log('[P2P Manager] Starting reconnection...');
+	console.log('[P2P Manager] Starting reconnection with exponential backoff...');
 
-	reconnectInterval = setInterval(async () => {
+	const attemptReconnect = async () => {
 		if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
 			if (reconnectInterval) {
-				clearInterval(reconnectInterval);
+				clearTimeout(reconnectInterval);
 				reconnectInterval = null;
 			}
 			connection.setError('Max reconnection attempts reached');
+			emitToast('error', 'Failed to reconnect after multiple attempts');
 			return;
 		}
 
 		reconnectAttempts++;
-		const delay = Math.min(1000 * Math.pow(1.2, reconnectAttempts), 5000);
-		console.log(`[P2P Manager] Reconnection attempt ${reconnectAttempts} (delay: ${delay}ms)`);
+
+		// Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s
+		const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
+		console.log(`[P2P Manager] Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
 
 		await new Promise((r) => setTimeout(r, delay));
 
 		try {
 			await initializeP2P(roomId, config);
 			if (reconnectInterval) {
-				clearInterval(reconnectInterval);
+				clearTimeout(reconnectInterval);
 				reconnectInterval = null;
 			}
+			emitToast('success', 'Reconnected successfully');
 			console.log('[P2P Manager] Reconnection successful');
 		} catch (error) {
-			console.warn(`[P2P Manager] Reconnection attempt ${reconnectAttempts} failed`);
+			console.warn(`[P2P Manager] Reconnection attempt ${reconnectAttempts} failed:`, error);
+			// Schedule next attempt
+			if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+				reconnectInterval = setTimeout(attemptReconnect, 0);
+			}
 		}
-	}, RECONNECT_INTERVAL_MS);
+	};
+
+	// Start first attempt
+	reconnectInterval = setTimeout(attemptReconnect, 0);
 }
 
 /**

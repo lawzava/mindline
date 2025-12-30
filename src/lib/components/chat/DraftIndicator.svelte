@@ -2,6 +2,7 @@
 	import { draftsList } from '$lib/stores';
 	import TypingIndicator from './TypingIndicator.svelte';
 	import { fade } from 'svelte/transition';
+	import { cn } from '$lib/utils';
 </script>
 
 {#if $draftsList.length > 0}
@@ -10,7 +11,13 @@
 		transition:fade={{ duration: 150 }}
 	>
 		{#each $draftsList as draft (draft.peerId)}
-			<div class="flex items-start gap-2" transition:fade={{ duration: 150 }}>
+			<div
+				class={cn(
+					'flex items-start gap-2 transition-opacity duration-500',
+					draft.isFading && 'opacity-30'
+				)}
+				transition:fade={{ duration: 150 }}
+			>
 				<!-- Sender name -->
 				<span class="shrink-0 text-xs font-medium text-muted-foreground">
 					{draft.senderName}

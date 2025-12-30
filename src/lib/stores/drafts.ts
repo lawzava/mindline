@@ -10,6 +10,7 @@ export interface Draft {
 	senderName: string;
 	content: string;
 	timestamp: number;
+	isFading?: boolean;
 }
 
 const DRAFT_TIMEOUT_MS = 3000; // Auto-clear drafts after 3 seconds of inactivity
@@ -47,16 +48,32 @@ function createDraftsStore() {
 				return new Map(drafts);
 			});
 
-			// Set timeout to auto-clear after inactivity
+			// Set timeout to fade, then auto-clear after inactivity
 			if (content.trim() !== '' && browser) {
-				const timeout = setTimeout(() => {
+				const fadeTimeout = setTimeout(() => {
+					// First, mark as fading
 					update((drafts) => {
-						drafts.delete(peerId);
+						const draft = drafts.get(peerId);
+						if (draft) {
+							drafts.set(peerId, { ...draft, isFading: true });
+						}
 						return new Map(drafts);
 					});
-					timeouts.delete(peerId);
+
+					// Then remove after fade animation
+					const removeTimeout = setTimeout(() => {
+						update((drafts) => {
+							drafts.delete(peerId);
+							return new Map(drafts);
+						});
+						timeouts.delete(peerId);
+					}, 500); // 500ms fade animation
+
+					// Store the remove timeout so it can be cancelled
+					timeouts.set(peerId, removeTimeout);
 				}, DRAFT_TIMEOUT_MS);
-				timeouts.set(peerId, timeout);
+
+				timeouts.set(peerId, fadeTimeout);
 			}
 		},
 

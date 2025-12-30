@@ -5,15 +5,18 @@
 	import { MessageList, MessageInput, DraftIndicator, ConnectionStatus } from '$lib/components/chat';
 	import { currentRoomId, currentRoomMessages, messages, user, drafts } from '$lib/stores';
 	import { wasm, isWasmReady } from '$lib/wasm';
-	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction } from '$lib/p2p';
+	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, isMobileDevice } from '$lib/p2p';
 	import type { Message } from '$lib/wasm/types';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Copy, LogOut, Loader2 } from 'lucide-svelte';
 
 	// Get room ID from URL params
 	const roomId = $derived(page.params.roomId);
 	let isLoading = $state(true);
+	let isSending = $state(false);
+	let showLeaveDialog = $state(false);
 
 	onMount(async () => {
 		if (!roomId || !isWasmReady()) {
@@ -42,9 +45,13 @@
 				messages.setRoomMessages(roomId, messagesData as Message[]);
 			}
 
-			// Initialize P2P connection
+			// Initialize P2P connection with environment-aware config
 			try {
-				await initializeP2P(roomId);
+				const p2pConfig = getP2PConfig();
+				if (isMobileDevice()) {
+					console.log('[Room] Mobile device detected - using optimized P2P config');
+				}
+				await initializeP2P(roomId, p2pConfig);
 			} catch (error) {
 				// P2P failed but app still works in local mode
 				console.warn('P2P initialization failed (running in local mode):', error);
@@ -65,51 +72,57 @@
 		disconnectP2P();
 	});
 
-	function handleSend(content: string) {
-		if (!isWasmReady() || !roomId) return;
+	async function handleSend(content: string) {
+		if (!isWasmReady() || !roomId || isSending) return;
 
-		const messageId = wasm.generateUuid();
+		isSending = true;
 
-		// Create message object
-		const message: Message = {
-			id: messageId,
-			sender_id: $user.id,
-			sender_name: $user.name,
-			message_type: 'Text',
-			content,
-			timestamp: Date.now(),
-			room_id: roomId,
-			status: 'Sent',
-			edited: false,
-			edit_timestamp: null,
-			original_content: null,
-			reply_to: null,
-			reactions: {},
-			mentions: [],
-			local_timestamp: Date.now(),
-			delivery_attempts: 0,
-			size_bytes: new TextEncoder().encode(content).length
-		};
-
-		// Add to local messages
-		messages.addMessage(roomId, message);
-
-		// Send via WASM
 		try {
-			wasm.sendMessage(roomId, content, messageId);
-			wasm.saveRoomMessagesToStorage(roomId);
-		} catch (error) {
-			console.error('Failed to send message:', error);
-			toast.error('Failed to send message');
-			// Update message status to failed
-			messages.updateMessage(roomId, messageId, { status: 'Failed' });
+			const messageId = wasm.generateUuid();
+
+			// Create message object
+			const message: Message = {
+				id: messageId,
+				sender_id: $user.id,
+				sender_name: $user.name,
+				message_type: 'Text',
+				content,
+				timestamp: Date.now(),
+				room_id: roomId,
+				status: 'Sent',
+				edited: false,
+				edit_timestamp: null,
+				original_content: null,
+				reply_to: null,
+				reactions: {},
+				mentions: [],
+				local_timestamp: Date.now(),
+				delivery_attempts: 0,
+				size_bytes: new TextEncoder().encode(content).length
+			};
+
+			// Add to local messages
+			messages.addMessage(roomId, message);
+
+			// Send via WASM
+			try {
+				wasm.sendMessage(roomId, content, messageId);
+				wasm.saveRoomMessagesToStorage(roomId);
+			} catch (error) {
+				console.error('Failed to send message:', error);
+				toast.error('Failed to send message');
+				// Update message status to failed
+				messages.updateMessage(roomId, messageId, { status: 'Failed' });
+			}
+
+			// Broadcast via P2P
+			broadcastChat(content, messageId);
+
+			// Clear typing indicator
+			broadcastTyping('');
+		} finally {
+			isSending = false;
 		}
-
-		// Broadcast via P2P
-		broadcastChat(content, messageId);
-
-		// Clear typing indicator
-		broadcastTyping('');
 	}
 
 	function handleTyping(content: string) {
@@ -123,7 +136,12 @@
 		toast.success('Room ID copied!');
 	}
 
+	function confirmLeave() {
+		showLeaveDialog = true;
+	}
+
 	function leaveRoom() {
+		showLeaveDialog = false;
 		currentRoomId.clear();
 		goto('/');
 	}
@@ -253,7 +271,7 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<ConnectionStatus />
-				<Button variant="ghost" size="sm" onclick={leaveRoom} class="h-8 gap-1.5 text-muted-foreground hover:text-foreground">
+				<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-8 gap-1.5 text-muted-foreground hover:text-foreground">
 					<LogOut class="h-4 w-4" />
 					<span class="hidden sm:inline">Leave</span>
 				</Button>
@@ -272,6 +290,22 @@
 		<DraftIndicator />
 
 		<!-- Message input -->
-		<MessageInput onSend={handleSend} onTyping={handleTyping} />
+		<MessageInput onSend={handleSend} onTyping={handleTyping} {isSending} />
 	</div>
+
+	<!-- Leave confirmation dialog -->
+	<AlertDialog.Root bind:open={showLeaveDialog}>
+		<AlertDialog.Content>
+			<AlertDialog.Header>
+				<AlertDialog.Title>Leave Room?</AlertDialog.Title>
+				<AlertDialog.Description>
+					Are you sure you want to leave this room? Any unsent messages will be lost.
+				</AlertDialog.Description>
+			</AlertDialog.Header>
+			<AlertDialog.Footer>
+				<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+				<AlertDialog.Action onclick={leaveRoom}>Leave Room</AlertDialog.Action>
+			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
 {/if}
