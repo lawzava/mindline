@@ -8,7 +8,7 @@
 /dist
 /build
 /.svelte-kit
-/pkg
+# Note: /pkg is NOT gitignored - WASM build artifacts are committed for Cloudflare Pages
 
 # Logs
 /logs
