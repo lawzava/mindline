@@ -178,10 +178,10 @@ pub fn get_messages(room_id: &JsValue) -> JsValue {
 
     // Use new APP_STATE system for message retrieval
     APP_STATE.with(|state| {
-        let state = state
-            .lock()
-            .map_err(|_| JsValue::from_str("Failed to lock app state"))
-            .unwrap();
+        let state = match state.lock() {
+            Ok(s) => s,
+            Err(_) => return JsValue::from_str("[]"),
+        };
 
         // Get messages from room history
         let messages = match state.room_histories.get(&room_id) {

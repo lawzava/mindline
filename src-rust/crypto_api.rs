@@ -2,8 +2,12 @@
 // Encryption Key Persistence WASM Bindings
 
 use crate::console_log;
-use crate::crypto::with_encryption_manager;
+use crate::crypto::{
+    decrypt_with_key, encrypt_with_key, get_key_data, with_encryption_manager, EncryptedData,
+};
+use js_sys::Promise;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::future_to_promise;
 
 // ========== Encryption Key Persistence Functions ==========
 // Note: generate_room_encryption_key, list_encryption_keys, delete_encryption_key
@@ -66,25 +70,42 @@ pub fn initialize_room_encryption(room_id: &str) -> Result<bool, JsValue> {
     Ok(false) // false = new key was created (not loaded from storage)
 }
 
-/// Encrypt message content using room key
+/// Encrypt message content using room key (async - returns Promise)
+/// Uses real AES-256-GCM via Web Crypto API
 #[wasm_bindgen]
-pub fn encrypt_message_content(room_id: &str, content: &str) -> Result<String, JsValue> {
-    let key_id = format!("room_key_{}", room_id);
+pub fn encrypt_message_content(room_id: String, content: String) -> Promise {
+    future_to_promise(async move {
+        let key_id = format!("room_key_{}", room_id);
 
-    let encrypted_data =
-        with_encryption_manager(|manager| manager.encrypt_message(content, Some(&key_id)))??;
+        // Get key data synchronously before async operation
+        let (key_data, algorithm) = get_key_data(&key_id)?;
 
-    // Serialize the encrypted data to JSON for transmission
-    serde_json::to_string(&encrypted_data)
-        .map_err(|e| JsValue::from_str(&format!("Encryption serialization error: {}", e)))
+        // Call standalone async encryption function with owned data
+        let result = encrypt_with_key(content, key_data, key_id, algorithm).await?;
+
+        // Serialize the encrypted data to JSON for transmission
+        let json = serde_json::to_string(&result)
+            .map_err(|e| JsValue::from_str(&format!("Encryption serialization error: {}", e)))?;
+
+        Ok(JsValue::from_str(&json))
+    })
 }
 
-/// Decrypt message content using room key
+/// Decrypt message content using room key (async - returns Promise)
+/// Uses real AES-256-GCM via Web Crypto API
 #[wasm_bindgen]
-pub fn decrypt_message_content(encrypted_json: &str) -> Result<String, JsValue> {
-    // Deserialize the encrypted data from JSON
-    let encrypted_data: crate::crypto::EncryptedData = serde_json::from_str(encrypted_json)
-        .map_err(|e| JsValue::from_str(&format!("Decryption deserialization error: {}", e)))?;
+pub fn decrypt_message_content(encrypted_json: String) -> Promise {
+    future_to_promise(async move {
+        // Deserialize the encrypted data from JSON
+        let encrypted_data: EncryptedData = serde_json::from_str(&encrypted_json)
+            .map_err(|e| JsValue::from_str(&format!("Decryption deserialization error: {}", e)))?;
 
-    with_encryption_manager(|manager| manager.decrypt_message(&encrypted_data))?
+        // Get key data synchronously before async operation
+        let (key_data, _algorithm) = get_key_data(&encrypted_data.key_id)?;
+
+        // Call standalone async decryption function with owned data
+        let result = decrypt_with_key(encrypted_data, key_data).await?;
+
+        Ok(JsValue::from_str(&result))
+    })
 }
