@@ -37,7 +37,7 @@
 <div class="flex h-screen flex-col overflow-hidden bg-background">
 	<Header />
 
-	<main class="flex flex-1 flex-col">
+	<main class="flex flex-1 flex-col overflow-hidden">
 		{#if isInitializing}
 			<div class="flex flex-1 items-center justify-center">
 				<div class="flex flex-col items-center gap-4 text-muted-foreground">
