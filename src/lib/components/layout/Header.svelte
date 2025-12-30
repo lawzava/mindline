@@ -40,32 +40,35 @@
 			}
 		}
 
-		// Fallback to clipboard with verification
+		// Try modern clipboard API (don't verify - readText often fails due to permissions)
 		try {
 			await navigator.clipboard.writeText(url);
-			// Verify the clipboard was actually updated (some browsers silently fail)
-			const clipboardContent = await navigator.clipboard.readText();
-			if (clipboardContent === url) {
+			toast.success('Link copied to clipboard!');
+			return;
+		} catch {
+			// Modern clipboard API failed - try legacy fallback
+		}
+
+		// Legacy fallback using execCommand
+		try {
+			const textArea = document.createElement('textarea');
+			textArea.value = url;
+			textArea.style.position = 'fixed';
+			textArea.style.left = '-9999px';
+			textArea.style.top = '-9999px';
+			document.body.appendChild(textArea);
+			textArea.focus();
+			textArea.select();
+			const success = document.execCommand('copy');
+			document.body.removeChild(textArea);
+
+			if (success) {
 				toast.success('Link copied to clipboard!');
 			} else {
-				// Clipboard write appeared to succeed but content doesn't match
-				toast.warning('Link may not have copied correctly');
-			}
-		} catch {
-			// Clipboard API failed - try legacy fallback
-			try {
-				const textArea = document.createElement('textarea');
-				textArea.value = url;
-				textArea.style.position = 'fixed';
-				textArea.style.left = '-9999px';
-				document.body.appendChild(textArea);
-				textArea.select();
-				document.execCommand('copy');
-				document.body.removeChild(textArea);
-				toast.success('Link copied to clipboard!');
-			} catch {
 				toast.error('Failed to copy link');
 			}
+		} catch {
+			toast.error('Failed to copy link');
 		}
 	}
 </script>
@@ -100,6 +103,7 @@
 			<Input
 				type="text"
 				placeholder="Your name"
+				aria-label="Your display name"
 				bind:value={userName}
 				onblur={handleNameChange}
 				onkeydown={(e) => e.key === 'Enter' && handleNameChange()}
