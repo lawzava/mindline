@@ -75,10 +75,14 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		console.log('[P2P Manager] Peer connected:', peerId);
 		connection.addPeer(peerId);
 
+		// Announce our connection IMMEDIATELY so peer learns our name right away
+		// This fixes race condition where peer is added but name is unknown
+		broadcastUserConnected();
+
 		// Request sync after connection stabilizes
 		setTimeout(() => requestSync(roomId), 1000);
 
-		// Announce our connection
+		// Re-announce after stabilization in case first one was missed
 		setTimeout(() => broadcastUserConnected(), 500);
 	});
 
