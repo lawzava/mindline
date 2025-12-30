@@ -18,6 +18,35 @@ export function start_performance_timer(label: string): void;
 export function end_performance_timer(label: string): number | undefined;
 export function increment_performance_counter(name: string): void;
 export function get_performance_counter(name: string): bigint;
+/**
+ * Save room encryption key to localStorage
+ */
+export function save_room_key_to_storage(room_id: string): void;
+/**
+ * Load room encryption key from localStorage
+ * Returns true if key was loaded, false if no key exists
+ */
+export function load_room_key_from_storage(room_id: string): boolean;
+/**
+ * Check if room has a key in localStorage
+ */
+export function has_room_key_in_storage(room_id: string): boolean;
+/**
+ * Check if room has a key in memory
+ */
+export function has_room_key(room_id: string): boolean;
+/**
+ * Initialize room encryption - loads from storage or generates new key
+ */
+export function initialize_room_encryption(room_id: string): boolean;
+/**
+ * Encrypt message content using room key
+ */
+export function encrypt_message_content(room_id: string, content: string): string;
+/**
+ * Decrypt message content using room key
+ */
+export function decrypt_message_content(encrypted_json: string): string;
 export function initialize_logger(is_development: boolean, debug_enabled: boolean): void;
 export function set_log_context(user_id?: string | null, room_id?: string | null, component?: string | null): void;
 export function log_debug(component: string, message: string): void;
@@ -84,6 +113,13 @@ export interface InitOutput {
   readonly end_performance_timer: (a: number, b: number) => [number, number];
   readonly increment_performance_counter: (a: number, b: number) => [number, number];
   readonly get_performance_counter: (a: number, b: number) => bigint;
+  readonly save_room_key_to_storage: (a: number, b: number) => [number, number];
+  readonly load_room_key_from_storage: (a: number, b: number) => [number, number, number];
+  readonly has_room_key_in_storage: (a: number, b: number) => [number, number, number];
+  readonly has_room_key: (a: number, b: number) => number;
+  readonly initialize_room_encryption: (a: number, b: number) => [number, number, number];
+  readonly encrypt_message_content: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+  readonly decrypt_message_content: (a: number, b: number) => [number, number, number, number];
   readonly initialize_logger: (a: number, b: number) => [number, number];
   readonly set_log_context: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
   readonly log_debug: (a: number, b: number, c: number, d: number) => void;

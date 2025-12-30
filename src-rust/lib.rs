@@ -1,5 +1,5 @@
 // src/lib.rs
-// Version 1.0.1 - Memory access fix applied - Refactored into modules
+// Version 1.0.2 - Added encryption key persistence
 
 // Core modules
 pub mod core;
@@ -8,6 +8,7 @@ pub mod types;
 
 // API modules
 pub mod advanced_api;
+pub mod crypto_api;
 pub mod logging_api;
 pub mod message_api;
 pub mod state_api;
@@ -27,6 +28,7 @@ mod storage;
 // Re-export all public functions from modules for backward compatibility
 pub use advanced_api::*;
 pub use core::*;
+pub use crypto_api::*;
 pub use logging_api::*;
 pub use message_api::*;
 pub use state_api::*;

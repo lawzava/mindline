@@ -6,17 +6,45 @@ import { writable, derived, get } from 'svelte/store';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'failed' | 'local';
 
+interface ReconnectionState {
+	isReconnecting: boolean;
+	attemptCount: number;
+	maxAttempts: number;
+	nextRetryAt: number | null;
+}
+
+interface SyncState {
+	isSyncing: boolean;
+	messagesReceived: number;
+	totalMessages: number | null;
+	syncingWithPeer: string | null;
+}
+
 function createConnectionStore() {
 	const { subscribe, set, update } = writable<{
 		status: ConnectionStatus;
 		peers: Set<string>;
 		peerNames: Map<string, string>;
 		error: string | null;
+		reconnection: ReconnectionState;
+		sync: SyncState;
 	}>({
 		status: 'disconnected',
 		peers: new Set(),
 		peerNames: new Map(),
-		error: null
+		error: null,
+		reconnection: {
+			isReconnecting: false,
+			attemptCount: 0,
+			maxAttempts: 7,
+			nextRetryAt: null
+		},
+		sync: {
+			isSyncing: false,
+			messagesReceived: 0,
+			totalMessages: null,
+			syncingWithPeer: null
+		}
 	});
 
 	return {
@@ -85,6 +113,80 @@ function createConnectionStore() {
 		},
 
 		/**
+		 * Set reconnection state
+		 */
+		setReconnecting: (isReconnecting: boolean, attemptCount: number = 0, nextRetryMs: number = 0) => {
+			update((state) => ({
+				...state,
+				reconnection: {
+					...state.reconnection,
+					isReconnecting,
+					attemptCount,
+					nextRetryAt: isReconnecting ? Date.now() + nextRetryMs : null
+				}
+			}));
+		},
+
+		/**
+		 * Clear reconnection state
+		 */
+		clearReconnection: () => {
+			update((state) => ({
+				...state,
+				reconnection: {
+					isReconnecting: false,
+					attemptCount: 0,
+					maxAttempts: 7,
+					nextRetryAt: null
+				}
+			}));
+		},
+
+		/**
+		 * Start sync tracking
+		 */
+		startSync: (peerId: string) => {
+			update((state) => ({
+				...state,
+				sync: {
+					isSyncing: true,
+					messagesReceived: 0,
+					totalMessages: null,
+					syncingWithPeer: peerId
+				}
+			}));
+		},
+
+		/**
+		 * Update sync progress
+		 */
+		updateSyncProgress: (received: number, total?: number) => {
+			update((state) => ({
+				...state,
+				sync: {
+					...state.sync,
+					messagesReceived: received,
+					totalMessages: total ?? state.sync.totalMessages
+				}
+			}));
+		},
+
+		/**
+		 * End sync
+		 */
+		endSync: () => {
+			update((state) => ({
+				...state,
+				sync: {
+					isSyncing: false,
+					messagesReceived: 0,
+					totalMessages: null,
+					syncingWithPeer: null
+				}
+			}));
+		},
+
+		/**
 		 * Reset to initial state
 		 */
 		reset: () => {
@@ -92,7 +194,19 @@ function createConnectionStore() {
 				status: 'disconnected',
 				peers: new Set(),
 				peerNames: new Map(),
-				error: null
+				error: null,
+				reconnection: {
+					isReconnecting: false,
+					attemptCount: 0,
+					maxAttempts: 7,
+					nextRetryAt: null
+				},
+				sync: {
+					isSyncing: false,
+					messagesReceived: 0,
+					totalMessages: null,
+					syncingWithPeer: null
+				}
 			});
 		},
 
@@ -112,3 +226,11 @@ export const peerCount = derived(connection, ($conn) => $conn.peers.size);
 export const isConnected = derived(connection, ($conn) => $conn.status === 'connected');
 export const connectionError = derived(connection, ($conn) => $conn.error);
 export const peerNames = derived(connection, ($conn) => $conn.peerNames);
+
+// Reconnection state
+export const isReconnecting = derived(connection, ($conn) => $conn.reconnection.isReconnecting);
+export const reconnectionState = derived(connection, ($conn) => $conn.reconnection);
+
+// Sync state
+export const isSyncing = derived(connection, ($conn) => $conn.sync.isSyncing);
+export const syncState = derived(connection, ($conn) => $conn.sync);
