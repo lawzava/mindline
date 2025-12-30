@@ -871,8 +871,10 @@ export class P2PConnection {
 		}
 
 		// Send via WebSocket relay for peers without P2P
+		// Use server-assigned ID to properly skip self
+		const myServerId = this.serverClientId || this.clientId;
 		for (const peerId of this.relayPeers) {
-			if (peerId !== this.clientId && this.allKnownPeers.has(peerId)) {
+			if (peerId !== myServerId && this.allKnownPeers.has(peerId)) {
 				this.sendRelay(message, peerId);
 				successCount++;
 			}
@@ -881,7 +883,7 @@ export class P2PConnection {
 		// Also relay to any known peers not in dataChannels
 		for (const peerId of this.allKnownPeers) {
 			if (
-				peerId !== this.clientId &&
+				peerId !== myServerId &&
 				!this.dataChannels.has(peerId) &&
 				!this.relayPeers.has(peerId)
 			) {
