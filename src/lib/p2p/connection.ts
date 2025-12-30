@@ -1093,28 +1093,53 @@ export class P2PConnection {
 
 		this.meshCheckInterval = setInterval(() => {
 			const knownPeers = Array.from(this.allKnownPeers);
+			const myServerId = this.serverClientId || this.clientId;
+
 			for (const peerId of knownPeers) {
-				if (peerId !== this.clientId && !this.dataChannels.has(peerId)) {
-					// Check retry count to prevent infinite connection attempts
-					const attempts = this.meshConnectionAttempts.get(peerId) ?? 0;
+				// Skip self (use server ID for comparison)
+				if (peerId === myServerId) {
+					continue;
+				}
 
-					if (attempts >= this.MAX_MESH_ATTEMPTS) {
-						// Skip peers that have failed too many times
-						// They'll be retried when they rejoin or after a longer timeout
-						continue;
-					}
-
-					// Track the attempt
-					this.meshConnectionAttempts.set(peerId, attempts + 1);
-					console.log(
-						`[P2P] Mesh reconnect attempt ${attempts + 1}/${this.MAX_MESH_ATTEMPTS} for peer ${peerId}`
-					);
-
-					this.createPeerConnection(peerId, true);
-				} else if (this.dataChannels.has(peerId)) {
+				// Check if we already have a data channel
+				if (this.dataChannels.has(peerId)) {
 					// Reset attempt counter on successful connection
 					this.meshConnectionAttempts.delete(peerId);
+					continue;
 				}
+
+				// CRITICAL: Check if a peer connection exists and is still trying to connect
+				// Don't interfere with ongoing connection attempts
+				const existingPc = this.peers.get(peerId);
+				if (existingPc) {
+					const state = existingPc.connectionState;
+					if (state === 'connecting' || state === 'new') {
+						// Connection is in progress, don't create another one
+						console.log(`[P2P] Mesh: peer ${peerId} connection in progress (${state}), skipping`);
+						continue;
+					}
+					if (state === 'connected') {
+						// Connected but no data channel yet - give it more time
+						console.log(`[P2P] Mesh: peer ${peerId} connected but no channel yet, waiting`);
+						continue;
+					}
+				}
+
+				// Check retry count to prevent infinite connection attempts
+				const attempts = this.meshConnectionAttempts.get(peerId) ?? 0;
+				if (attempts >= this.MAX_MESH_ATTEMPTS) {
+					continue;
+				}
+
+				// Track the attempt
+				this.meshConnectionAttempts.set(peerId, attempts + 1);
+				console.log(
+					`[P2P] Mesh reconnect attempt ${attempts + 1}/${this.MAX_MESH_ATTEMPTS} for peer ${peerId}`
+				);
+
+				// Use deterministic initiator rule (same as peer-joined)
+				const shouldInitiate = myServerId > peerId;
+				this.createPeerConnection(peerId, shouldInitiate);
 			}
 		}, 10000);
 	}
@@ -1124,12 +1149,22 @@ export class P2PConnection {
 	 */
 	private ensureFullMesh(expectedPeers: string[]): void {
 		const connectedPeers = this.getConnectedPeers();
+		const myServerId = this.serverClientId || this.clientId;
+
 		const missing = expectedPeers.filter(
-			(peerId) => !connectedPeers.includes(peerId) && peerId !== this.clientId
+			(peerId) => !connectedPeers.includes(peerId) && peerId !== myServerId
 		);
 
 		for (const peerId of missing) {
-			this.createPeerConnection(peerId, true);
+			// Skip if connection already in progress
+			const existingPc = this.peers.get(peerId);
+			if (existingPc && ['new', 'connecting', 'connected'].includes(existingPc.connectionState)) {
+				continue;
+			}
+
+			// Use deterministic initiator rule
+			const shouldInitiate = myServerId > peerId;
+			this.createPeerConnection(peerId, shouldInitiate);
 		}
 	}
 
