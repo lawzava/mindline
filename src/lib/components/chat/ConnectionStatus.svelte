@@ -2,14 +2,69 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { connectionStatus, peerCount, connectionError } from '$lib/stores';
+	import {
+		connectionStatus,
+		peerCount,
+		connectionError,
+		isReconnecting as isReconnectingStore,
+		reconnectionState,
+		isSyncing,
+		syncState
+	} from '$lib/stores';
 	import { reconnectP2P } from '$lib/p2p';
-	import { Wifi, WifiOff, Loader2, Users, RefreshCw, AlertCircle } from 'lucide-svelte';
+	import { Wifi, WifiOff, Loader2, RefreshCw, AlertCircle } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
+	import PeerList from './PeerList.svelte';
 
-	let isReconnecting = $state(false);
+	let isManualReconnecting = $state(false);
+	let countdownSeconds = $state(0);
+	let countdownInterval: ReturnType<typeof setInterval> | null = null;
+
+	// Update countdown timer when reconnecting
+	$effect(() => {
+		if ($isReconnectingStore && $reconnectionState.nextRetryAt) {
+			// Clear existing interval
+			if (countdownInterval) {
+				clearInterval(countdownInterval);
+			}
+
+			// Start countdown
+			countdownInterval = setInterval(() => {
+				const remaining = Math.max(0, ($reconnectionState.nextRetryAt ?? 0) - Date.now());
+				countdownSeconds = Math.ceil(remaining / 1000);
+
+				if (remaining <= 0 && countdownInterval) {
+					clearInterval(countdownInterval);
+					countdownInterval = null;
+				}
+			}, 100);
+		} else if (countdownInterval) {
+			clearInterval(countdownInterval);
+			countdownInterval = null;
+			countdownSeconds = 0;
+		}
+
+		// Cleanup on destroy
+		return () => {
+			if (countdownInterval) {
+				clearInterval(countdownInterval);
+				countdownInterval = null;
+			}
+		};
+	});
 
 	const statusConfig = $derived.by(() => {
+		// Handle auto-reconnecting state (takes priority)
+		if ($isReconnectingStore) {
+			return {
+				label: `Reconnecting (${$reconnectionState.attemptCount}/${$reconnectionState.maxAttempts})`,
+				variant: 'secondary' as const,
+				icon: Loader2,
+				iconClass: 'animate-spin',
+				tooltip: `Attempting to reconnect... ${countdownSeconds > 0 ? `Next retry in ${countdownSeconds}s` : 'Connecting...'}`
+			};
+		}
+
 		switch ($connectionStatus) {
 			case 'connected':
 				return {
@@ -63,13 +118,14 @@
 	});
 
 	const canReconnect = $derived(
-		$connectionStatus === 'disconnected' ||
-			$connectionStatus === 'failed' ||
-			$connectionStatus === 'local'
+		!$isReconnectingStore &&
+			($connectionStatus === 'disconnected' ||
+				$connectionStatus === 'failed' ||
+				$connectionStatus === 'local')
 	);
 
 	async function handleReconnect() {
-		isReconnecting = true;
+		isManualReconnecting = true;
 		try {
 			await reconnectP2P();
 			toast.success('Reconnected successfully!');
@@ -77,7 +133,7 @@
 			console.error('Reconnection failed:', error);
 			toast.error('Failed to reconnect');
 		} finally {
-			isReconnecting = false;
+			isManualReconnecting = false;
 		}
 	}
 </script>
@@ -98,20 +154,8 @@
 		</Tooltip.Root>
 	</Tooltip.Provider>
 
-	<!-- Peer Count -->
-	{#if $connectionStatus === 'connected'}
-		{#if $peerCount > 0}
-			<Badge variant="secondary" class="flex items-center gap-1.5 py-1">
-				<Users class="h-3 w-3" />
-				<span>{$peerCount} peer{$peerCount !== 1 ? 's' : ''}</span>
-			</Badge>
-		{:else}
-			<Badge variant="outline" class="flex items-center gap-1.5 py-1 text-muted-foreground">
-				<Users class="h-3 w-3" />
-				<span>Waiting for peers...</span>
-			</Badge>
-		{/if}
-	{/if}
+	<!-- Peer List (clickable to show who's online) -->
+	<PeerList />
 
 	<!-- Error indicator with tooltip -->
 	{#if $connectionError}
@@ -129,16 +173,43 @@
 		</Tooltip.Provider>
 	{/if}
 
+	<!-- Sync Progress Indicator -->
+	{#if $isSyncing}
+		<Tooltip.Provider>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<Badge variant="secondary" class="flex items-center gap-1.5 py-1 animate-pulse">
+						<Loader2 class="h-3 w-3 animate-spin" />
+						<span>Syncing...</span>
+						{#if $syncState.messagesReceived > 0}
+							<span class="text-xs opacity-70">
+								({$syncState.messagesReceived}{$syncState.totalMessages
+									? `/${$syncState.totalMessages}`
+									: ''})
+							</span>
+						{/if}
+					</Badge>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<p>Synchronizing messages with peer</p>
+					{#if $syncState.syncingWithPeer}
+						<p class="text-xs opacity-70">From: {$syncState.syncingWithPeer.slice(0, 8)}...</p>
+					{/if}
+				</Tooltip.Content>
+			</Tooltip.Root>
+		</Tooltip.Provider>
+	{/if}
+
 	<!-- Reconnect button -->
 	{#if canReconnect}
 		<Button
 			variant="ghost"
 			size="sm"
 			onclick={handleReconnect}
-			disabled={isReconnecting}
+			disabled={isManualReconnecting}
 			class="h-7 gap-1 px-2"
 		>
-			<RefreshCw class="h-3 w-3 {isReconnecting ? 'animate-spin' : ''}" />
+			<RefreshCw class="h-3 w-3 {isManualReconnecting ? 'animate-spin' : ''}" />
 			<span class="text-xs">Reconnect</span>
 		</Button>
 	{/if}

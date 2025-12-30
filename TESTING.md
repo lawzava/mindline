@@ -350,23 +350,133 @@ const userB = { name: 'Bob', context: browser.newContext() };
 
 ---
 
-## 13. Responsive/Accessibility Tests
+## 13. Encryption Key Persistence Tests
 
-### 13.1 Mobile Layout
+### 13.1 Key Generation
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Key generated on room create | Create new room | Console shows "Generated new key" |
+| Key saved to storage | Create room, check localStorage | `mindline_encryption_key_{roomId}` exists |
+| Key loaded on refresh | Create room, send message, refresh | Console shows "Loaded existing encryption key" |
+
+### 13.2 Message Decryption After Refresh
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Messages readable after refresh | Send encrypted message, refresh page | Message content still readable |
+| History preserved | Send multiple messages, refresh | All messages visible with correct content |
+| Cross-session persistence | Send message, close tab, reopen | Message history still visible and decryptable |
+
+### 13.3 Key Isolation
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Different keys per room | Create room A and B | Different keys in localStorage for each room |
+| Room A key doesn't decrypt B | Send message in A, check B | Messages only decryptable in their own room |
+
+---
+
+## 14. Peer List Component Tests
+
+### 14.1 Peer List Display
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Clickable peer badge | Click peer count badge | Popover opens showing peer list |
+| Shows peer names | Two users connect | Popover shows both users' names |
+| Online indicator | User connects | Green dot shown next to name |
+| Empty state | Connect alone | Shows "No peers connected yet" message |
+
+### 14.2 Peer List Updates
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Peer added to list | Second user joins | New peer appears in list |
+| Peer removed from list | User leaves | Peer removed from list |
+| Name updated | User changes name | Name updates in peer list |
+| Count accurate | 3 users connect | Shows "2 peers" and lists both |
+
+---
+
+## 15. P2P Connection Stability Tests
+
+### 15.1 Multiple Peer Join
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| 3 users simultaneous join | A creates, B and C join together | All 3 see each other (2 peers each) |
+| No random disconnects | 3 users chat for 30s | All connections remain stable |
+| Messages reach all peers | A sends message | B and C both receive it |
+
+### 15.2 Peer Disconnect Handling
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Single disconnect callback | B closes tab | A gets ONE "Bob left" toast (not two) |
+| Clean removal | B disconnects | B removed from A's peer list immediately |
+| Reconnection works | B refreshes | B reconnects, shows in A's peer list again |
+
+### 15.3 Room Switch
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Clean room switch | A in room 1, navigates to room 2 | No connection errors, clean transition |
+| No stale connections | Switch rooms quickly 3x | Final room shows correct peer count |
+| Previous room closed | Switch rooms | WebSocket to old room fully closed |
+
+### 15.4 Mesh Monitor
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Retry limit respected | B has network issues | A retries connection max 3 times then stops |
+| Successful reconnect resets | B reconnects | Retry counter reset for B |
+| No infinite loops | Network unstable | No unbounded connection attempts in console |
+
+---
+
+## 16. Typing Debounce Tests
+
+### 16.1 Debounce Behavior
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Fast typing debounced | Type "hello" quickly | B receives ~1-2 typing updates, not 5 |
+| Final content sent | Type "hello", wait 100ms | B sees "hello" in draft indicator |
+| Cleared on send | Type, press Enter | Draft indicator clears on B's screen |
+
+### 16.2 Performance
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Reduced network traffic | Type 100 chars quickly | Network tab shows fewer P2P messages |
+| No lost content | Type fast, send | Full message content preserved |
+
+---
+
+## 17. Sync and History Tests
+
+### 17.1 History Sync on Join
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| New peer gets history | A sends 5 messages, B joins | B receives all 5 messages |
+| Order preserved | A sends A1, A2, A3 | B sees messages in correct order |
+| No duplicates on resync | B reconnects | Messages not duplicated |
+
+### 17.2 Offline/Online Sync
+| Test | Steps | Expected Result |
+|------|-------|-----------------|
+| Messages persist offline | A sends while B offline | B sees messages when reconnects |
+| Sync after refresh | A sends, B refreshes | B still has messages after refresh |
+
+---
+
+## 18. Responsive/Accessibility Tests
+
+### 18.1 Mobile Layout
 | Test | Steps | Expected Result |
 |------|-------|-----------------|
 | Leave text hidden | Mobile viewport | Leave button shows icon only |
 | Input full width | Mobile viewport | Message input spans full width |
 | Bubbles max 80% | Mobile viewport | Messages don't exceed 80% width |
 
-### 13.2 Keyboard Navigation
+### 18.2 Keyboard Navigation
 | Test | Steps | Expected Result |
 |------|-------|-----------------|
 | Tab through controls | Press Tab | Focus moves through interactive elements |
 | Enter activates buttons | Focus button, Enter | Button activated |
 | Escape closes dialogs | Open dialog, Escape | Dialog closes |
 
-### 13.3 Screen Reader
+### 18.3 Screen Reader
 | Test | Steps | Expected Result |
 |------|-------|-----------------|
 | Buttons have labels | Check sr-only | All icon buttons have screen reader text |

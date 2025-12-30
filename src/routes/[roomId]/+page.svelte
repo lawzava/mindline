@@ -18,6 +18,10 @@
 	let isSending = $state(false);
 	let showLeaveDialog = $state(false);
 
+	// Debounced typing broadcast to reduce network traffic
+	let typingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	const TYPING_DEBOUNCE_MS = 100; // Debounce typing broadcasts
+
 	onMount(async () => {
 		if (!roomId || !isWasmReady()) {
 			isLoading = false;
@@ -36,6 +40,14 @@
 		try {
 			wasm.createRoom(roomId); // Create or join
 			currentRoomId.set(roomId);
+
+			// Initialize encryption - loads existing key from storage or generates new one
+			try {
+				const keyLoaded = wasm.initializeRoomEncryption(roomId);
+				console.log(`[Room] Encryption initialized for room ${roomId}, key loaded from storage: ${keyLoaded}`);
+			} catch (error) {
+				console.warn('[Room] Failed to initialize encryption, messages may not be decryptable:', error);
+			}
 
 			// Load existing messages from storage
 			wasm.loadRoomMessagesFromStorage(roomId);
@@ -75,6 +87,11 @@
 	});
 
 	onDestroy(() => {
+		// Cleanup typing debounce timer
+		if (typingDebounceTimer) {
+			clearTimeout(typingDebounceTimer);
+			typingDebounceTimer = null;
+		}
 		// Cleanup lifecycle handlers
 		cleanupVisibilityHandler();
 		cleanupNetworkHandler();
@@ -139,8 +156,16 @@
 	}
 
 	function handleTyping(content: string) {
-		// Broadcast typing indicator via P2P
-		broadcastTyping(content);
+		// Clear any pending debounce
+		if (typingDebounceTimer) {
+			clearTimeout(typingDebounceTimer);
+		}
+
+		// Debounce the typing broadcast to reduce P2P message volume
+		typingDebounceTimer = setTimeout(() => {
+			broadcastTyping(content);
+			typingDebounceTimer = null;
+		}, TYPING_DEBOUNCE_MS);
 	}
 
 	async function copyRoomId() {

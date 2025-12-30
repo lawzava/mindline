@@ -12,12 +12,15 @@ import type {
 	UserConnectedMessage,
 	EditMessage,
 	DeleteMessage,
-	ReactionMessage
+	ReactionMessage,
+	DeliveryAckMessage
 } from './types';
 import { messages } from '$lib/stores/messages';
 import { drafts } from '$lib/stores/drafts';
 import { currentRoomId } from '$lib/stores/room';
 import { connection } from '$lib/stores/connection';
+import { delivery } from '$lib/stores/delivery';
+import { user } from '$lib/stores/user';
 import { wasm, isWasmReady } from '$lib/wasm';
 import type { Message } from '$lib/wasm/types';
 import { get } from 'svelte/store';
@@ -65,6 +68,9 @@ export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void 
 			case 'reaction':
 				handleReactionMessage(message, peerId);
 				break;
+			case 'delivery-ack':
+				handleDeliveryAck(message, peerId);
+				break;
 			default:
 				console.warn(`[P2P Handler] Unknown message type: ${(message as TypedP2PMessage).type}`);
 		}
@@ -90,6 +96,11 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 	if (!content || (!senderName && !senderId)) {
 		console.warn('[P2P Handler] Invalid chat message received');
 		return;
+	}
+
+	// Update peer name mapping if we have a name
+	if (senderName) {
+		connection.setPeerName(peerId, senderName);
 	}
 
 	// Decrypt message if it's encrypted
@@ -140,6 +151,21 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 				console.warn('[P2P Handler] Failed to save to WASM storage:', error);
 			}
 		}
+
+		// Send delivery acknowledgment back to sender
+		if (sendToPeerFn) {
+			const userState = get(user);
+			const ack: DeliveryAckMessage = {
+				type: 'delivery-ack',
+				messageId: messageObj.id,
+				roomId: targetRoomId,
+				peerId: userState.id,
+				timestamp: Date.now()
+			};
+
+			sendToPeerFn(peerId, ack);
+			console.log('[P2P Handler] Sent delivery ack for message:', messageObj.id);
+		}
 	}
 
 	// Clear the typing indicator for this peer since they sent a message
@@ -155,6 +181,12 @@ function handleTypingMessage(message: TypingMessage, peerId: string): void {
 	console.log('[P2P Handler] Typing message:', { content, senderName, senderId });
 
 	const displayName = senderName || senderId || peerId;
+
+	// Also update peer name mapping if we have a name (ensures names are tracked
+	// even if user-connected message was missed)
+	if (senderName) {
+		connection.setPeerName(peerId, senderName);
+	}
 
 	// Update drafts store
 	if (content && content.trim() !== '') {
@@ -180,18 +212,44 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 		// Get messages from store
 		const roomMessages = messages.getRoomMessages(roomId);
 
-		// Create sync response
+		// Encrypt each message content before sending
+		let encryptedMessages = roomMessages;
+		if (isWasmReady()) {
+			encryptedMessages = roomMessages.map((msg) => {
+				// Skip already-deleted or system messages
+				if (msg.message_type === 'Deleted' || msg.content.startsWith('[')) {
+					return msg;
+				}
+
+				try {
+					const encryptedContent = wasm.encryptMessageContent(roomId, msg.content);
+					return {
+						...msg,
+						content: encryptedContent,
+						encrypted: true
+					};
+				} catch (error) {
+					console.warn(`[P2P Handler] Failed to encrypt message ${msg.id}:`, error);
+					return msg; // Return unencrypted as fallback
+				}
+			});
+		}
+
+		// Create sync response with encrypted messages
 		const syncResponse: SyncResponseMessage = {
 			type: 'sync-response',
 			roomId,
-			messages: roomMessages,
-			timestamp: Date.now()
+			messages: encryptedMessages,
+			timestamp: Date.now(),
+			encrypted: true
 		};
 
 		// Send response to requesting peer
 		if (sendToPeerFn) {
 			sendToPeerFn(peerId, syncResponse);
-			console.log(`[P2P Handler] Sync response sent to ${peerId} with ${roomMessages.length} messages`);
+			console.log(
+				`[P2P Handler] Encrypted sync response sent to ${peerId} with ${roomMessages.length} messages`
+			);
 		} else {
 			console.warn('[P2P Handler] No sendToPeer function available');
 		}
@@ -206,7 +264,7 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 function handleSyncResponse(message: SyncResponseMessage, peerId: string): void {
 	console.log('[P2P Handler] Sync response from:', peerId);
 
-	const { roomId, messages: syncedMessages } = message;
+	const { roomId, messages: syncedMessages, encrypted } = message;
 	const targetRoomId = roomId || get(currentRoomId);
 
 	if (!targetRoomId) {
@@ -219,18 +277,57 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 		return;
 	}
 
-	console.log(`[P2P Handler] Received ${syncedMessages.length} messages from ${peerId} for sync`);
+	const totalMessages = syncedMessages.length;
+	console.log(`[P2P Handler] Received ${totalMessages} messages from ${peerId} for sync`);
+
+	// Start sync tracking
+	connection.startSync(peerId);
+
+	// Decrypt messages if they are encrypted
+	let processedMessages = syncedMessages;
+	if (encrypted && isWasmReady()) {
+		processedMessages = syncedMessages.map((msg) => {
+			// Skip system messages or already-decrypted content
+			if (msg.message_type === 'Deleted' || !(msg as Message & { encrypted?: boolean }).encrypted) {
+				return msg;
+			}
+
+			try {
+				const decryptedContent = wasm.decryptMessageContent(msg.content);
+				return {
+					...msg,
+					content: decryptedContent || msg.content,
+					encrypted: false
+				};
+			} catch (error) {
+				console.warn(`[P2P Handler] Failed to decrypt synced message ${msg.id}:`, error);
+				return {
+					...msg,
+					content: '[Encrypted message - unable to decrypt]'
+				};
+			}
+		});
+	}
 
 	// Get existing messages to check for duplicates
 	const existingMessages = messages.getRoomMessages(targetRoomId);
 	const existingIds = new Set(existingMessages.map((msg) => msg.id));
 
-	// Filter out duplicates and add new messages
+	// Filter out duplicates and add new messages with progress tracking
 	let newCount = 0;
-	for (const msg of syncedMessages) {
+	let processedCount = 0;
+
+	for (const msg of processedMessages) {
+		processedCount++;
+
 		if (!existingIds.has(msg.id)) {
 			messages.addMessage(targetRoomId, msg);
 			newCount++;
+		}
+
+		// Update progress periodically (every 10 messages or at end)
+		if (processedCount % 10 === 0 || processedCount === totalMessages) {
+			connection.updateSyncProgress(newCount, totalMessages);
 		}
 	}
 
@@ -248,6 +345,11 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 	} else {
 		console.log('[P2P Handler] No new messages to sync (all duplicates)');
 	}
+
+	// End sync with short delay for UI visibility
+	setTimeout(() => {
+		connection.endSync();
+	}, 1000);
 }
 
 /**
@@ -257,9 +359,10 @@ function handleUserConnected(message: UserConnectedMessage, peerId: string): voi
 	const { senderName, senderId } = message;
 	console.log('[P2P Handler] User connected:', senderName || peerId);
 
-	// Store the peer's name for later use (e.g., in "left" notifications)
-	if (senderName && senderId) {
-		connection.setPeerName(senderId, senderName);
+	// Store the peer's name using the WebRTC peerId (not senderId)
+	// This ensures $peerNames matches $connectedPeers which uses WebRTC peer IDs
+	if (senderName) {
+		connection.setPeerName(peerId, senderName);
 	}
 
 	// Show toast notification
@@ -395,6 +498,18 @@ function handleReactionMessage(message: ReactionMessage, peerId: string): void {
 			console.warn('[P2P Handler] Failed to save reaction:', error);
 		}
 	}
+}
+
+/**
+ * Handle delivery acknowledgment messages
+ */
+function handleDeliveryAck(message: DeliveryAckMessage, peerId: string): void {
+	const { messageId } = message;
+
+	console.log('[P2P Handler] Delivery ack received:', { messageId, peerId });
+
+	// Record the delivery in our tracking store
+	delivery.recordDelivery(messageId, peerId);
 }
 
 /**

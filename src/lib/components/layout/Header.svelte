@@ -40,12 +40,32 @@
 			}
 		}
 
-		// Fallback to clipboard
+		// Fallback to clipboard with verification
 		try {
 			await navigator.clipboard.writeText(url);
-			toast.success('Link copied to clipboard!');
+			// Verify the clipboard was actually updated (some browsers silently fail)
+			const clipboardContent = await navigator.clipboard.readText();
+			if (clipboardContent === url) {
+				toast.success('Link copied to clipboard!');
+			} else {
+				// Clipboard write appeared to succeed but content doesn't match
+				toast.warning('Link may not have copied correctly');
+			}
 		} catch {
-			toast.error('Failed to copy link');
+			// Clipboard API failed - try legacy fallback
+			try {
+				const textArea = document.createElement('textarea');
+				textArea.value = url;
+				textArea.style.position = 'fixed';
+				textArea.style.left = '-9999px';
+				document.body.appendChild(textArea);
+				textArea.select();
+				document.execCommand('copy');
+				document.body.removeChild(textArea);
+				toast.success('Link copied to clipboard!');
+			} catch {
+				toast.error('Failed to copy link');
+			}
 		}
 	}
 </script>

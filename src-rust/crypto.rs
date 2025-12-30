@@ -574,6 +574,86 @@ impl EncryptionManager {
             false
         }
     }
+
+    /// Save room encryption key to localStorage
+    pub fn save_room_key_to_storage(&self, room_id: &str) -> Result<(), JsValue> {
+        use web_sys::window;
+
+        let window = window().ok_or_else(|| JsValue::from_str("No window object"))?;
+        let storage = window
+            .local_storage()
+            .map_err(|_| JsValue::from_str("No localStorage"))?
+            .ok_or_else(|| JsValue::from_str("localStorage not available"))?;
+
+        let key_id = format!("room_key_{}", room_id);
+
+        if let Some(key) = self.keys.get(&key_id) {
+            let serialized = serde_json::to_string(key)
+                .map_err(|e| JsValue::from_str(&format!("Key serialization error: {}", e)))?;
+
+            let storage_key = format!("mindline_encryption_key_{}", room_id);
+            storage
+                .set_item(&storage_key, &serialized)
+                .map_err(|_| JsValue::from_str("Failed to save key to localStorage"))?;
+        }
+
+        Ok(())
+    }
+
+    /// Load room encryption key from localStorage
+    pub fn load_room_key_from_storage(&mut self, room_id: &str) -> Result<bool, JsValue> {
+        use web_sys::window;
+
+        let window = window().ok_or_else(|| JsValue::from_str("No window object"))?;
+        let storage = window
+            .local_storage()
+            .map_err(|_| JsValue::from_str("No localStorage"))?
+            .ok_or_else(|| JsValue::from_str("localStorage not available"))?;
+
+        let storage_key = format!("mindline_encryption_key_{}", room_id);
+
+        if let Ok(Some(stored_data)) = storage.get_item(&storage_key) {
+            match serde_json::from_str::<EncryptionKey>(&stored_data) {
+                Ok(key) => {
+                    let key_id = key.id.clone();
+                    self.keys.insert(key_id.clone(), key);
+                    self.default_room_key = Some(key_id);
+                    Ok(true)
+                }
+                Err(_) => {
+                    // Clear corrupted key data
+                    let _ = storage.remove_item(&storage_key);
+                    Ok(false)
+                }
+            }
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Check if room has a key in storage
+    pub fn has_room_key_in_storage(&self, room_id: &str) -> Result<bool, JsValue> {
+        use web_sys::window;
+
+        let window = window().ok_or_else(|| JsValue::from_str("No window object"))?;
+        let storage = window
+            .local_storage()
+            .map_err(|_| JsValue::from_str("No localStorage"))?
+            .ok_or_else(|| JsValue::from_str("localStorage not available"))?;
+
+        let storage_key = format!("mindline_encryption_key_{}", room_id);
+        Ok(storage.get_item(&storage_key).ok().flatten().is_some())
+    }
+
+    /// Get room key ID if one exists
+    pub fn get_room_key_id(&self, room_id: &str) -> Option<String> {
+        let key_id = format!("room_key_{}", room_id);
+        if self.keys.contains_key(&key_id) {
+            Some(key_id)
+        } else {
+            None
+        }
+    }
 }
 
 // Global encryption manager

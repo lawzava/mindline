@@ -11,6 +11,12 @@ export {
 	connectionStatus,
 	connectedPeers,
 	peerCount,
+	peerNames,
 	isConnected,
-	connectionError
+	connectionError,
+	isReconnecting,
+	reconnectionState,
+	isSyncing,
+	syncState
 } from './connection';
+export { delivery, fullyDeliveredMessages } from './delivery';
