@@ -2,14 +2,14 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Install curl for healthcheck
-RUN apk add --no-cache curl
+# Install curl for healthcheck and pnpm
+RUN apk add --no-cache curl && corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml ./
 
 # Install only production dependencies
-RUN npm ci --production
+RUN pnpm install --prod --frozen-lockfile
 
 # Copy signaling server code
 COPY signaling-server.js ./
