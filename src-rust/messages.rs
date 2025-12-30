@@ -551,7 +551,9 @@ impl MessageManager {
                     // Copy other state from in-memory room
                     merged.last_sync = room.last_sync.max(stored_room.last_sync);
                     merged.unread_count = room.unread_count;
-                    merged.last_read_timestamp = room.last_read_timestamp.max(stored_room.last_read_timestamp);
+                    merged.last_read_timestamp = room
+                        .last_read_timestamp
+                        .max(stored_room.last_read_timestamp);
                     merged.draft_messages = room.draft_messages.clone();
                     merged.typing_users = room.typing_users.clone();
                     merged.pending_messages = room.pending_messages.clone();
