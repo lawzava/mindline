@@ -73,7 +73,8 @@ export type P2PMessageType =
 	| 'user-connected'
 	| 'edit'
 	| 'delete'
-	| 'reaction';
+	| 'reaction'
+	| 'delivery-ack';
 
 /** Chat message sent between peers */
 export interface ChatMessage {
@@ -111,6 +112,7 @@ export interface SyncResponseMessage {
 	roomId: string;
 	messages: Message[];
 	timestamp: number;
+	encrypted?: boolean;
 }
 
 /** Notification when a user connects to the room */
@@ -152,6 +154,15 @@ export interface ReactionMessage {
 	timestamp: number;
 }
 
+/** Delivery acknowledgment sent when a peer receives a chat message */
+export interface DeliveryAckMessage {
+	type: 'delivery-ack';
+	messageId: string;
+	roomId: string;
+	peerId: string;
+	timestamp: number;
+}
+
 /** Union type for all P2P messages */
 export type TypedP2PMessage =
 	| ChatMessage
@@ -161,7 +172,8 @@ export type TypedP2PMessage =
 	| UserConnectedMessage
 	| EditMessage
 	| DeleteMessage
-	| ReactionMessage;
+	| ReactionMessage
+	| DeliveryAckMessage;
 
 // Legacy P2PMessage type for backwards compatibility
 export interface P2PMessage {
@@ -224,4 +236,8 @@ export function isDeleteMessage(msg: TypedP2PMessage): msg is DeleteMessage {
 
 export function isReactionMessage(msg: TypedP2PMessage): msg is ReactionMessage {
 	return msg.type === 'reaction';
+}
+
+export function isDeliveryAckMessage(msg: TypedP2PMessage): msg is DeliveryAckMessage {
+	return msg.type === 'delivery-ack';
 }

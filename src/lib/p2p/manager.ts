@@ -5,7 +5,7 @@
 
 import { P2PConnection } from './connection';
 import { routeP2PMessage, setSendToPeerFn, emitToast } from './handlers';
-import { connection, user, drafts, currentRoomId, messages } from '$lib/stores';
+import { connection, user, drafts, currentRoomId, messages, delivery } from '$lib/stores';
 import { wasm, isWasmReady } from '$lib/wasm';
 import type { P2PConfig, TypedP2PMessage, ChatMessage, TypingMessage, EditMessage, DeleteMessage, ReactionMessage, UserConnectedMessage, SyncRequestMessage } from './types';
 import { get } from 'svelte/store';
@@ -18,6 +18,7 @@ let reconnectInterval: ReturnType<typeof setInterval> | null = null;
 const MAX_RECONNECT_ATTEMPTS = 7;
 const BASE_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
+const DISCONNECT_CLEANUP_DELAY = 500; // Wait for WebSocket to fully close
 
 // Lifecycle handler state
 let visibilityHandler: (() => void) | null = null;
@@ -26,16 +27,25 @@ let pageLifecycleCleanup: (() => void) | null = null;
 let lastHiddenTime: number = 0;
 const STALE_CONNECTION_THRESHOLD = 30000; // 30 seconds - reconnect if hidden longer
 
+// Prevent concurrent disconnect/connect operations
+let isDisconnecting = false;
+let disconnectPromise: Promise<void> | null = null;
+
 /**
  * Initialize P2P connection for a room
  */
 export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>): Promise<void> {
 	console.log('[P2P Manager] Initializing P2P for room:', roomId);
 
+	// Wait for any in-progress disconnect to complete
+	if (disconnectPromise) {
+		console.log('[P2P Manager] Waiting for previous disconnect to complete...');
+		await disconnectPromise;
+	}
+
 	// Disconnect existing connection if any
 	if (p2pConnection) {
-		disconnectP2P();
-		await new Promise((r) => setTimeout(r, 100));
+		await disconnectP2PAsync();
 	}
 
 	// Get user info from store
@@ -81,6 +91,9 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		connection.removePeer(peerId);
 		drafts.clearDraft(peerId);
 
+		// Update delivery tracking - adjust totals for this peer
+		delivery.handlePeerDisconnect(peerId);
+
 		// Emit toast notification with name if available
 		const displayName = peerName || `Peer ${peerId.slice(0, 8)}...`;
 		emitToast('peer-left', `${displayName} left the room`);
@@ -107,10 +120,13 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 }
 
 /**
- * Disconnect from P2P network
+ * Disconnect from P2P network (sync version for compatibility)
  */
 export function disconnectP2P(): void {
-	console.log('[P2P Manager] Disconnecting');
+	console.log('[P2P Manager] Disconnecting (sync)');
+
+	// Mark as disconnecting
+	isDisconnecting = true;
 
 	if (reconnectInterval) {
 		clearInterval(reconnectInterval);
@@ -124,6 +140,50 @@ export function disconnectP2P(): void {
 
 	connection.reset();
 	drafts.clearAll();
+
+	// Reset flag after short delay
+	setTimeout(() => {
+		isDisconnecting = false;
+	}, DISCONNECT_CLEANUP_DELAY);
+}
+
+/**
+ * Disconnect from P2P network (async version with proper cleanup wait)
+ */
+async function disconnectP2PAsync(): Promise<void> {
+	console.log('[P2P Manager] Disconnecting (async)');
+
+	// Prevent concurrent disconnects
+	if (isDisconnecting && disconnectPromise) {
+		return disconnectPromise;
+	}
+
+	isDisconnecting = true;
+
+	disconnectPromise = new Promise<void>((resolve) => {
+		if (reconnectInterval) {
+			clearInterval(reconnectInterval);
+			reconnectInterval = null;
+		}
+
+		if (p2pConnection) {
+			p2pConnection.disconnect();
+			p2pConnection = null;
+		}
+
+		connection.reset();
+		drafts.clearAll();
+
+		// Wait for WebSocket and peer connections to fully close
+		setTimeout(() => {
+			isDisconnecting = false;
+			disconnectPromise = null;
+			console.log('[P2P Manager] Disconnect cleanup complete');
+			resolve();
+		}, DISCONNECT_CLEANUP_DELAY);
+	});
+
+	return disconnectPromise;
 }
 
 /**
@@ -156,6 +216,12 @@ export function broadcastChat(content: string, messageId: string): void {
 		return;
 	}
 
+	// Get connected peers for delivery tracking
+	const connectedPeers = p2pConnection.getConnectedPeers();
+
+	// Initialize delivery tracking for this message
+	delivery.trackMessage(messageId, roomId, connectedPeers);
+
 	const message: ChatMessage = {
 		type: 'chat',
 		content,
@@ -166,7 +232,8 @@ export function broadcastChat(content: string, messageId: string): void {
 		roomId
 	};
 
-	p2pConnection.broadcast(message);
+	const deliveredCount = p2pConnection.broadcast(message);
+	console.log(`[P2P Manager] Chat broadcast to ${deliveredCount} peers, tracking ${connectedPeers.length}`);
 }
 
 /**
@@ -322,6 +389,7 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 	if (reconnectInterval || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
 		if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
 			connection.setError('Max reconnection attempts reached');
+			connection.clearReconnection();
 			emitToast('error', 'Failed to reconnect after multiple attempts');
 		}
 		return;
@@ -336,6 +404,7 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 				reconnectInterval = null;
 			}
 			connection.setError('Max reconnection attempts reached');
+			connection.clearReconnection();
 			emitToast('error', 'Failed to reconnect after multiple attempts');
 			return;
 		}
@@ -346,6 +415,9 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 		const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
 		console.log(`[P2P Manager] Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
 
+		// Update store with reconnection state (before waiting)
+		connection.setReconnecting(true, reconnectAttempts, delay);
+
 		await new Promise((r) => setTimeout(r, delay));
 
 		try {
@@ -354,6 +426,7 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 				clearTimeout(reconnectInterval);
 				reconnectInterval = null;
 			}
+			connection.clearReconnection();
 			emitToast('success', 'Reconnected successfully');
 			console.log('[P2P Manager] Reconnection successful');
 		} catch (error) {
@@ -361,6 +434,8 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 			// Schedule next attempt
 			if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
 				reconnectInterval = setTimeout(attemptReconnect, 0);
+			} else {
+				connection.clearReconnection();
 			}
 		}
 	};
