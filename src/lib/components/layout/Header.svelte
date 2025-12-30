@@ -26,6 +26,7 @@
 
 		const url = `${window.location.origin}/${roomId}`;
 
+		// Try Web Share API first (mobile-friendly)
 		if (navigator.share) {
 			try {
 				await navigator.share({
@@ -33,12 +34,18 @@
 					text: 'Join my real-time chat room',
 					url
 				});
+				return; // Success, exit early
 			} catch {
-				// User cancelled or error
+				// User cancelled or share failed - fall through to clipboard
 			}
-		} else {
+		}
+
+		// Fallback to clipboard
+		try {
 			await navigator.clipboard.writeText(url);
 			toast.success('Link copied to clipboard!');
+		} catch {
+			toast.error('Failed to copy link');
 		}
 	}
 </script>
