@@ -6,6 +6,8 @@
 	import ReactionPills from './ReactionPills.svelte';
 	import EmojiPicker from './EmojiPicker.svelte';
 	import MessageActions from './MessageActions.svelte';
+	import LongPressMenu from './LongPressMenu.svelte';
+	import { longPress } from '$lib/hooks';
 	import { Check, X } from 'lucide-svelte';
 
 	interface Props {
@@ -20,6 +22,12 @@
 
 	let isEditing = $state(false);
 	let editContent = $state('');
+	let showLongPressMenu = $state(false);
+
+	// Detect if device supports touch
+	const isTouchDevice = $derived(
+		typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+	);
 
 	function formatTime(timestamp: number): string {
 		const date = new Date(timestamp);
@@ -61,6 +69,10 @@
 		}
 	}
 
+	function handleLongPress() {
+		showLongPressMenu = true;
+	}
+
 	// Check if message is deleted
 	const isDeleted = $derived(message.message_type === 'Deleted' || message.content === '[Message deleted]');
 </script>
@@ -73,7 +85,7 @@
 >
 	<!-- Sender name (only for others) -->
 	{#if !isMe}
-		<span class="px-3 text-xs font-medium text-muted-foreground">
+		<span class="px-3 text-xs font-medium text-muted-foreground truncate max-w-[200px]">
 			{message.sender_name}
 		</span>
 	{/if}
@@ -82,12 +94,14 @@
 	<div class={cn('flex items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
 		<!-- Message content -->
 		<div
+			use:longPress={{ duration: 400, onLongPress: handleLongPress }}
 			class={cn(
-				'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
+				'max-w-[80%] max-h-[400px] overflow-y-auto rounded-2xl px-4 py-2.5 text-sm select-none',
 				isMe
 					? 'bg-primary text-primary-foreground'
 					: 'bg-muted text-foreground',
-				isDeleted && 'italic text-muted-foreground'
+				isDeleted && 'italic text-muted-foreground',
+				'active:scale-[0.98] transition-transform'
 			)}
 		>
 			{#if isEditing}
@@ -107,20 +121,33 @@
 					</Button>
 				</div>
 			{:else}
-				<p class="whitespace-pre-wrap break-words">{message.content}</p>
+				<p class="whitespace-pre-wrap break-words break-all">{message.content}</p>
 			{/if}
 		</div>
 
-		<!-- Actions (only for own non-deleted messages) -->
-		{#if isMe && !isDeleted && !isEditing}
-			<MessageActions onEdit={startEdit} onDelete={handleDelete} />
-		{/if}
+		<!-- Desktop-only: Actions on hover (hidden on touch devices) -->
+		{#if !isTouchDevice}
+			{#if isMe && !isDeleted && !isEditing}
+				<MessageActions onEdit={startEdit} onDelete={handleDelete} />
+			{/if}
 
-		<!-- Emoji picker (for non-deleted messages) -->
-		{#if !isDeleted && !isEditing}
-			<EmojiPicker onSelectEmoji={handleReaction} />
+			{#if !isDeleted && !isEditing}
+				<EmojiPicker onSelectEmoji={handleReaction} />
+			{/if}
 		{/if}
 	</div>
+
+	<!-- Long press menu for mobile -->
+	<LongPressMenu
+		{isMe}
+		{isDeleted}
+		{isEditing}
+		bind:open={showLongPressMenu}
+		onOpenChange={(open) => (showLongPressMenu = open)}
+		onEdit={startEdit}
+		onDelete={handleDelete}
+		onReaction={handleReaction}
+	/>
 
 	<!-- Reactions -->
 	{#if !isDeleted && message.reactions && Object.keys(message.reactions).length > 0}
@@ -133,10 +160,10 @@
 		</div>
 	{/if}
 
-	<!-- Timestamp -->
+	<!-- Timestamp (always visible) -->
 	<span
 		class={cn(
-			'px-3 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100',
+			'px-3 text-[10px] text-muted-foreground/70',
 			isMe ? 'text-right' : 'text-left'
 		)}
 	>

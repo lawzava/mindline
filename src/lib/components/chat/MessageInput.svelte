@@ -1,15 +1,16 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Send } from 'lucide-svelte';
+	import { Send, Loader2 } from 'lucide-svelte';
 
 	interface Props {
 		onSend: (message: string) => void;
 		onTyping?: (content: string) => void;
 		disabled?: boolean;
+		isSending?: boolean;
 	}
 
-	let { onSend, onTyping, disabled = false }: Props = $props();
+	let { onSend, onTyping, disabled = false, isSending = false }: Props = $props();
 	let message = $state('');
 	let inputRef = $state<HTMLInputElement | null>(null);
 
@@ -55,11 +56,15 @@
 	/>
 	<Button
 		onclick={handleSubmit}
-		disabled={disabled || !message.trim()}
+		disabled={disabled || isSending || !message.trim()}
 		size="icon"
 		class="shrink-0"
 	>
-		<Send class="h-4 w-4" />
-		<span class="sr-only">Send message</span>
+		{#if isSending}
+			<Loader2 class="h-4 w-4 animate-spin" />
+		{:else}
+			<Send class="h-4 w-4" />
+		{/if}
+		<span class="sr-only">{isSending ? 'Sending...' : 'Send message'}</span>
 	</Button>
 </div>
