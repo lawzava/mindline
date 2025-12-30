@@ -1,10 +1,24 @@
+# Rust
 /target
+
+# Node
 /node_modules
+
+# Build outputs
 /dist
-/logs
+/build
+/.svelte-kit
 /pkg
+
+# Logs
+/logs
+
+# Playwright
 /.playwright-mcp
+
+# OS
 .DS_Store
+Thumbs.db
 
 # Test files and outputs
 test-*.js
@@ -12,11 +26,13 @@ test-*.log
 test-output.log
 *.test.js
 /dev-tests
+test-screenshot-*.png
 
 # Environment and config
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.test
 
 # IDE
 .vscode/
@@ -25,5 +41,12 @@ test-output.log
 *.swo
 *~
 
-# OS
-Thumbs.db
+# Deployment
+.output
+.vercel
+.netlify
+.wrangler
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
