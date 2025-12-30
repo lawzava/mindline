@@ -8,6 +8,7 @@ repository = ""
 
 [lib]
 crate-type = ["cdylib"]
+path = "src-rust/lib.rs"
 
 [dependencies]
 wasm-bindgen = "0.2.87"
