@@ -400,13 +400,14 @@ function handleReactionMessage(message: ReactionMessage, peerId: string): void {
 /**
  * Emit a toast notification
  */
-export function emitToast(type: 'peer-joined' | 'peer-left' | 'error' | 'success', message: string): void {
+export function emitToast(type: 'peer-joined' | 'peer-left' | 'error' | 'success' | 'info', message: string): void {
 	switch (type) {
 		case 'peer-joined':
 		case 'success':
 			toast.success(message);
 			break;
 		case 'peer-left':
+		case 'info':
 			toast.info(message);
 			break;
 		case 'error':
