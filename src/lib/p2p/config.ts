@@ -7,19 +7,15 @@ import { browser, dev } from '$app/environment';
 import type { P2PConfig } from './types';
 
 // Free public TURN servers (Open Relay Project - metered.ca free tier)
+// Multiple URLs per server for better mobile/Safari compatibility
 const PUBLIC_TURN_SERVERS: RTCIceServer[] = [
 	{
-		urls: 'turn:openrelay.metered.ca:80',
-		username: 'openrelayproject',
-		credential: 'openrelayproject'
-	},
-	{
-		urls: 'turn:openrelay.metered.ca:443',
-		username: 'openrelayproject',
-		credential: 'openrelayproject'
-	},
-	{
-		urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+		urls: [
+			'turn:openrelay.metered.ca:80',
+			'turn:openrelay.metered.ca:443',
+			'turn:openrelay.metered.ca:443?transport=tcp',
+			'turns:openrelay.metered.ca:443' // TURN over TLS - preferred by Safari iOS
+		],
 		username: 'openrelayproject',
 		credential: 'openrelayproject'
 	}
@@ -105,7 +101,7 @@ export function getP2PConfig(): P2PConfig {
 		// Mobile-optimized settings
 		connectionTimeout: mobile ? 5000 : 2000,
 		icePoolSize: mobile ? 20 : 10,
-		forceRelay: false, // Let ICE decide, but TURN is available
+		forceRelay: mobile, // Force TURN relay on mobile for reliable connections through NAT
 		maxReconnectAttempts: mobile ? 10 : 7,
 		reconnectBackoffBase: 1000
 	};

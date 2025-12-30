@@ -19,6 +19,13 @@ const MAX_RECONNECT_ATTEMPTS = 7;
 const BASE_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 
+// Lifecycle handler state
+let visibilityHandler: (() => void) | null = null;
+let networkHandler: (() => void) | null = null;
+let pageLifecycleCleanup: (() => void) | null = null;
+let lastHiddenTime: number = 0;
+const STALE_CONNECTION_THRESHOLD = 30000; // 30 seconds - reconnect if hidden longer
+
 /**
  * Initialize P2P connection for a room
  */
@@ -403,4 +410,150 @@ export async function reconnectP2P(): Promise<void> {
 
 	// Attempt to reconnect
 	await initializeP2P(roomId);
+}
+
+/**
+ * Setup visibility change listener for mobile background/foreground handling
+ */
+export function setupVisibilityHandler(roomId: string, config?: Partial<P2PConfig>): void {
+	if (typeof document === 'undefined') return;
+
+	// Remove existing handler if any
+	if (visibilityHandler) {
+		document.removeEventListener('visibilitychange', visibilityHandler);
+	}
+
+	visibilityHandler = async () => {
+		if (document.visibilityState === 'hidden') {
+			console.log('[P2P Manager] App backgrounded - recording time');
+			lastHiddenTime = Date.now();
+		} else if (document.visibilityState === 'visible') {
+			const hiddenDuration = Date.now() - lastHiddenTime;
+			console.log(`[P2P Manager] App foregrounded after ${hiddenDuration}ms`);
+
+			// Check if connection is stale (hidden for too long or already disconnected)
+			if (hiddenDuration > STALE_CONNECTION_THRESHOLD || !isP2PConnected()) {
+				console.log('[P2P Manager] Connection may be stale, triggering reconnect');
+				emitToast('info', 'Reconnecting...');
+				try {
+					await reconnectP2P();
+				} catch (error) {
+					console.error('[P2P Manager] Reconnect after foreground failed:', error);
+				}
+			}
+		}
+	};
+
+	document.addEventListener('visibilitychange', visibilityHandler);
+	console.log('[P2P Manager] Visibility handler registered');
+}
+
+/**
+ * Cleanup visibility handler
+ */
+export function cleanupVisibilityHandler(): void {
+	if (visibilityHandler && typeof document !== 'undefined') {
+		document.removeEventListener('visibilitychange', visibilityHandler);
+		visibilityHandler = null;
+		console.log('[P2P Manager] Visibility handler removed');
+	}
+}
+
+/**
+ * Setup network change listener for WiFi/cellular transitions
+ */
+export function setupNetworkHandler(roomId: string, config?: Partial<P2PConfig>): void {
+	if (typeof navigator === 'undefined') return;
+
+	const connection = (navigator as unknown as { connection?: { addEventListener: (type: string, listener: () => void) => void; removeEventListener: (type: string, listener: () => void) => void; type?: string; effectiveType?: string; downlink?: number } }).connection;
+
+	if (!connection) {
+		console.log('[P2P Manager] Network Information API not available');
+		return;
+	}
+
+	// Remove existing handler if any
+	if (networkHandler) {
+		connection.removeEventListener('change', networkHandler);
+	}
+
+	networkHandler = async () => {
+		console.log('[P2P Manager] Network change detected:', {
+			type: connection.type,
+			effectiveType: connection.effectiveType,
+			downlink: connection.downlink
+		});
+
+		// Give network a moment to stabilize
+		await new Promise((r) => setTimeout(r, 1000));
+
+		// Force reconnection on network change
+		emitToast('info', 'Network changed, reconnecting...');
+		try {
+			await reconnectP2P();
+		} catch (error) {
+			console.error('[P2P Manager] Reconnect after network change failed:', error);
+		}
+	};
+
+	connection.addEventListener('change', networkHandler);
+	console.log('[P2P Manager] Network handler registered');
+}
+
+/**
+ * Cleanup network handler
+ */
+export function cleanupNetworkHandler(): void {
+	if (networkHandler && typeof navigator !== 'undefined') {
+		const connection = (navigator as unknown as { connection?: { removeEventListener: (type: string, listener: () => void) => void } }).connection;
+		if (connection) {
+			connection.removeEventListener('change', networkHandler);
+		}
+		networkHandler = null;
+		console.log('[P2P Manager] Network handler removed');
+	}
+}
+
+/**
+ * Setup page lifecycle handlers for graceful cleanup on close/navigate
+ */
+export function setupPageLifecycleHandlers(): void {
+	if (typeof window === 'undefined') return;
+
+	// pagehide is more reliable than beforeunload on mobile
+	const handlePageHide = (event: PageTransitionEvent) => {
+		console.log('[P2P Manager] Page hide event, persisted:', event.persisted);
+		if (!event.persisted) {
+			// Page is being unloaded, not just hidden for bfcache
+			disconnectP2P();
+		}
+	};
+
+	// beforeunload as fallback for desktop browsers
+	const handleBeforeUnload = () => {
+		console.log('[P2P Manager] beforeunload event');
+		disconnectP2P();
+	};
+
+	window.addEventListener('pagehide', handlePageHide);
+	window.addEventListener('beforeunload', handleBeforeUnload);
+
+	// Store cleanup function
+	pageLifecycleCleanup = () => {
+		window.removeEventListener('pagehide', handlePageHide);
+		window.removeEventListener('beforeunload', handleBeforeUnload);
+	};
+
+	console.log('[P2P Manager] Page lifecycle handlers registered');
+}
+
+/**
+ * Cleanup page lifecycle handlers
+ */
+export function cleanupPageLifecycleHandlers(): void {
+	if (pageLifecycleCleanup) {
+		pageLifecycleCleanup();
+		pageLifecycleCleanup = null;
+		console.log('[P2P Manager] Page lifecycle handlers removed');
+	}
 }

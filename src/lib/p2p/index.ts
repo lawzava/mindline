@@ -54,7 +54,14 @@ export {
 	broadcastReaction,
 	getP2PConnection,
 	isP2PConnected,
-	getConnectedPeerCount
+	getConnectedPeerCount,
+	// Lifecycle handlers for mobile
+	setupVisibilityHandler,
+	cleanupVisibilityHandler,
+	setupNetworkHandler,
+	cleanupNetworkHandler,
+	setupPageLifecycleHandlers,
+	cleanupPageLifecycleHandlers
 } from './manager';
 
 // Handler utilities
