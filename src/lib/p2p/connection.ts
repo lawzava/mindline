@@ -224,16 +224,23 @@ export class P2PConnection {
 				// Track all known peers
 				message.peers?.forEach((peerId) => this.allKnownPeers.add(peerId));
 
-				// Connect to ALL existing peers (I'm the new joiner, so I initiate all connections)
+				// Connect to ALL existing peers using deterministic initiator logic
+				// Use same rule as peer-joined: higher ID initiates to prevent offer collisions
 				const peers = message.peers ?? [];
 				for (let i = 0; i < peers.length; i++) {
 					const peerId = peers[i];
+					// Use consistent deterministic rule: higher clientId creates offer
+					const shouldInitiate = this.clientId > peerId;
 					// Stagger connection attempts to reduce race conditions
 					setTimeout(
 						async () => {
 							try {
-								console.log(`[P2P] Connecting to existing peer ${i + 1}/${peers.length}:`, peerId);
-								await this.createPeerConnection(peerId, true);
+								console.log(
+									`[P2P] Connecting to existing peer ${i + 1}/${peers.length}:`,
+									peerId,
+									shouldInitiate ? '(initiating)' : '(waiting)'
+								);
+								await this.createPeerConnection(peerId, shouldInitiate);
 							} catch (error) {
 								console.error(`[P2P] Failed to connect to existing peer ${peerId}:`, error);
 							}
@@ -397,6 +404,11 @@ export class P2PConnection {
 			// Close existing channel if any to prevent conflicts
 			const existingChannel = this.dataChannels.get(peerId);
 			if (existingChannel) {
+				// CRITICAL: Remove onclose handler BEFORE closing to prevent race condition
+				// The async onclose event could otherwise fire after new channel is set up
+				// and incorrectly trigger peer removal
+				existingChannel.onclose = null;
+				existingChannel.onerror = null;
 				existingChannel.close();
 				this.dataChannels.delete(peerId);
 			}
@@ -452,9 +464,11 @@ export class P2PConnection {
 					this.onPeerDisconnectedCallback(peerId);
 				}
 			} else if (pc.connectionState === 'disconnected') {
-				console.warn(`[P2P] Peer ${peerId} disconnected, removing connection`);
-				this.negotiatingPeers.delete(peerId);
-				this.removePeer(peerId);
+				// 'disconnected' is a transient state - WebRTC may auto-recover
+				// This is common on mobile during network jitter or brief packet loss
+				// Only 'failed' and 'closed' are terminal states that require removal
+				console.log(`[P2P] Peer ${peerId} temporarily disconnected, waiting for recovery`);
+				// Don't remove peer - let it recover or transition to 'failed'
 			}
 		};
 
@@ -567,11 +581,17 @@ export class P2PConnection {
 
 		dataChannel.onclose = () => {
 			console.log(`[P2P] Data channel closed with ${peerId}`);
-			// Only clean up the channel reference - let removePeer handle the callback
-			// to prevent double callback firing (connection state change also triggers removal)
 			this.dataChannels.delete(peerId);
-			// Trigger full peer removal through the deduplication-safe method
-			this.removePeer(peerId);
+
+			// Only remove peer if the underlying RTCPeerConnection is also dead
+			// Data channels can close temporarily on mobile while connection is still viable
+			const pc = this.peers.get(peerId);
+			if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+				console.log(`[P2P] Connection to ${peerId} is dead, removing peer`);
+				this.removePeer(peerId);
+			} else {
+				console.log(`[P2P] Connection to ${peerId} still alive (${pc.connectionState}), keeping peer`);
+			}
 		};
 
 		dataChannel.binaryType = 'arraybuffer';
