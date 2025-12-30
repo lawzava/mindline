@@ -36,6 +36,10 @@ export class P2PConnection {
 	// Monitoring
 	private meshCheckInterval: ReturnType<typeof setInterval> | null = null;
 
+	// ICE restart tracking for exponential backoff
+	private iceRestartAttempts: Map<string, number> = new Map();
+	private readonly MAX_ICE_RESTARTS = 3;
+
 	// Callbacks
 	private onMessageCallback: MessageCallback | null = null;
 	private onPeerConnectedCallback: PeerCallback | null = null;
@@ -69,10 +73,12 @@ export class P2PConnection {
 	private buildIceConfig(): RTCConfiguration {
 		const iceServers: RTCIceServer[] = [
 			{ urls: 'stun:stun.l.google.com:19302' },
-			{ urls: 'stun:stun1.l.google.com:19302' }
+			{ urls: 'stun:stun1.l.google.com:19302' },
+			{ urls: 'stun:stun2.l.google.com:19302' },
+			{ urls: 'stun:stun3.l.google.com:19302' }
 		];
 
-		// Add TURN servers if configured
+		// Add TURN servers if configured (critical for mobile/NAT traversal)
 		if (this.config.turnServers && Array.isArray(this.config.turnServers)) {
 			iceServers.push(...this.config.turnServers);
 			console.log('[P2P] TURN servers configured:', this.config.turnServers.length);
@@ -82,9 +88,11 @@ export class P2PConnection {
 
 		return {
 			iceServers,
-			iceCandidatePoolSize: 10,
+			iceCandidatePoolSize: this.config.icePoolSize ?? 10,
 			bundlePolicy: 'max-bundle',
-			rtcpMuxPolicy: 'require'
+			rtcpMuxPolicy: 'require',
+			// Force relay mode if configured (useful for problematic networks)
+			iceTransportPolicy: this.config.forceRelay ? 'relay' : 'all'
 		};
 	}
 
@@ -95,6 +103,7 @@ export class P2PConnection {
 		return new Promise((resolve, reject) => {
 			try {
 				const host = this.config.signalingServer;
+				const timeout = this.config.connectionTimeout ?? 2000;
 
 				if (!host) {
 					console.log('[P2P] No signaling server configured - running in local mode');
@@ -109,7 +118,17 @@ export class P2PConnection {
 				console.log('[P2P] Connecting to signaling server at', wsUrl);
 				this.ws = new WebSocket(wsUrl);
 
+				// Connection timeout - reject if not connected in time
+				const connectionTimer = setTimeout(() => {
+					if (this.ws?.readyState !== WebSocket.OPEN) {
+						console.error('[P2P] WebSocket connection timeout after', timeout, 'ms');
+						this.ws?.close();
+						reject(new Error('Connection timeout'));
+					}
+				}, timeout);
+
 				this.ws.onopen = () => {
+					clearTimeout(connectionTimer);
 					console.log('[P2P] Connected to signaling server');
 					this.ws?.send(
 						JSON.stringify({
@@ -118,6 +137,8 @@ export class P2PConnection {
 							clientId: this.clientId
 						})
 					);
+					// Resolve on actual connection, not arbitrary timeout
+					resolve();
 				};
 
 				this.ws.onmessage = (event) => {
@@ -133,11 +154,13 @@ export class P2PConnection {
 				};
 
 				this.ws.onerror = (error) => {
+					clearTimeout(connectionTimer);
 					console.error('[P2P] WebSocket error:', error);
 					reject(error);
 				};
 
 				this.ws.onclose = () => {
+					clearTimeout(connectionTimer);
 					console.log('[P2P] Disconnected from signaling server');
 					// Clean up all peer connections
 					this.peers.forEach((_, peerId) => {
@@ -149,9 +172,6 @@ export class P2PConnection {
 						this.onConnectionLostCallback('signaling_server_disconnect');
 					}
 				};
-
-				// Resolve after a short delay to ensure connection is established
-				setTimeout(() => resolve(), 500);
 			} catch (error) {
 				reject(error);
 			}
@@ -404,17 +424,48 @@ export class P2PConnection {
 			}
 		};
 
-		// Handle ICE connection state changes
+		// Handle ICE connection state changes with exponential backoff retry
 		pc.oniceconnectionstatechange = () => {
 			console.log(`[P2P] ICE connection state with ${peerId}:`, pc.iceConnectionState);
 
 			if (pc.iceConnectionState === 'failed') {
-				console.warn(`[P2P] ICE connection failed with ${peerId}, will restart ICE`);
-				try {
-					pc.restartIce();
-				} catch (error) {
-					console.error(`[P2P] Failed to restart ICE for ${peerId}:`, error);
+				const attempts = this.iceRestartAttempts.get(peerId) ?? 0;
+
+				if (attempts < this.MAX_ICE_RESTARTS) {
+					// Exponential backoff: 1s, 2s, 4s
+					const delay = Math.pow(2, attempts) * 1000;
+					console.warn(
+						`[P2P] ICE failed, retry ${attempts + 1}/${this.MAX_ICE_RESTARTS} in ${delay}ms for ${peerId}`
+					);
+
+					this.iceRestartAttempts.set(peerId, attempts + 1);
+
+					setTimeout(() => {
+						try {
+							if (this.peers.has(peerId)) {
+								pc.restartIce();
+							}
+						} catch (error) {
+							console.error(`[P2P] ICE restart failed for ${peerId}:`, error);
+							this.removePeer(peerId);
+						}
+					}, delay);
+				} else {
+					console.error(
+						`[P2P] ICE exhausted ${this.MAX_ICE_RESTARTS} restart attempts for ${peerId}`
+					);
+					this.iceRestartAttempts.delete(peerId);
+					this.removePeer(peerId);
+
+					// Mark peer for relay fallback
+					this.relayPeers.add(peerId);
 				}
+			} else if (
+				pc.iceConnectionState === 'connected' ||
+				pc.iceConnectionState === 'completed'
+			) {
+				// Reset restart counter on successful connection
+				this.iceRestartAttempts.delete(peerId);
 			}
 		};
 	}

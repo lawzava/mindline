@@ -13,12 +13,23 @@ export interface P2PConfig {
 	useSSL: boolean;
 	websocketPath: string;
 	turnServers?: RTCIceServer[];
+	// Mobile optimization settings
+	connectionTimeout?: number; // WebSocket connection timeout (ms)
+	icePoolSize?: number; // ICE candidate pool size
+	forceRelay?: boolean; // Force TURN relay mode
+	maxReconnectAttempts?: number; // Max reconnection attempts
+	reconnectBackoffBase?: number; // Base delay for exponential backoff (ms)
 }
 
 export const DEFAULT_CONFIG: P2PConfig = {
 	signalingServer: 'localhost:3000',
 	useSSL: false,
-	websocketPath: '/ws'
+	websocketPath: '/ws',
+	connectionTimeout: 2000,
+	icePoolSize: 10,
+	forceRelay: false,
+	maxReconnectAttempts: 5,
+	reconnectBackoffBase: 1000
 };
 
 // ============================================

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { AppShell } from '$lib/components/layout';
+	import { ModeWatcher } from 'mode-watcher';
 
 	let { children } = $props();
 </script>
@@ -16,6 +17,7 @@
 	<meta name="description" content="Real-time P2P chat with radical transparency" />
 </svelte:head>
 
+<ModeWatcher />
 <AppShell>
 	{@render children()}
 </AppShell>
