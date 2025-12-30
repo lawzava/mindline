@@ -510,15 +510,33 @@ export function setupVisibilityHandler(roomId: string, config?: Partial<P2PConfi
 			const hiddenDuration = Date.now() - lastHiddenTime;
 			console.log(`[P2P Manager] App foregrounded after ${hiddenDuration}ms`);
 
-			// Check if connection is stale (hidden for too long or already disconnected)
-			if (hiddenDuration > STALE_CONNECTION_THRESHOLD || !isP2PConnected()) {
-				console.log('[P2P Manager] Connection may be stale, triggering reconnect');
+			// Only reconnect if WebSocket is actually disconnected
+			// Don't reconnect just because we were hidden - the connection might still be working
+			const wsConnected = p2pConnection?.isWebSocketConnected?.() ?? false;
+			const hasDataChannels = (p2pConnection?.getConnectedPeers()?.length ?? 0) > 0;
+
+			console.log(`[P2P Manager] Connection state: ws=${wsConnected}, channels=${hasDataChannels}, storeConnected=${isP2PConnected()}`);
+
+			// Only reconnect if WebSocket is actually dead AND we were hidden for a while
+			if (!wsConnected && hiddenDuration > STALE_CONNECTION_THRESHOLD) {
+				console.log('[P2P Manager] WebSocket disconnected after long background, triggering reconnect');
 				emitToast('info', 'Reconnecting...');
 				try {
 					await reconnectP2P();
 				} catch (error) {
 					console.error('[P2P Manager] Reconnect after foreground failed:', error);
 				}
+			} else if (!wsConnected && !hasDataChannels) {
+				// WebSocket dead and no data channels - definitely need to reconnect
+				console.log('[P2P Manager] No active connections, triggering reconnect');
+				emitToast('info', 'Reconnecting...');
+				try {
+					await reconnectP2P();
+				} catch (error) {
+					console.error('[P2P Manager] Reconnect failed:', error);
+				}
+			} else {
+				console.log('[P2P Manager] Connection still alive, not reconnecting');
 			}
 		}
 	};
