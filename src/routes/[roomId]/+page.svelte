@@ -56,6 +56,7 @@
 			// Load existing messages from storage
 			wasm.loadRoomMessagesFromStorage(roomId);
 			const messagesData = wasm.getRoomMessages(roomId, 100);
+			console.log('[DEBUG] Loaded messages from WASM:', JSON.stringify(messagesData, null, 2));
 			// WASM returns a JS array directly via serde_wasm_bindgen, not a JSON string
 			if (messagesData && Array.isArray(messagesData) && messagesData.length > 0) {
 				messages.setRoomMessages(roomId, messagesData as Message[]);
@@ -191,49 +192,117 @@
 	function handleEdit(messageId: string, newContent: string) {
 		if (!roomId) return;
 
-		// Update local message
+		const originalContent = messages.getMessage(roomId, messageId)?.content || null;
+
+		// Optimistic update for immediate UI feedback
 		messages.updateMessage(roomId, messageId, {
 			content: newContent,
 			edited: true,
 			edit_timestamp: Date.now(),
-			original_content: messages.getMessage(roomId, messageId)?.content || null
+			original_content: originalContent
 		});
 
-		// Save to storage
+		let persistedToStorage = false;
+
+		// Sync to WASM state then save to storage
 		if (isWasmReady()) {
 			try {
+				// Ensure WASM has latest state from storage before editing
+				wasm.loadRoomMessagesFromStorage(roomId);
+				// Now sync the edit to WASM's MessageManager
+				wasm.editMessage(roomId, messageId, newContent);
+				// Save - this will persist the updated WASM state
 				wasm.saveRoomMessagesToStorage(roomId);
+				persistedToStorage = true;
 			} catch (error) {
-				console.error('Failed to save edited message:', error);
+				console.warn('[Edit] WASM edit failed:', error);
+				// Fallback: Try direct localStorage update for persistence
+				try {
+					const storageKey = `chatHistory_${roomId}`;
+					const stored = localStorage.getItem(storageKey);
+					if (stored) {
+						const roomState = JSON.parse(stored);
+						const msgIndex = roomState.messages?.findIndex((m: Message) => m.id === messageId);
+						if (msgIndex !== -1 && roomState.messages) {
+							roomState.messages[msgIndex].content = newContent;
+							roomState.messages[msgIndex].edited = true;
+							roomState.messages[msgIndex].edit_timestamp = Date.now();
+							roomState.messages[msgIndex].original_content = originalContent;
+							localStorage.setItem(storageKey, JSON.stringify(roomState));
+							persistedToStorage = true;
+							console.log('[Edit] Fallback localStorage update succeeded');
+						}
+					}
+				} catch (fallbackError) {
+					console.error('[Edit] Fallback localStorage update also failed:', fallbackError);
+				}
 			}
 		}
 
-		// Broadcast to peers
+		// Broadcast to peers (do this even if persistence failed - peers get the update)
 		broadcastEdit(messageId, newContent);
-		toast.success('Message edited');
+
+		// Show appropriate feedback
+		if (persistedToStorage) {
+			toast.success('Message edited');
+		} else {
+			toast.warning('Message edited locally (may not persist after refresh)');
+		}
 	}
 
 	function handleDelete(messageId: string) {
 		if (!roomId) return;
 
-		// Soft delete - update content
+		// Soft delete - update content (optimistic update)
 		messages.updateMessage(roomId, messageId, {
 			content: '[Message deleted]',
 			message_type: 'Deleted'
 		});
 
-		// Save to storage
+		let persistedToStorage = false;
+
+		// Sync to WASM state then save to storage
 		if (isWasmReady()) {
 			try {
+				// Ensure WASM has latest state from storage before deleting
+				wasm.loadRoomMessagesFromStorage(roomId);
+				// Sync the delete to WASM's MessageManager
+				wasm.deleteMessage(roomId, messageId);
+				// Save - this will persist the updated WASM state
 				wasm.saveRoomMessagesToStorage(roomId);
+				persistedToStorage = true;
 			} catch (error) {
-				console.error('Failed to save deleted message:', error);
+				console.warn('[Delete] WASM delete failed:', error);
+				// Fallback: Try direct localStorage update for persistence
+				try {
+					const storageKey = `chatHistory_${roomId}`;
+					const stored = localStorage.getItem(storageKey);
+					if (stored) {
+						const roomState = JSON.parse(stored);
+						const msgIndex = roomState.messages?.findIndex((m: Message) => m.id === messageId);
+						if (msgIndex !== -1 && roomState.messages) {
+							roomState.messages[msgIndex].content = '[Message deleted]';
+							roomState.messages[msgIndex].message_type = 'Deleted';
+							localStorage.setItem(storageKey, JSON.stringify(roomState));
+							persistedToStorage = true;
+							console.log('[Delete] Fallback localStorage update succeeded');
+						}
+					}
+				} catch (fallbackError) {
+					console.error('[Delete] Fallback localStorage update also failed:', fallbackError);
+				}
 			}
 		}
 
-		// Broadcast to peers
+		// Broadcast to peers (do this even if persistence failed - peers get the update)
 		broadcastDelete(messageId);
-		toast.success('Message deleted');
+
+		// Show appropriate feedback
+		if (persistedToStorage) {
+			toast.success('Message deleted');
+		} else {
+			toast.warning('Message deleted locally (may not persist after refresh)');
+		}
 	}
 
 	function handleReaction(messageId: string, emoji: string) {
@@ -271,9 +340,16 @@
 		// Update local message
 		messages.updateMessage(roomId, messageId, { reactions });
 
-		// Save to storage
+		// Sync to WASM state then save to storage
 		if (isWasmReady()) {
 			try {
+				// First sync the reaction to WASM's MessageManager
+				if (action === 'add') {
+					wasm.addReaction(roomId, messageId, emoji, userId);
+				} else {
+					wasm.removeReaction(roomId, messageId, emoji, userId);
+				}
+				// Now save - this will persist the updated WASM state
 				wasm.saveRoomMessagesToStorage(roomId);
 			} catch (error) {
 				console.error('Failed to save reaction:', error);
@@ -304,6 +380,7 @@
 				<span class="text-sm text-muted-foreground">Room:</span>
 				<button
 					onclick={copyRoomId}
+					aria-label="Copy room ID to clipboard"
 					class="group flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs hover:bg-muted/80 transition-colors"
 					title="Click to copy full room ID"
 				>
