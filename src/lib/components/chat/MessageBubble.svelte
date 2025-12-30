@@ -137,7 +137,7 @@
 					</Button>
 				</div>
 			{:else}
-				<p class="whitespace-pre-wrap break-words break-all">{message.content}</p>
+				<p class="whitespace-pre-wrap break-words">{message.content}</p>
 			{/if}
 		</div>
 
