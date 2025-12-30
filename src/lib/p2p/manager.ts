@@ -30,6 +30,8 @@ const STALE_CONNECTION_THRESHOLD = 30000; // 30 seconds - reconnect if hidden lo
 // Prevent concurrent disconnect/connect operations
 let isDisconnecting = false;
 let disconnectPromise: Promise<void> | null = null;
+let isInitializing = false;
+let currentInitRoomId: string | null = null;
 
 /**
  * Initialize P2P connection for a room
@@ -37,11 +39,21 @@ let disconnectPromise: Promise<void> | null = null;
 export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>): Promise<void> {
 	console.log('[P2P Manager] Initializing P2P for room:', roomId);
 
+	// Prevent concurrent initialization for the same room
+	if (isInitializing && currentInitRoomId === roomId) {
+		console.log('[P2P Manager] Already initializing for this room, skipping duplicate call');
+		return;
+	}
+
 	// Wait for any in-progress disconnect to complete
 	if (disconnectPromise) {
 		console.log('[P2P Manager] Waiting for previous disconnect to complete...');
 		await disconnectPromise;
 	}
+
+	// Mark as initializing
+	isInitializing = true;
+	currentInitRoomId = roomId;
 
 	// Disconnect existing connection if any
 	if (p2pConnection) {
@@ -105,6 +117,14 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 
 	p2pConnection.onConnectionLost((reason) => {
 		console.warn('[P2P Manager] Connection lost:', reason);
+
+		// Don't trigger reconnection if we're intentionally disconnecting
+		// This prevents infinite reconnection loops when switching rooms
+		if (isDisconnecting) {
+			console.log('[P2P Manager] Ignoring connection loss during intentional disconnect');
+			return;
+		}
+
 		connection.setStatus('disconnected');
 		startReconnection(roomId, config);
 	});
@@ -120,6 +140,10 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		console.error('[P2P Manager] Connection failed:', errorMessage);
 		connection.setError(errorMessage);
 		throw error;
+	} finally {
+		// Clear initialization flag
+		isInitializing = false;
+		currentInitRoomId = null;
 	}
 }
 

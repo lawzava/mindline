@@ -512,15 +512,48 @@ impl MessageManager {
             .ok_or_else(|| JsValue::from_str("localStorage not available"))?;
 
         if let Some(room) = self.rooms.get(room_id) {
-            let serialized = serde_json::to_string(room)
+            let storage_key = format!("chatHistory_{}", room_id);
+
+            // Read existing data from localStorage and merge to prevent multi-tab race conditions
+            let merged_room = if let Ok(Some(stored_data)) = storage.get_item(&storage_key) {
+                if let Ok(stored_room) = serde_json::from_str::<RoomMessageState>(&stored_data) {
+                    // Merge: combine messages from storage and current in-memory state
+                    let mut merged = RoomMessageState::new(room_id.to_string());
+
+                    // First add all messages from localStorage (these might include messages from other tabs)
+                    for msg in stored_room.messages {
+                        merged.add_message(msg);
+                    }
+
+                    // Then add all messages from current in-memory state (deduplication handled by add_message)
+                    for msg in &room.messages {
+                        merged.add_message(msg.clone());
+                    }
+
+                    // Copy other state from in-memory room
+                    merged.last_sync = room.last_sync.max(stored_room.last_sync);
+                    merged.unread_count = room.unread_count;
+                    merged.last_read_timestamp = room.last_read_timestamp.max(stored_room.last_read_timestamp);
+                    merged.draft_messages = room.draft_messages.clone();
+                    merged.typing_users = room.typing_users.clone();
+                    merged.pending_messages = room.pending_messages.clone();
+
+                    merged
+                } else {
+                    // Couldn't parse stored data, use current room
+                    room.clone()
+                }
+            } else {
+                // No stored data, use current room
+                room.clone()
+            };
+
+            let serialized = serde_json::to_string(&merged_room)
                 .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?;
 
-            let storage_key = format!("chatHistory_{}", room_id);
             storage
                 .set_item(&storage_key, &serialized)
                 .map_err(|_| JsValue::from_str("Failed to save to localStorage"))?;
-
-            console_log!("Saved room {} to localStorage", room_id);
         }
 
         Ok(())
@@ -538,12 +571,23 @@ impl MessageManager {
         if let Ok(Some(stored_data)) = storage.get_item(&storage_key) {
             match serde_json::from_str::<RoomMessageState>(&stored_data) {
                 Ok(room_state) => {
+                    // If we already have messages in memory, merge them with loaded data
+                    if let Some(existing_room) = self.rooms.get(room_id) {
+                        if !existing_room.messages.is_empty() {
+                            // Merge: keep existing in-memory messages and add loaded ones
+                            let mut merged = room_state;
+                            for msg in &existing_room.messages {
+                                // add_message handles deduplication
+                                merged.add_message(msg.clone());
+                            }
+                            self.rooms.insert(room_id.to_string(), merged);
+                            return Ok(true);
+                        }
+                    }
                     self.rooms.insert(room_id.to_string(), room_state);
-                    console_log!("Loaded room {} from localStorage", room_id);
                     Ok(true)
                 }
-                Err(e) => {
-                    console_log!("Failed to deserialize room data: {}, clearing old data", e);
+                Err(_) => {
                     // Clear corrupted/old format data
                     let _ = storage.remove_item(&storage_key);
                     // Create fresh room
