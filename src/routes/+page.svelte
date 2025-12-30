@@ -52,6 +52,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Mindline</title>
+</svelte:head>
+
 <div class="flex flex-1 items-center justify-center p-4">
 	<Card class="w-full max-w-md">
 		<CardHeader class="text-center">

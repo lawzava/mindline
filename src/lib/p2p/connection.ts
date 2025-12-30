@@ -370,8 +370,11 @@ export class P2PConnection {
 		const pc = new RTCPeerConnection(this.iceConfig);
 		this.peers.set(peerId, pc);
 
-		// Track negotiation state
-		this.negotiatingPeers.add(peerId);
+		// Track negotiation state - only mark as negotiating if we're creating an offer
+		// Non-initiating peers should NOT be marked as negotiating until they process an offer
+		if (createOffer) {
+			this.negotiatingPeers.add(peerId);
+		}
 
 		// Handle ICE candidates
 		pc.onicecandidate = (event) => {

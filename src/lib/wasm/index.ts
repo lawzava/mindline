@@ -251,6 +251,36 @@ export const wasm = {
 			requestData: (v: unknown) => v
 		})(requestData),
 
+	// Edit/Delete/Reaction - sync to WASM state before saving
+	editMessage: (roomId: string, messageId: string, newContent: string) =>
+		createSafeCall<[string, string, string], void>('edit_message', [
+			'roomId',
+			'messageId',
+			'newContent'
+		])(roomId, messageId, newContent),
+
+	deleteMessage: (roomId: string, messageId: string) =>
+		createSafeCall<[string, string], void>('delete_message', ['roomId', 'messageId'])(
+			roomId,
+			messageId
+		),
+
+	addReaction: (roomId: string, messageId: string, emoji: string, userId: string) =>
+		createSafeCall<[string, string, string, string], void>('add_reaction', [
+			'roomId',
+			'messageId',
+			'emoji',
+			'userId'
+		])(roomId, messageId, emoji, userId),
+
+	removeReaction: (roomId: string, messageId: string, emoji: string, userId: string) =>
+		createSafeCall<[string, string, string, string], void>('remove_reaction', [
+			'roomId',
+			'messageId',
+			'emoji',
+			'userId'
+		])(roomId, messageId, emoji, userId),
+
 	saveRoomMessagesToStorage: (roomId: string) =>
 		createSafeCall<[string], void>('save_room_messages_to_storage', ['roomId'])(roomId),
 
