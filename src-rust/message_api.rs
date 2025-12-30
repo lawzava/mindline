@@ -1,7 +1,6 @@
 // src/message_api.rs
 // Phase 3: Enhanced Message Processing WASM Bindings
 
-use crate::console_log;
 use crate::messages::{with_message_manager, EnhancedMessage, MessageSyncRequest, SyncRequestType};
 use crate::state::APP_STATE;
 use crate::state_api::get_current_user_id;
@@ -13,7 +12,6 @@ use wasm_bindgen::prelude::*;
 pub fn set_message_manager_user(user_id: &str) -> Result<(), JsValue> {
     with_message_manager(|manager| {
         manager.set_current_user(user_id.to_string());
-        console_log!("Message manager user set to: {}", user_id);
     })
 }
 
@@ -46,38 +44,29 @@ pub fn receive_message_from_peer(message_data: &JsValue) -> Result<bool, JsValue
     let message: EnhancedMessage = serde_wasm_bindgen::from_value(message_data.clone())
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize message: {}", e)))?;
 
-    with_message_manager(|manager| manager.receive_message(message))
+    let result = with_message_manager(|manager| manager.receive_message(message))?;
+
+    Ok(result)
 }
 
 #[wasm_bindgen]
 pub fn get_room_messages(room_id: &str, limit: Option<u32>) -> JsValue {
-    // Debug logging to see what we're receiving
-    console_log!(
-        "[WASM] get_room_messages called with room_id: {}, limit: {:?}",
-        room_id,
-        limit
-    );
-
     // Handle the case where wasm-bindgen might pass a sentinel value
     // The JS binding uses 0x100000001 as a sentinel for None
     let safe_limit = if let Some(l) = limit {
         // Check if the value is suspiciously large (likely the sentinel)
         if l > 1000000 {
-            console_log!("[WASM] Detected sentinel value {} for None, using None", l);
             None
         } else {
-            console_log!("[WASM] Using limit value: {}", l);
             Some(l as usize)
         }
     } else {
-        console_log!("[WASM] No limit specified (None)");
         None
     };
 
     let messages = with_message_manager(|manager| manager.get_messages(room_id, safe_limit))
         .unwrap_or_default();
 
-    console_log!("[WASM] Returning {} messages", messages.len());
     serde_wasm_bindgen::to_value(&messages).unwrap_or(JsValue::NULL)
 }
 

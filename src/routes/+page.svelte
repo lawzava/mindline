@@ -17,6 +17,7 @@
 			const userId = wasm.generateUuid();
 			const name = $user.name || 'Anonymous';
 			wasm.initialize(name, userId);
+			wasm.setMessageManagerUser(userId);
 			user.initialize(name, userId);
 		}
 
@@ -36,6 +37,7 @@
 			const userId = wasm.generateUuid();
 			const name = $user.name || 'Anonymous';
 			wasm.initialize(name, userId);
+			wasm.setMessageManagerUser(userId);
 			user.initialize(name, userId);
 		}
 

@@ -33,7 +33,11 @@
 			const userId = wasm.generateUuid();
 			const name = $user.name || 'Anonymous';
 			wasm.initialize(name, userId);
+			wasm.setMessageManagerUser(userId);
 			user.initialize(name, userId);
+		} else {
+			// User already initialized, but ensure MessageManager has the user ID too
+			wasm.setMessageManagerUser($user.id);
 		}
 
 		// Join the room
@@ -134,9 +138,9 @@
 			// Add to local messages
 			messages.addMessage(roomId, message);
 
-			// Send via WASM
+			// Send via WASM (use enhanced message system for proper persistence)
 			try {
-				wasm.sendMessage(roomId, content, messageId);
+				wasm.sendMessageEnhanced(roomId, content, messageId);
 				wasm.saveRoomMessagesToStorage(roomId);
 			} catch (error) {
 				console.error('Failed to send message:', error);
