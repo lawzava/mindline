@@ -128,6 +128,38 @@ pub fn handle_sync_request(request_data: &JsValue) -> JsValue {
     }
 }
 
+// ========== Edit/Delete/Reaction Functions ==========
+
+#[wasm_bindgen]
+pub fn edit_message(room_id: &str, message_id: &str, new_content: &str) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.edit_message(room_id, message_id, new_content)
+    })?
+}
+
+#[wasm_bindgen]
+pub fn delete_message(room_id: &str, message_id: &str) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.delete_message(room_id, message_id)
+    })?
+}
+
+#[wasm_bindgen]
+pub fn add_reaction(room_id: &str, message_id: &str, emoji: &str, user_id: &str) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.add_reaction(room_id, message_id, emoji, user_id)
+    })?
+}
+
+#[wasm_bindgen]
+pub fn remove_reaction(room_id: &str, message_id: &str, emoji: &str, user_id: &str) -> Result<(), JsValue> {
+    with_message_manager(|manager| {
+        manager.remove_reaction(room_id, message_id, emoji, user_id)
+    })?
+}
+
+// ========== Storage Functions ==========
+
 #[wasm_bindgen]
 pub fn save_room_messages_to_storage(room_id: &str) -> Result<(), JsValue> {
     with_message_manager(|manager| manager.save_room_to_storage(room_id))?
