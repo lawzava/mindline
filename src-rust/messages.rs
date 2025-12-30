@@ -449,6 +449,23 @@ impl MessageManager {
         }
     }
 
+    pub fn remove_reaction(
+        &mut self,
+        room_id: &str,
+        message_id: &str,
+        emoji: &str,
+        user_id: &str,
+    ) -> Result<(), JsValue> {
+        let room = self.get_or_create_room(room_id);
+        if let Some(message) = room.get_message_mut(message_id) {
+            message.remove_reaction(emoji, user_id);
+            console_log!("Reaction removed: {} from message {}", emoji, message_id);
+            Ok(())
+        } else {
+            Err(JsValue::from_str("Message not found"))
+        }
+    }
+
     pub fn get_messages(&self, room_id: &str, limit: Option<usize>) -> Vec<EnhancedMessage> {
         if let Some(room) = self.rooms.get(room_id) {
             room.get_recent_messages(limit.unwrap_or(50))
@@ -520,14 +537,15 @@ impl MessageManager {
                     // Merge: combine messages from storage and current in-memory state
                     let mut merged = RoomMessageState::new(room_id.to_string());
 
-                    // First add all messages from localStorage (these might include messages from other tabs)
-                    for msg in stored_room.messages {
-                        merged.add_message(msg);
-                    }
-
-                    // Then add all messages from current in-memory state (deduplication handled by add_message)
+                    // IMPORTANT: Add in-memory state FIRST so edits/deletes/reactions take precedence
+                    // Then add localStorage messages (only those not already in in-memory will be added)
                     for msg in &room.messages {
                         merged.add_message(msg.clone());
+                    }
+
+                    // Then add messages from localStorage (only new messages from other tabs)
+                    for msg in stored_room.messages {
+                        merged.add_message(msg);
                     }
 
                     // Copy other state from in-memory room
