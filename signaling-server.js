@@ -423,19 +423,33 @@ const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Add keepalive ping mechanism
+// Add keepalive ping mechanism with mobile-friendly tolerance
+// Mobile devices may be slow to respond when backgrounded or during network transitions
+const KEEPALIVE_INTERVAL = 45000; // 45 seconds (increased from 30s for mobile)
+const MAX_MISSED_PONGS = 2; // Allow 2 missed pongs before termination
+
 const keepaliveInterval = setInterval(() => {
   wss.clients.forEach((ws) => {
     if (!ws.isAlive) {
-      console.log('📡 Terminating dead connection');
-      ws.terminate();
-      return;
+      // Track missed pongs
+      ws.missedPongs = (ws.missedPongs || 0) + 1;
+
+      if (ws.missedPongs >= MAX_MISSED_PONGS) {
+        console.log(`📡 Terminating dead connection (missed ${ws.missedPongs} pongs)`);
+        ws.terminate();
+        return;
+      }
+
+      console.log(`📡 Client missed pong (${ws.missedPongs}/${MAX_MISSED_PONGS})`);
+    } else {
+      // Reset missed pongs counter on successful pong
+      ws.missedPongs = 0;
     }
 
     ws.isAlive = false;
     ws.ping();
   });
-}, 30000); // Ping every 30 seconds
+}, KEEPALIVE_INTERVAL);
 
 wss.on('close', () => {
   clearInterval(keepaliveInterval);
