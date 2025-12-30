@@ -226,11 +226,13 @@ export class P2PConnection {
 
 				// Connect to ALL existing peers using deterministic initiator logic
 				// Use same rule as peer-joined: higher ID initiates to prevent offer collisions
+				// CRITICAL: Must compare server-assigned IDs, not local IDs, for consistency
 				const peers = message.peers ?? [];
+				const myServerId = this.serverClientId || this.clientId;
 				for (let i = 0; i < peers.length; i++) {
 					const peerId = peers[i];
-					// Use consistent deterministic rule: higher clientId creates offer
-					const shouldInitiate = this.clientId > peerId;
+					// Use consistent deterministic rule: higher server ID creates offer
+					const shouldInitiate = myServerId > peerId;
 					// Stagger connection attempts to reduce race conditions
 					setTimeout(
 						async () => {
@@ -260,11 +262,13 @@ export class P2PConnection {
 
 			case 'peer-joined':
 				console.log('[P2P] Peer joined:', message.clientId);
-				if (message.clientId && message.clientId !== this.clientId) {
+				// CRITICAL: Compare server IDs, not local IDs - peer IDs from server use server ID space
+				const myServerIdForJoin = this.serverClientId || this.clientId;
+				if (message.clientId && message.clientId !== myServerIdForJoin) {
 					this.allKnownPeers.add(message.clientId);
 
-					// Use string comparison to avoid duplicate offers
-					const shouldInitiate = this.clientId > message.clientId;
+					// Use string comparison to avoid duplicate offers (compare server IDs)
+					const shouldInitiate = myServerIdForJoin > message.clientId;
 					const delay = shouldInitiate ? 500 : 1500;
 
 					console.log(
@@ -546,12 +550,27 @@ export class P2PConnection {
 	private setupDataChannel(dataChannel: RTCDataChannel, peerId: string): void {
 		console.log(`[P2P] Setting up data channel for ${peerId}, state: ${dataChannel.readyState}`);
 
-		dataChannel.onopen = () => {
+		// CRITICAL: When receiving a channel via ondatachannel, it might already be 'open'
+		// In that case, the onopen callback will never fire, so we must handle it immediately
+		const handleChannelOpen = () => {
 			console.log(`[P2P] Data channel opened with ${peerId}`);
 			this.dataChannels.set(peerId, dataChannel);
 
 			if (this.onPeerConnectedCallback) {
 				this.onPeerConnectedCallback(peerId);
+			}
+		};
+
+		// Check if channel is already open (common when receiving via ondatachannel)
+		if (dataChannel.readyState === 'open') {
+			console.log(`[P2P] Data channel already open for ${peerId}, handling immediately`);
+			handleChannelOpen();
+		}
+
+		dataChannel.onopen = () => {
+			// Only handle if not already in dataChannels (prevents double callback)
+			if (!this.dataChannels.has(peerId)) {
+				handleChannelOpen();
 			}
 		};
 
@@ -667,9 +686,11 @@ export class P2PConnection {
 				});
 			} else if (pc.signalingState === 'have-local-offer') {
 				// Handle offer collision - use deterministic tie-breaking
+				// CRITICAL: Must use server-assigned IDs for consistent comparison
 				console.log(`[P2P] Offer collision detected with peer ${peerId}`);
+				const myServerIdForCollision = this.serverClientId || this.clientId;
 
-				if (this.clientId > peerId) {
+				if (myServerIdForCollision > peerId) {
 					console.log(`[P2P] Ignoring offer from ${peerId} (we have priority)`);
 					return;
 				} else {
