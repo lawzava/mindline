@@ -1,6 +1,6 @@
-const WebSocket = require('ws');
-const http = require('http');
-const crypto = require('crypto');
+import WebSocket, { WebSocketServer } from 'ws';
+import http from 'http';
+import crypto from 'crypto';
 
 const server = http.createServer();
 
@@ -12,7 +12,7 @@ const SERVER_LIMITS = {
 };
 
 // Production-ready WebSocket server configuration
-const wss = new WebSocket.Server({
+const wss = new WebSocketServer({
   server,
   path: '/ws', // Use /ws path for nginx proxy
   perMessageDeflate: false, // Disable compression for better performance
