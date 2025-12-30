@@ -40,7 +40,8 @@ pub fn initialize_room_encryption(room_id: &str) -> Result<bool, JsValue> {
     console_log!("[WASM] Initializing room encryption for room: {}", room_id);
 
     // First, try to load existing key from localStorage
-    let key_loaded = with_encryption_manager(|manager| manager.load_room_key_from_storage(room_id))??;
+    let key_loaded =
+        with_encryption_manager(|manager| manager.load_room_key_from_storage(room_id))??;
 
     if key_loaded {
         console_log!(
