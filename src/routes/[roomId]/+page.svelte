@@ -5,7 +5,7 @@
 	import { MessageList, MessageInput, DraftIndicator, ConnectionStatus } from '$lib/components/chat';
 	import { currentRoomId, currentRoomMessages, messages, user, drafts } from '$lib/stores';
 	import { wasm, isWasmReady } from '$lib/wasm';
-	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, isMobileDevice } from '$lib/p2p';
+	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers } from '$lib/p2p';
 	import type { Message } from '$lib/wasm/types';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -48,10 +48,19 @@
 			// Initialize P2P connection with environment-aware config
 			try {
 				const p2pConfig = getP2PConfig();
-				if (isMobileDevice()) {
+				const isMobile = isMobileDevice();
+				if (isMobile) {
 					console.log('[Room] Mobile device detected - using optimized P2P config');
 				}
 				await initializeP2P(roomId, p2pConfig);
+
+				// Setup mobile lifecycle handlers after successful P2P init
+				if (isMobile) {
+					setupVisibilityHandler(roomId, p2pConfig);
+					setupNetworkHandler(roomId, p2pConfig);
+				}
+				// Setup page lifecycle handlers for all devices (graceful cleanup)
+				setupPageLifecycleHandlers();
 			} catch (error) {
 				// P2P failed but app still works in local mode
 				console.warn('P2P initialization failed (running in local mode):', error);
@@ -66,6 +75,10 @@
 	});
 
 	onDestroy(() => {
+		// Cleanup lifecycle handlers
+		cleanupVisibilityHandler();
+		cleanupNetworkHandler();
+		cleanupPageLifecycleHandlers();
 		// Clear drafts when leaving room
 		drafts.clearAll();
 		// Disconnect P2P

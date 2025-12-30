@@ -342,6 +342,11 @@ export class P2PConnection {
 		// Handle ICE candidates
 		pc.onicecandidate = (event) => {
 			if (event.candidate) {
+				// Log candidate type for debugging mobile/TURN issues
+				const candidateType = event.candidate.type || 'unknown';
+				const protocol = event.candidate.protocol || 'unknown';
+				console.log(`[P2P] ICE candidate for ${peerId}: type=${candidateType}, protocol=${protocol}`);
+
 				this.sendSignalingMessage({
 					type: 'ice-candidate',
 					targetId: peerId,
@@ -421,6 +426,28 @@ export class P2PConnection {
 			} else if (pc.connectionState === 'disconnected') {
 				console.warn(`[P2P] Peer ${peerId} disconnected, removing connection`);
 				this.removePeer(peerId);
+			}
+		};
+
+		// Handle ICE gathering state (critical for mobile/Safari)
+		let iceGatheringTimeout: ReturnType<typeof setTimeout> | null = null;
+		pc.onicegatheringstatechange = () => {
+			console.log(`[P2P] ICE gathering state with ${peerId}:`, pc.iceGatheringState);
+
+			if (pc.iceGatheringState === 'gathering') {
+				// Set timeout for ICE gathering (mobile browsers can hang)
+				iceGatheringTimeout = setTimeout(() => {
+					if (pc.iceGatheringState === 'gathering') {
+						console.warn(`[P2P] ICE gathering timeout for ${peerId} - may need TURN relay`);
+						// Don't fail, but log for debugging
+					}
+				}, 10000); // 10 second gathering timeout
+			} else if (pc.iceGatheringState === 'complete') {
+				if (iceGatheringTimeout) {
+					clearTimeout(iceGatheringTimeout);
+					iceGatheringTimeout = null;
+				}
+				console.log(`[P2P] ICE gathering complete for ${peerId}`);
 			}
 		};
 
