@@ -143,7 +143,11 @@
 	<Tooltip.Provider>
 		<Tooltip.Root>
 			<Tooltip.Trigger>
-				<Badge variant={statusConfig.variant} class="flex items-center gap-1.5 py-1 cursor-help">
+				<Badge
+					variant={statusConfig.variant}
+					class="flex items-center gap-1.5 py-1 cursor-help"
+					data-testid="connection-status"
+				>
 					<statusConfig.icon class="h-3 w-3 {statusConfig.iconClass}" />
 					<span>{statusConfig.label}</span>
 				</Badge>
