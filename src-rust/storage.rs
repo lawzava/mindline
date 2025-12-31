@@ -141,14 +141,6 @@ impl IndexedDBManager {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct StorageUsage {
-    pub total_messages: u32,
-    pub total_rooms: u32,
-    pub database_size_mb: f64,
-    pub last_cleanup: u64,
-}
-
 // Global storage manager
 thread_local! {
     pub static STORAGE_MANAGER: std::cell::RefCell<Option<IndexedDBManager>> = const { std::cell::RefCell::new(None) };
