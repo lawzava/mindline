@@ -119,9 +119,16 @@ test.describe('Mobile P2P Connection Lifecycle', () => {
 			latency: 0
 		});
 
-		// Wait for connection to detect offline state
-		// Note: WebSocket disconnection detection can take time, the status might remain "Connected" briefly
-		await page.waitForTimeout(3000);
+		// Wait for offline state detection with polling (more reliable than fixed timeout)
+		// WebSocket disconnection detection can take time, the status might remain "Connected" briefly
+		const offlineStart = Date.now();
+		while (Date.now() - offlineStart < 10000) {
+			const text = await statusBadge.textContent().catch(() => '');
+			if (text?.includes('Offline') || text?.includes('Reconnecting') || text?.includes('Connecting')) {
+				break;
+			}
+			await page.waitForTimeout(500);
+		}
 
 		// The status badge should be visible (regardless of state - the test verifies
 		// that the app handles network changes gracefully without crashing)
@@ -135,8 +142,15 @@ test.describe('Mobile P2P Connection Lifecycle', () => {
 			latency: 0
 		});
 
-		// Wait for reconnection attempt
-		await page.waitForTimeout(5000);
+		// Wait for reconnection with polling (more reliable than fixed timeout)
+		const onlineStart = Date.now();
+		while (Date.now() - onlineStart < 15000) {
+			const text = await statusBadge.textContent().catch(() => '');
+			if (text?.includes('Connected') || text?.includes('Local')) {
+				break;
+			}
+			await page.waitForTimeout(500);
+		}
 
 		// Verify either reconnected or still attempting (using specific badge locator)
 		const statusVisible = await statusBadge

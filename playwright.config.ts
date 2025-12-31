@@ -2,8 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
 	testDir: './tests/e2e',
-	timeout: 30000,
-	expect: { timeout: 5000 },
+	timeout: 60000, // Increased for P2P connection tests
+	expect: { timeout: 10000 },
 	fullyParallel: false, // P2P tests need sequential execution
 	retries: 1,
 	workers: 1,
