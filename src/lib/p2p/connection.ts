@@ -66,6 +66,11 @@ export class P2PConnection {
 	private onPeerDisconnectedCallback: PeerCallback | null = null;
 	private onConnectionLostCallback: ConnectionLostCallback | null = null;
 
+	// Ready handshake tracking
+	private readyPeers: Set<string> = new Set(); // Peers that sent us 'ready'
+	private sentReady: Set<string> = new Set(); // Peers we sent 'ready' to
+	private peerConnectedFired: Set<string> = new Set(); // Prevent double callback
+
 	constructor(clientId: string, roomId: string, config?: Partial<P2PConfig>) {
 		this.validateClientId(clientId);
 
@@ -234,6 +239,9 @@ export class P2PConnection {
 					// Use consistent deterministic rule: higher server ID creates offer
 					const shouldInitiate = myServerId > peerId;
 					// Stagger connection attempts to reduce race conditions
+					// Use faster delays in fastConnect mode for tests
+					const baseDelay = this.config.fastConnect ? 100 : 2000;
+					const randomDelay = this.config.fastConnect ? 100 : 1000;
 					setTimeout(
 						async () => {
 							try {
@@ -247,7 +255,7 @@ export class P2PConnection {
 								console.error(`[P2P] Failed to connect to existing peer ${peerId}:`, error);
 							}
 						},
-						i * 2000 + (this.clientId.charCodeAt(0) % 1000)
+						i * baseDelay + (this.clientId.charCodeAt(0) % randomDelay)
 					);
 				}
 
@@ -269,7 +277,10 @@ export class P2PConnection {
 
 					// Use string comparison to avoid duplicate offers (compare server IDs)
 					const shouldInitiate = myServerIdForJoin > message.clientId;
-					const delay = shouldInitiate ? 500 : 1500;
+					// Use faster delays in fastConnect mode for tests
+					const delay = this.config.fastConnect
+						? (shouldInitiate ? 50 : 150)
+						: (shouldInitiate ? 500 : 1500);
 
 					console.log(
 						`[P2P] Will ${shouldInitiate ? 'initiate' : 'wait for'} connection to peer:`,
@@ -439,14 +450,16 @@ export class P2PConnection {
 					data: offer
 				});
 
-				// Set timeout for offer response
+				// Set timeout for offer response (configurable)
+				const offerTimeout = this.config.offerTimeout ?? 15000;
 				setTimeout(() => {
 					if (pc.signalingState === 'have-local-offer') {
 						console.warn(`[P2P] Offer to ${peerId} timed out - restarting connection`);
 						this.removePeer(peerId);
-						setTimeout(() => this.createPeerConnection(peerId, true), 2000);
+						const retryDelay = this.config.fastConnect ? 500 : 2000;
+						setTimeout(() => this.createPeerConnection(peerId, true), retryDelay);
 					}
-				}, 15000);
+				}, offerTimeout);
 			} catch (error) {
 				console.error(`[P2P] Failed to create offer for ${peerId}:`, error);
 				this.removePeer(peerId);
@@ -553,22 +566,55 @@ export class P2PConnection {
 	private setupDataChannel(dataChannel: RTCDataChannel, peerId: string): void {
 		console.log(`[P2P] Setting up data channel for ${peerId}, state: ${dataChannel.readyState}`);
 
+		// Send ready message and check if both sides are ready to fire callback
+		const sendReadyAndCheck = () => {
+			if (!this.sentReady.has(peerId)) {
+				const readyMsg = JSON.stringify({
+					type: 'ready',
+					peerId: this.serverClientId || this.clientId,
+					timestamp: Date.now()
+				});
+				try {
+					dataChannel.send(readyMsg);
+					this.sentReady.add(peerId);
+					console.log(`[P2P] Sent ready message to ${peerId}`);
+				} catch (error) {
+					console.error(`[P2P] Failed to send ready to ${peerId}:`, error);
+				}
+			}
+			this.checkAndFirePeerConnected(peerId);
+		};
+
 		// CRITICAL: When receiving a channel via ondatachannel, it might already be 'open'
 		// In that case, the onopen callback will never fire, so we must handle it immediately
 		const handleChannelOpen = () => {
 			console.log(`[P2P] Data channel opened with ${peerId}`);
 			this.dataChannels.set(peerId, dataChannel);
-
-			if (this.onPeerConnectedCallback) {
-				this.onPeerConnectedCallback(peerId);
-			}
+			sendReadyAndCheck();
 		};
 
-		// Check if channel is already open (common when receiving via ondatachannel)
-		if (dataChannel.readyState === 'open') {
-			console.log(`[P2P] Data channel already open for ${peerId}, handling immediately`);
-			handleChannelOpen();
-		}
+		// CRITICAL: Set up message handler FIRST before checking state
+		// This ensures we don't miss any queued ready messages
+		dataChannel.onmessage = (event) => {
+			try {
+				const message = JSON.parse(event.data) as TypedP2PMessage;
+				console.log(`[P2P] Received ${message.type} message from ${peerId}`);
+
+				// Handle ready message internally for handshake
+				if (message.type === 'ready') {
+					this.readyPeers.add(peerId);
+					console.log(`[P2P] Received ready from ${peerId}`);
+					this.checkAndFirePeerConnected(peerId);
+					return; // Don't pass ready messages to application callback
+				}
+
+				if (this.onMessageCallback) {
+					this.onMessageCallback(message, peerId);
+				}
+			} catch (error) {
+				console.error('[P2P] Error parsing message:', error);
+			}
+		};
 
 		dataChannel.onopen = () => {
 			// Only handle if not already in dataChannels (prevents double callback)
@@ -577,17 +623,11 @@ export class P2PConnection {
 			}
 		};
 
-		dataChannel.onmessage = (event) => {
-			if (this.onMessageCallback) {
-				try {
-					const message = JSON.parse(event.data) as TypedP2PMessage;
-					console.log(`[P2P] Received ${message.type} message from ${peerId}`);
-					this.onMessageCallback(message, peerId);
-				} catch (error) {
-					console.error('[P2P] Error parsing message:', error);
-				}
-			}
-		};
+		// Check if channel is already open (common when receiving via ondatachannel)
+		if (dataChannel.readyState === 'open') {
+			console.log(`[P2P] Data channel already open for ${peerId}, handling immediately`);
+			handleChannelOpen();
+		}
 
 		dataChannel.onerror = (error) => {
 			console.error(`[P2P] Data channel error with ${peerId}:`, error);
@@ -617,6 +657,24 @@ export class P2PConnection {
 		};
 
 		dataChannel.binaryType = 'arraybuffer';
+	}
+
+	/**
+	 * Check if both sides have exchanged ready messages and fire callback
+	 */
+	private checkAndFirePeerConnected(peerId: string): void {
+		// Only fire callback when both sides are ready
+		if (
+			this.sentReady.has(peerId) &&
+			this.readyPeers.has(peerId) &&
+			!this.peerConnectedFired.has(peerId)
+		) {
+			this.peerConnectedFired.add(peerId);
+			console.log(`[P2P] Both sides ready with ${peerId}, firing onPeerConnected`);
+			if (this.onPeerConnectedCallback) {
+				this.onPeerConnectedCallback(peerId);
+			}
+		}
 	}
 
 	/**
@@ -992,6 +1050,10 @@ export class P2PConnection {
 		this.negotiatingPeers.delete(peerId);
 		this.pendingOffers.delete(peerId);
 		this.meshConnectionAttempts.delete(peerId);
+		// Clear ready handshake state
+		this.readyPeers.delete(peerId);
+		this.sentReady.delete(peerId);
+		this.peerConnectedFired.delete(peerId);
 
 		// Fire callback only once per peer
 		if (this.onPeerDisconnectedCallback) {
@@ -1146,7 +1208,7 @@ export class P2PConnection {
 				const shouldInitiate = myServerId > peerId;
 				this.createPeerConnection(peerId, shouldInitiate);
 			}
-		}, 10000);
+		}, this.config.meshCheckInterval ?? 10000);
 	}
 
 	/**

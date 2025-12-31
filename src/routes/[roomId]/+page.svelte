@@ -5,7 +5,7 @@
 	import { MessageList, MessageInput, DraftIndicator, ConnectionStatus } from '$lib/components/chat';
 	import { currentRoomId, currentRoomMessages, messages, user, drafts } from '$lib/stores';
 	import { wasm, isWasmReady } from '$lib/wasm';
-	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers } from '$lib/p2p';
+	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers } from '$lib/p2p';
 	import type { Message } from '$lib/wasm/types';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -71,10 +71,15 @@
 
 			// Initialize P2P connection with environment-aware config
 			try {
-				const p2pConfig = getP2PConfig();
+				let p2pConfig = getP2PConfig();
 				const isMobile = isMobileDevice();
 				if (isMobile) {
 					console.log('[Room] Mobile device detected - using optimized P2P config');
+				}
+				// Merge test config if fastConnect=true is in URL (for E2E tests)
+				if (isTestMode()) {
+					console.log('[Room] Test mode detected - using fast connect config');
+					p2pConfig = { ...p2pConfig, ...getTestConfig() };
 				}
 				await initializeP2P(roomId, p2pConfig);
 

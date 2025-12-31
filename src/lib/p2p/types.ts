@@ -19,6 +19,10 @@ export interface P2PConfig {
 	forceRelay?: boolean; // Force TURN relay mode
 	maxReconnectAttempts?: number; // Max reconnection attempts
 	reconnectBackoffBase?: number; // Base delay for exponential backoff (ms)
+	// Test mode settings
+	fastConnect?: boolean; // Reduces delays for test environments
+	offerTimeout?: number; // Offer response timeout (ms), default 15000
+	meshCheckInterval?: number; // Mesh monitoring interval (ms), default 10000
 }
 
 export const DEFAULT_CONFIG: P2PConfig = {
@@ -74,7 +78,8 @@ export type P2PMessageType =
 	| 'edit'
 	| 'delete'
 	| 'reaction'
-	| 'delivery-ack';
+	| 'delivery-ack'
+	| 'ready';
 
 /** Chat message sent between peers */
 export interface ChatMessage {
@@ -163,6 +168,13 @@ export interface DeliveryAckMessage {
 	timestamp: number;
 }
 
+/** Ready handshake message sent when DataChannel opens */
+export interface ReadyMessage {
+	type: 'ready';
+	peerId: string;
+	timestamp: number;
+}
+
 /** Union type for all P2P messages */
 export type TypedP2PMessage =
 	| ChatMessage
@@ -173,7 +185,8 @@ export type TypedP2PMessage =
 	| EditMessage
 	| DeleteMessage
 	| ReactionMessage
-	| DeliveryAckMessage;
+	| DeliveryAckMessage
+	| ReadyMessage;
 
 // Legacy P2PMessage type for backwards compatibility
 export interface P2PMessage {
@@ -240,4 +253,8 @@ export function isReactionMessage(msg: TypedP2PMessage): msg is ReactionMessage 
 
 export function isDeliveryAckMessage(msg: TypedP2PMessage): msg is DeliveryAckMessage {
 	return msg.type === 'delivery-ack';
+}
+
+export function isReadyMessage(msg: TypedP2PMessage): msg is ReadyMessage {
+	return msg.type === 'ready';
 }
