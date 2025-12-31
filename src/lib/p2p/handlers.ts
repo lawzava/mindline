@@ -200,36 +200,14 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 		// Get messages from store
 		const roomMessages = messages.getRoomMessages(roomId);
 
-		// Encrypt each message content before sending
-		let encryptedMessages = roomMessages;
-		if (isWasmReady()) {
-			encryptedMessages = roomMessages.map((msg) => {
-				// Skip already-deleted or system messages
-				if (msg.message_type === 'Deleted' || msg.content.startsWith('[')) {
-					return msg;
-				}
-
-				try {
-					const encryptedContent = wasm.encryptMessageContent(roomId, msg.content);
-					return {
-						...msg,
-						content: encryptedContent,
-						encrypted: true
-					};
-				} catch (error) {
-					console.warn(`[P2P Handler] Failed to encrypt message ${msg.id}:`, error);
-					return msg; // Return unencrypted as fallback
-				}
-			});
-		}
-
-		// Create sync response with encrypted messages
+		// Send messages unencrypted for sync - WebRTC DataChannel is already encrypted
+		// and peers may have different room keys (key sharing not yet implemented)
 		const syncResponse: SyncResponseMessage = {
 			type: 'sync-response',
 			roomId,
-			messages: encryptedMessages,
+			messages: roomMessages,
 			timestamp: Date.now(),
-			encrypted: true
+			encrypted: false
 		};
 
 		// Send response to requesting peer
@@ -288,18 +266,20 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 		});
 	}
 
-	// Get existing messages to check for duplicates
+	// Get existing messages to check for duplicates and state
 	const existingMessages = messages.getRoomMessages(targetRoomId);
-	const existingIds = new Set(existingMessages.map((msg) => msg.id));
+	const existingById = new Map(existingMessages.map((msg) => [msg.id, msg]));
 
-	// Filter out duplicates and add new messages with progress tracking
+	// Filter out duplicates and add/update messages with progress tracking
 	let newCount = 0;
 	let processedCount = 0;
 
 	for (const msg of processedMessages) {
 		processedCount++;
 
-		if (!existingIds.has(msg.id)) {
+		const existingMsg = existingById.get(msg.id);
+		if (!existingMsg) {
+			// New message - add it
 			messages.addMessage(targetRoomId, msg);
 			// Also add to WASM state for persistence
 			if (isWasmReady()) {
@@ -310,6 +290,33 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 				}
 			}
 			newCount++;
+		} else {
+			// Message exists - check if synced version has important updates
+			// Prefer deleted state: if synced message is deleted but local isn't, update local
+			const syncedIsDeleted = msg.message_type === 'Deleted' || msg.content === '[Message deleted]';
+			const localIsDeleted = existingMsg.message_type === 'Deleted' || existingMsg.content === '[Message deleted]';
+
+			if (syncedIsDeleted && !localIsDeleted) {
+				// Synced version is deleted but local isn't - apply deletion
+				messages.updateMessage(targetRoomId, msg.id, {
+					content: '[Message deleted]',
+					message_type: 'Deleted'
+				});
+				if (isWasmReady()) {
+					try {
+						wasm.deleteMessage(targetRoomId, msg.id);
+					} catch {
+						// Continue even if fails
+					}
+				}
+			}
+			// Also sync reactions if synced has more/different reactions
+			if (msg.reactions && Object.keys(msg.reactions).length > 0) {
+				const mergedReactions = { ...existingMsg.reactions, ...msg.reactions };
+				if (JSON.stringify(mergedReactions) !== JSON.stringify(existingMsg.reactions)) {
+					messages.updateMessage(targetRoomId, msg.id, { reactions: mergedReactions });
+				}
+			}
 		}
 
 		// Update progress periodically (every 10 messages or at end)
@@ -372,7 +379,7 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
 		return;
 	}
 
-	// Update the message
+	// Update the message in TS store
 	messages.updateMessage(targetRoomId, messageId, {
 		content: newContent,
 		edited: true,
@@ -380,9 +387,12 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
 		original_content: existingMsg?.content || null
 	});
 
-	// Save to storage
+	// Sync to WASM state and save to storage
 	if (isWasmReady()) {
 		try {
+			// Update WASM state first
+			wasm.editMessage(targetRoomId, messageId, newContent);
+			// Then save to localStorage
 			wasm.saveRoomMessagesToStorage(targetRoomId);
 		} catch (error) {
 			console.warn('[P2P Handler] Failed to save edited message:', error);
@@ -409,15 +419,18 @@ function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
 		return;
 	}
 
-	// Mark message as deleted (soft delete)
+	// Mark message as deleted (soft delete) in TS store
 	messages.updateMessage(targetRoomId, messageId, {
 		content: '[Message deleted]',
 		message_type: 'Deleted'
 	});
 
-	// Save to storage
+	// Sync to WASM state and save to storage
 	if (isWasmReady()) {
 		try {
+			// Update WASM state first
+			wasm.deleteMessage(targetRoomId, messageId);
+			// Then save to localStorage
 			wasm.saveRoomMessagesToStorage(targetRoomId);
 		} catch (error) {
 			console.warn('[P2P Handler] Failed to save deleted message:', error);
@@ -443,7 +456,7 @@ function handleReactionMessage(message: ReactionMessage, peerId: string): void {
 		return;
 	}
 
-	// Update reactions
+	// Update reactions in TS store
 	const reactions = { ...existingMsg.reactions };
 	const reactionData = reactions[reaction] || { users: [], count: 0 };
 
@@ -466,9 +479,16 @@ function handleReactionMessage(message: ReactionMessage, peerId: string): void {
 
 	messages.updateMessage(targetRoomId, messageId, { reactions });
 
-	// Save to storage
+	// Sync to WASM state and save to storage
 	if (isWasmReady()) {
 		try {
+			// Update WASM state first
+			if (action === 'add') {
+				wasm.addReaction(targetRoomId, messageId, reaction, senderId);
+			} else {
+				wasm.removeReaction(targetRoomId, messageId, reaction, senderId);
+			}
+			// Then save to localStorage
 			wasm.saveRoomMessagesToStorage(targetRoomId);
 		} catch (error) {
 			console.warn('[P2P Handler] Failed to save reaction:', error);

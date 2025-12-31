@@ -27,7 +27,7 @@
 	});
 </script>
 
-<div class="min-h-0 flex-1 overflow-hidden">
+<div class="min-h-0 flex-1 overflow-hidden" data-testid="message-list">
 	<div
 		bind:this={scrollRef}
 		class="h-full overflow-y-auto px-4 py-4 sm:px-6"

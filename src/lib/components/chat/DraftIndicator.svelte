@@ -9,6 +9,7 @@
 	<div
 		class="flex shrink-0 flex-col gap-2 border-t border-border bg-muted/30 px-4 py-3"
 		transition:fade={{ duration: 150 }}
+		data-testid="draft-indicator"
 	>
 		{#each $draftsList as draft (draft.peerId)}
 			<div

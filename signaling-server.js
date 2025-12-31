@@ -27,9 +27,9 @@ let totalConnections = 0;
 
 // Rate limiting configuration
 const RATE_LIMITS = {
-  messagesPerSecond: 10,     // Max 10 messages per second per client
-  connectionAttempts: 5,      // Max 5 connection attempts per IP per minute
-  roomJoinsPerMinute: 10     // Max 10 room joins per client per minute
+  messagesPerSecond: 50,     // Max 50 messages per second per client
+  connectionAttempts: 30,    // Max 30 connection attempts per IP per minute
+  roomJoinsPerMinute: 30     // Max 30 room joins per client per minute
 };
 
 // Rate limiting storage with bounded size
