@@ -58,6 +58,14 @@
 			const messagesData = wasm.getRoomMessages(roomId, 100);
 			// WASM returns a JS array directly via serde_wasm_bindgen, not a JSON string
 			if (messagesData && Array.isArray(messagesData) && messagesData.length > 0) {
+				// Debug: Check if reactions are present in loaded data
+				const debugData = messagesData.map((m: Message) => ({
+					id: m.id,
+					content: m.content?.substring(0, 30),
+					reactions: m.reactions,
+					hasReactions: m.reactions && Object.keys(m.reactions).length > 0
+				}));
+				console.log('[Room] Loaded messages from storage:', JSON.stringify(debugData, null, 2));
 				messages.setRoomMessages(roomId, messagesData as Message[]);
 			}
 
@@ -389,6 +397,7 @@
 					aria-label="Copy room ID to clipboard"
 					class="group flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs hover:bg-muted/80 transition-colors"
 					title="Click to copy full room ID"
+					data-testid="copy-room-btn"
 				>
 					<code>{roomId?.slice(0, 8)}...</code>
 					<Copy class="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -396,7 +405,7 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<ConnectionStatus />
-				<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-8 gap-1.5 text-muted-foreground hover:text-foreground">
+				<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-8 gap-1.5 text-muted-foreground hover:text-foreground" data-testid="leave-room-btn">
 					<LogOut class="h-4 w-4" />
 					<span class="hidden sm:inline">Leave</span>
 				</Button>

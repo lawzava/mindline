@@ -2,6 +2,43 @@
 
 This document defines all features that should be tested end-to-end using Playwright.
 
+## Test Implementation Status
+
+| Test File | Tests | Status |
+|-----------|-------|--------|
+| `landing-page.spec.ts` | 6 | ✅ Implemented |
+| `room-page.spec.ts` | 9 | ✅ Implemented |
+| `connection-status.spec.ts` | 6 | ✅ Implemented |
+| `messaging.spec.ts` | 12 | ✅ Implemented |
+| `typing-indicators.spec.ts` | 6 | ✅ Implemented (P2P tests skip without signaling) |
+| `reactions.spec.ts` | 8 | ✅ Implemented (skip on touch devices) |
+| `edit-delete.spec.ts` | 17 | ✅ Implemented |
+| `persistence.spec.ts` | 12 | ✅ Implemented |
+| `peer-list.spec.ts` | 9 | ✅ Implemented (P2P tests skip without signaling) |
+| `p2p-multiuser.spec.ts` | 10 | ✅ Implemented (P2P tests skip without signaling) |
+| `mobile-p2p.spec.ts` | 4 | ✅ Implemented (mobile lifecycle) |
+
+**Total: ~99 tests implemented**
+
+### Running Tests
+
+```bash
+# Run all tests
+pnpm test:e2e
+
+# Run with signaling server (required for P2P tests)
+pnpm run signaling  # In separate terminal
+pnpm test:e2e
+
+# Run specific test file
+pnpm test:e2e edit-delete
+
+# Run on Desktop Chrome only
+pnpm test:e2e --project='Desktop Chrome'
+```
+
+---
+
 ## Overview
 
 Mindline is a P2P real-time chat application with "radical transparency" - users see each other's messages as they type. Testing requires simulating multiple browser contexts to verify P2P functionality.

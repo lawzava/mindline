@@ -18,6 +18,7 @@
 				<Badge
 					variant="secondary"
 					class="flex cursor-pointer items-center gap-1.5 py-1 transition-colors hover:bg-secondary/80"
+					data-testid="peer-count"
 				>
 					<Users class="h-3 w-3" />
 					<span>{$connectedPeers.length} peer{$connectedPeers.length !== 1 ? 's' : ''}</span>
@@ -26,13 +27,14 @@
 				<Badge
 					variant="outline"
 					class="flex cursor-pointer items-center gap-1.5 py-1 text-muted-foreground"
+					data-testid="peer-count"
 				>
 					<Users class="h-3 w-3" />
 					<span>Waiting for peers...</span>
 				</Badge>
 			{/if}
 		</Popover.Trigger>
-		<Popover.Content class="w-64 p-2" side="bottom" align="start">
+		<Popover.Content class="w-64 p-2" side="bottom" align="start" data-testid="peer-list">
 			<div class="space-y-2">
 				<div class="flex items-center gap-2 border-b border-border pb-2">
 					<Users class="h-4 w-4 text-muted-foreground" />

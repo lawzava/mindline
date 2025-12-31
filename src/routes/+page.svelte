@@ -67,7 +67,7 @@
 		</CardHeader>
 		<CardContent class="space-y-6">
 			<!-- Create Room -->
-			<Button onclick={createRoom} class="w-full" size="lg">
+			<Button onclick={createRoom} class="w-full" size="lg" data-testid="create-room-btn">
 				<Plus class="mr-2 h-5 w-5" />
 				Create New Room
 			</Button>
@@ -90,8 +90,9 @@
 					bind:value={joinRoomId}
 					onkeydown={handleKeydown}
 					class="flex-1"
+					data-testid="join-room-input"
 				/>
-				<Button onclick={joinRoom} disabled={!joinRoomId.trim()} size="icon">
+				<Button onclick={joinRoom} disabled={!joinRoomId.trim()} size="icon" data-testid="join-room-btn">
 					<ArrowRight class="h-4 w-4" />
 					<span class="sr-only">Join room</span>
 				</Button>
