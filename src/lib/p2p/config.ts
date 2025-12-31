@@ -123,3 +123,24 @@ export function getDevConfig(): P2PConfig {
 		reconnectBackoffBase: 1000
 	};
 }
+
+/**
+ * Get test config with faster timeouts for E2E tests
+ * Use this when ?fastConnect=true is in the URL
+ */
+export function getTestConfig(): Partial<P2PConfig> {
+	return {
+		fastConnect: true,
+		offerTimeout: 5000,
+		meshCheckInterval: 3000
+	};
+}
+
+/**
+ * Check if test mode is enabled via URL parameter
+ */
+export function isTestMode(): boolean {
+	if (!browser) return false;
+	const params = new URLSearchParams(window.location.search);
+	return params.get('fastConnect') === 'true';
+}

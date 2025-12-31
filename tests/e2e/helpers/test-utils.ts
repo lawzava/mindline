@@ -67,9 +67,10 @@ export async function typeMessage(page: Page, text: string): Promise<void> {
 
 /**
  * Navigate to a room and wait for it to load
+ * Adds ?fastConnect=true for faster P2P connection in tests
  */
 export async function joinRoom(page: Page, roomId: string): Promise<void> {
-	await page.goto(`/${roomId}`);
+	await page.goto(`/${roomId}?fastConnect=true`);
 	await waitForConnectionStatus(page);
 }
 
@@ -84,6 +85,7 @@ export async function goToLandingPage(page: Page): Promise<void> {
 
 /**
  * Create a new room from the landing page and return the room ID
+ * Automatically adds ?fastConnect=true for faster P2P connection in tests
  */
 export async function createRoom(page: Page): Promise<string> {
 	await goToLandingPage(page);
@@ -91,11 +93,15 @@ export async function createRoom(page: Page): Promise<string> {
 
 	// Wait for navigation to room page
 	await page.waitForURL(/\/[a-f0-9-]+$/);
+
+	// Extract room ID from URL before adding fastConnect param
+	const url = page.url();
+	const roomId = url.split('/').pop()?.split('?')[0] || '';
+
+	// Navigate with fastConnect param for faster P2P connection
+	await page.goto(`/${roomId}?fastConnect=true`);
 	await waitForConnectionStatus(page);
 
-	// Extract room ID from URL
-	const url = page.url();
-	const roomId = url.split('/').pop() || '';
 	return roomId;
 }
 
@@ -208,8 +214,8 @@ export async function waitForPeersConnected(
 			)
 		]);
 
-		// Poll for peer visibility with initial wait
-		await waitForP2PSync(2000);
+		// Poll for peer visibility with shorter initial wait (fastConnect mode)
+		await waitForP2PSync(1000);
 
 		while (Date.now() - startTime < timeout) {
 			const textA = await pageA
@@ -227,7 +233,8 @@ export async function waitForPeersConnected(
 			if (matchA && matchB && parseInt(matchA[1]) >= 1 && parseInt(matchB[1]) >= 1) {
 				return true;
 			}
-			await pageA.waitForTimeout(300);
+			// Faster polling interval
+			await pageA.waitForTimeout(200);
 		}
 	} catch {
 		// Page was closed or connection status check failed
