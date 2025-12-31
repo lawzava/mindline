@@ -98,6 +98,7 @@
 		'group flex flex-col gap-1',
 		isMe ? 'items-end' : 'items-start'
 	)}
+	data-testid="message-bubble"
 >
 	<!-- Sender name (only for others) -->
 	{#if !isMe}

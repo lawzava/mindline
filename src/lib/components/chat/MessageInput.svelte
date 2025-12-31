@@ -54,12 +54,14 @@
 		oninput={handleInput}
 		{disabled}
 		class="flex-1"
+		data-testid="message-input"
 	/>
 	<Button
 		onclick={handleSubmit}
 		disabled={disabled || isSending || !message.trim()}
 		size="icon"
 		class="shrink-0"
+		data-testid="send-btn"
 	>
 		{#if isSending}
 			<Loader2 class="h-4 w-4 animate-spin" />
