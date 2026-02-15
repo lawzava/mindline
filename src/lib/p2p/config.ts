@@ -76,10 +76,8 @@ export function isMobileNetwork(): boolean {
 		if (['slow-2g', '2g', '3g'].includes(conn.effectiveType || '')) return true;
 	}
 
-	// Check user agent for mobile devices
-	return /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(
-		navigator.userAgent
-	);
+	// Unknown network type (API unsupported); don't assume cellular based on device UA.
+	return false;
 }
 
 /**
@@ -139,6 +137,7 @@ export function getP2PConfig(): P2PConfig {
 	const runtimeEnv = getRuntimeEnvConfig();
 	const { server, useSSL } = getSignalingConfig();
 	const mobile = isMobileDevice();
+	const mobileNetwork = isMobileNetwork();
 	const strictDirect = isStrictDirectMode();
 	const turnServers = getConfiguredTurnServers(runtimeEnv);
 
@@ -152,7 +151,7 @@ export function getP2PConfig(): P2PConfig {
 		// Mobile-optimized settings
 		connectionTimeout: mobile ? 5000 : 2000,
 		icePoolSize: mobile ? 20 : 10,
-		forceRelay: strictDirect ? false : mobile, // Force TURN relay on mobile for reliable connections through NAT
+		forceRelay: strictDirect ? false : mobileNetwork, // Force TURN relay only on actual mobile networks
 		maxReconnectAttempts: mobile ? 10 : 7,
 		reconnectBackoffBase: 1000
 	};
