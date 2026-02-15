@@ -36,23 +36,37 @@ test.describe('Room Page', () => {
 		expect(buttonText).toContain(roomId.slice(0, 8));
 	});
 
-	test('should copy room ID to clipboard', async ({ page, context }) => {
-		// Grant clipboard permissions
-		await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+		test('should copy room ID to clipboard', async ({ page, context }, testInfo) => {
+			const projectName = testInfo.project.name.toLowerCase();
+			const isWebKit = projectName.includes('safari') || projectName.includes('webkit');
 
-		const roomId = generateTestRoomId();
-		await joinRoom(page, roomId);
+			// WebKit/Safari often rejects clipboard permission grants; copy via user gesture
+			// should still work, and we validate via toast.
+			if (!isWebKit) {
+				await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+			} else {
+				try {
+					await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+				} catch {
+					// ignore
+				}
+			}
 
-		// Click copy button
-		await page.locator('[data-testid="copy-room-btn"]').click();
+			const roomId = generateTestRoomId();
+			await joinRoom(page, roomId);
 
-		// Toast should appear
-		await expect(page.getByText('Room ID copied!')).toBeVisible({ timeout: 3000 });
+			// Click copy button
+			await page.locator('[data-testid="copy-room-btn"]').click();
 
-		// Verify clipboard contains room ID
-		const clipboardContent = await page.evaluate(() => navigator.clipboard.readText());
-		expect(clipboardContent).toBe(roomId);
-	});
+			// Toast should appear
+			await expect(page.getByText('Room ID copied!')).toBeVisible({ timeout: 3000 });
+
+			// Safari/WebKit does not reliably allow programmatic clipboard reads.
+			if (!isWebKit) {
+				const clipboardContent = await page.evaluate(() => navigator.clipboard.readText());
+				expect(clipboardContent).toBe(roomId);
+			}
+		});
 
 	test('should show leave room confirmation dialog', async ({ page }) => {
 		const roomId = generateTestRoomId();
