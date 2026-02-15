@@ -1,0 +1,47 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - heading "MINDLINE" [level=1] [ref=e7]
+        - img [ref=e9]
+      - generic [ref=e10]:
+        - textbox "Your display name" [ref=e11]:
+          - /placeholder: Your name
+        - button "Share room" [ref=e12]:
+          - img
+          - generic [ref=e13]: Share room
+        - button "Toggle theme" [ref=e14]:
+          - img
+          - generic [ref=e15]: Toggle theme
+  - main [ref=e16]:
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - generic [ref=e20]: "Room:"
+          - button "Copy room ID to clipboard" [ref=e21]:
+            - code [ref=e22]: required...
+            - img [ref=e23]
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - button "Connected" [ref=e26]:
+              - generic [ref=e27]:
+                - img
+                - generic [ref=e28]: Connected
+            - button "Waiting for peers..." [ref=e29]:
+              - generic [ref=e30] [cursor=pointer]:
+                - img
+                - generic [ref=e31]: Waiting for peers...
+          - button [ref=e32]:
+            - img
+      - paragraph [ref=e36]: No messages yet. Start the conversation!
+      - generic [ref=e37]:
+        - textbox "Message input" [active] [ref=e38]:
+          - /placeholder: Type a message...
+        - button "Send message" [disabled]:
+          - img
+          - generic: Send message
+  - region "Notifications alt+T"
+```

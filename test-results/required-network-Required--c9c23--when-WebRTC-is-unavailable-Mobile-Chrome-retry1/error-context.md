@@ -1,0 +1,54 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - heading "MINDLINE" [level=1] [ref=e7]
+        - img [ref=e9]
+      - generic [ref=e10]:
+        - textbox "Your display name" [ref=e11]:
+          - /placeholder: Your name
+        - button "Share room" [ref=e12]:
+          - img
+          - generic [ref=e13]: Share room
+        - button "Toggle theme" [ref=e14]:
+          - img
+          - generic [ref=e15]: Toggle theme
+  - main [ref=e16]:
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - generic [ref=e20]: "Room:"
+          - button "Copy room ID to clipboard" [ref=e21]:
+            - code [ref=e22]: required...
+            - img [ref=e23]
+        - generic [ref=e24]:
+          - button "Reconnecting (1/7)" [ref=e26]:
+            - generic [ref=e27]:
+              - img
+              - generic [ref=e28]: Reconnecting (1/7)
+          - button [ref=e29]:
+            - img
+      - generic [ref=e33]:
+        - paragraph [ref=e36]: relay-only-message
+        - generic [ref=e37]:
+          - text: 05:52 PM
+          - button [ref=e38]:
+            - img [ref=e40]
+      - generic [ref=e41]:
+        - textbox "Message input" [active] [ref=e42]:
+          - /placeholder: Type a message...
+        - button "Send message" [disabled]:
+          - img
+          - generic: Send message
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=e43]:
+        - img [ref=e45]
+        - generic [ref=e47]: Reconnected successfully
+      - listitem [ref=e48]:
+        - img [ref=e50]
+        - generic [ref=e52]: Reconnected successfully
+```
