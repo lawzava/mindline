@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,38 +32,16 @@ jobs:
       - name: Install wasm-pack
         run: cargo install wasm-pack
 
-      - name: Check Rust formatting
-        run: cargo fmt --check
-
-      - name: Run Clippy
-        run: cargo clippy -- -D warnings
-
-      - name: Build WASM
-        run: pnpm run build-wasm
-
       - name: Install Node dependencies
         run: pnpm install
 
-      - name: Build production bundle
-        run: pnpm run build:production
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run AI verification command
+        run: pnpm run verify:ai
 
       - name: Verify build artifacts
         run: |
           ls -la .svelte-kit/cloudflare/
           test -f .svelte-kit/cloudflare/_worker.js
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Check formatting
-        run: cargo fmt --check
-
-      - name: Run Clippy (warnings as errors)
-        run: cargo clippy -- -D warnings

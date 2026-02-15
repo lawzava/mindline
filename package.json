@@ -15,10 +15,15 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "build-wasm": "wasm-pack build --target web",
     "signaling": "node signaling-server.js",
-    "start:production": "concurrently \"npm run preview\" \"npm run signaling\"",
+    "start:production": "concurrently \"pnpm run preview\" \"pnpm run signaling\"",
     "test:e2e": "playwright test",
+    "test:e2e:with-signaling": "bash scripts/test-e2e-with-signaling.sh",
+    "test:e2e:ci": "bash scripts/test-e2e-with-signaling.sh --project='Desktop Chrome'",
     "test:e2e:mobile": "playwright test --project='Mobile Safari' --project='Mobile Chrome'",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "verify:rust": "cargo fmt --check && cargo clippy -- -D warnings && cargo test",
+    "verify:web": "pnpm run build-wasm && pnpm run check && pnpm run build:production",
+    "verify:ai": "pnpm run verify:rust && pnpm run verify:web && pnpm run test:e2e:ci"
   },
   "keywords": [
     "chat",

@@ -48,10 +48,10 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 - **Zero Configuration**: No accounts, registration, or setup required
 
 ### 🛠 Developer Features
-- **Modern Architecture**: Clean separation between Rust core and JavaScript frontend
+- **Modern Architecture**: Clean separation between Rust core and SvelteKit frontend
 - **WebAssembly Integration**: Safe, performant WASM bindings with error handling
 - **Modular Design**: Extensible codebase with well-defined component boundaries
-- **TypeScript-Ready**: Structured for easy TypeScript migration
+- **TypeScript-First**: Strict TypeScript across the SvelteKit app
 
 ## 🏗 Architecture
 
@@ -59,10 +59,10 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 
 ```
 ┌─────────────────────────────────────────┐
-│           Frontend (JavaScript)          │
+│        Frontend (SvelteKit + TS)         │
 │  ┌─────────────┐ ┌─────────────────────┐ │
-│  │   UI Layer  │ │    WebRTC P2P      │ │
-│  │ (Vanilla JS)│ │   Communication     │ │
+│  │  UI Layer   │ │    WebRTC P2P      │ │
+│  │  (Svelte)   │ │   Communication     │ │
 │  └─────────────┘ └─────────────────────┘ │
 └─────────────────────────────────────────┘
                     │
@@ -78,19 +78,19 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 
 ### Core Components
 
-1. **Rust/WASM Module** (`src/lib.rs`)
+1. **Rust/WASM Module** (`src-rust/lib.rs`)
    - `ChatManager`: Singleton managing rooms and user state
    - Message handling with types (Text, Typing, Edit, Delete, Media)
    - Room management with client-side encryption keys
    - Thread-safe state management
 
-2. **JavaScript Layer** (`js/index.js`)
+2. **SvelteKit Layer** (`src/routes`, `src/lib`)
    - WASM module loading and safe proxy creation
    - UI event handling and state management
    - LocalStorage persistence for user/room data
    - Theme management and responsive design
 
-3. **WebRTC P2P Layer** (`js/webrtc.js`)
+3. **WebRTC P2P Layer** (`src/lib/p2p`)
    - Direct peer-to-peer connections
    - Signaling server coordination (connection only)
    - Message broadcasting and routing
@@ -104,7 +104,7 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 16+ and npm
+- Node.js 18+ and pnpm
 - Rust and wasm-pack for development
 
 ### Quick Start
@@ -113,26 +113,26 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
    ```bash
    git clone <repository-url>
    cd mindline
-   npm install
+   pnpm install
    ```
 
 2. **Build the application**
    ```bash
-   npm run build
+   pnpm run build
    ```
 
 3. **Start development server**
    ```bash
-   npm start
+   pnpm dev
    ```
 
 4. **Start signaling server** (in separate terminal)
    ```bash
-   npm run signaling
+   pnpm run signaling
    ```
 
 5. **Open your browser**
-   - Navigate to `http://localhost:8080`
+   - Navigate to `http://localhost:5173`
    - Create a username
    - Create or join a room
    - Start experiencing radical transparency!
@@ -141,7 +141,7 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 
 To experience the revolutionary transparency feature:
 
-1. **Open two browser windows** to `http://localhost:8080`
+1. **Open two browser windows** to `http://localhost:5173`
 2. **Initialize users** with different names in each window
 3. **Join the same room** from both windows
 4. **Start typing in one window** - watch the other window show your draft message in real-time
@@ -151,17 +151,26 @@ To experience the revolutionary transparency feature:
 
 ```bash
 # Build only the WebAssembly module
-npm run build-wasm
+pnpm run build-wasm
 
-# Build entire project (WASM + webpack)
-npm run build
+# Build entire project (WASM + app bundle)
+pnpm run build
 
 # Start development server with hot reload
-npm start
+pnpm dev
 
 # Start signaling server for P2P connections
-npm run signaling
+pnpm run signaling
+
+# Full AI-ready verification gate
+pnpm run verify:ai
 ```
+
+### AI-Assisted Development
+
+- Agent instructions: `AGENTS.md` (plus scoped overrides in `src/` and `src-rust/`)
+- Skill catalog: `docs/ai-skills.md`
+- MCP usage guidance: `docs/mcp-usage.md`
 
 ## 💡 How It Works
 

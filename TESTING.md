@@ -26,15 +26,17 @@ This document defines all features that should be tested end-to-end using Playwr
 # Run all tests
 pnpm test:e2e
 
-# Run with signaling server (required for P2P tests)
-pnpm run signaling  # In separate terminal
-pnpm test:e2e
+# Run with signaling server orchestration (recommended for P2P tests)
+pnpm run test:e2e:with-signaling
+
+# CI-focused run (Desktop Chrome only + signaling orchestration)
+pnpm run test:e2e:ci
 
 # Run specific test file
-pnpm test:e2e edit-delete
+pnpm run test:e2e:with-signaling -- edit-delete
 
 # Run on Desktop Chrome only
-pnpm test:e2e --project='Desktop Chrome'
+pnpm run test:e2e:with-signaling -- --project='Desktop Chrome'
 ```
 
 ---
@@ -48,7 +50,7 @@ Mindline is a P2P real-time chat application with "radical transparency" - users
 ## Test Environment Setup
 
 ### Prerequisites
-- Signaling server running on `localhost:3000`
+- Signaling server running on `localhost:3000` (auto-managed by `pnpm run test:e2e:with-signaling`)
 - Application running on `localhost:5173`
 - Multiple browser contexts to simulate different users
 
