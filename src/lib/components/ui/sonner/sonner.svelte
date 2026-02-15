@@ -13,6 +13,9 @@
 
 <Sonner
 	theme={mode.current}
+	position="top-center"
+	offset={{ top: 24, left: 24, right: 24 }}
+	mobileOffset={{ top: 'calc(12px + env(safe-area-inset-top))', left: 12, right: 12 }}
 	class="toaster group"
 	style="--normal-bg: var(--color-popover); --normal-text: var(--color-popover-foreground); --normal-border: var(--color-border);"
 	{...restProps}

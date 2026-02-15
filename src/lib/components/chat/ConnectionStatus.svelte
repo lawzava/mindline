@@ -60,7 +60,7 @@
 				label: `Reconnecting (${$reconnectionState.attemptCount}/${$reconnectionState.maxAttempts})`,
 				variant: 'secondary' as const,
 				icon: Loader2,
-				iconClass: 'animate-spin',
+				iconClass: 'animate-spin motion-reduce:animate-none',
 				tooltip: `Attempting to reconnect... ${countdownSeconds > 0 ? `Next retry in ${countdownSeconds}s` : 'Connecting...'}`
 			};
 		}
@@ -72,15 +72,15 @@
 					variant: 'default' as const,
 					icon: Wifi,
 					iconClass: 'text-green-500',
-					tooltip: 'Connected to signaling server'
+					tooltip: "Connected. You're ready to chat."
 				};
 			case 'connecting':
 				return {
 					label: 'Connecting',
 					variant: 'secondary' as const,
 					icon: Loader2,
-					iconClass: 'animate-spin',
-					tooltip: 'Connecting to signaling server...'
+					iconClass: 'animate-spin motion-reduce:animate-none',
+					tooltip: 'Connecting...'
 				};
 			case 'disconnected':
 				return {
@@ -88,7 +88,7 @@
 					variant: 'outline' as const,
 					icon: WifiOff,
 					iconClass: 'text-muted-foreground',
-					tooltip: 'Not connected. Click Reconnect to try again.'
+					tooltip: 'Not connected. Tap Reconnect to try again.'
 				};
 			case 'failed':
 				return {
@@ -96,11 +96,11 @@
 					variant: 'destructive' as const,
 					icon: WifiOff,
 					iconClass: '',
-					tooltip: 'Connection failed. Click reconnect to try again.'
+					tooltip: 'Connection failed. Tap Reconnect to try again.'
 				};
 			case 'local':
 				return {
-					label: 'Local Only',
+					label: 'Local',
 					variant: 'outline' as const,
 					icon: Wifi,
 					iconClass: 'text-yellow-500',
@@ -145,10 +145,10 @@
 			<Tooltip.Trigger>
 				<Badge
 					variant={statusConfig.variant}
-					class="flex items-center gap-1.5 py-1 cursor-help"
+					class="flex h-11 items-center gap-1.5 px-3 cursor-help"
 					data-testid="connection-status"
 				>
-					<statusConfig.icon class="h-3 w-3 {statusConfig.iconClass}" />
+					<statusConfig.icon class="h-4 w-4 {statusConfig.iconClass}" />
 					<span>{statusConfig.label}</span>
 				</Badge>
 			</Tooltip.Trigger>
@@ -182,8 +182,8 @@
 		<Tooltip.Provider>
 			<Tooltip.Root>
 				<Tooltip.Trigger>
-					<Badge variant="secondary" class="flex items-center gap-1.5 py-1 animate-pulse">
-						<Loader2 class="h-3 w-3 animate-spin" />
+					<Badge variant="secondary" class="flex h-11 items-center gap-1.5 px-3 animate-pulse motion-reduce:animate-none">
+						<Loader2 class="h-4 w-4 animate-spin motion-reduce:animate-none" />
 						<span>Syncing...</span>
 						{#if $syncState.messagesReceived > 0}
 							<span class="text-xs opacity-70">
@@ -211,10 +211,10 @@
 			size="sm"
 			onclick={handleReconnect}
 			disabled={isManualReconnecting}
-			class="h-7 gap-1 px-2"
+			class="h-11 gap-2 px-3"
 		>
-			<RefreshCw class="h-3 w-3 {isManualReconnecting ? 'animate-spin' : ''}" />
-			<span class="text-xs">Reconnect</span>
+			<RefreshCw class="h-4 w-4 {isManualReconnecting ? 'animate-spin motion-reduce:animate-none' : ''}" />
+			<span>Reconnect</span>
 		</Button>
 	{/if}
 </div>
