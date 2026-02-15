@@ -6,6 +6,9 @@
 import type {
 	P2PConfig,
 	SignalingMessage,
+	EncryptedRelayPayload,
+	RelayKeyPayload,
+	RelayPayload,
 	TypedP2PMessage,
 	MessageCallback,
 	PeerCallback,
@@ -70,6 +73,10 @@ export class P2PConnection {
 	private readyPeers: Set<string> = new Set(); // Peers that sent us 'ready'
 	private sentReady: Set<string> = new Set(); // Peers we sent 'ready' to
 	private peerConnectedFired: Set<string> = new Set(); // Prevent double callback
+	private relayKeyPairPromise: Promise<CryptoKeyPair> | null = null;
+	private relaySharedKeys: Map<string, CryptoKey> = new Map();
+	private relayKeySentToPeers: Set<string> = new Set();
+	private pendingRelayMessages: Map<string, TypedP2PMessage[]> = new Map();
 
 	constructor(clientId: string, roomId: string, config?: Partial<P2PConfig>) {
 		this.validateClientId(clientId);
@@ -78,6 +85,192 @@ export class P2PConnection {
 		this.roomId = roomId;
 		this.config = { ...DEFAULT_CONFIG, ...config };
 		this.iceConfig = this.buildIceConfig();
+	}
+
+	private shouldUseRelayFallback(): boolean {
+		return this.config.allowRelayFallback !== false && this.config.strictDirect !== true;
+	}
+
+	private bytesToBase64(bytes: Uint8Array): string {
+		let binary = '';
+		for (let i = 0; i < bytes.length; i++) {
+			binary += String.fromCharCode(bytes[i]);
+		}
+		return btoa(binary);
+	}
+
+	private base64ToBytes(base64: string): Uint8Array {
+		const binary = atob(base64);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) {
+			bytes[i] = binary.charCodeAt(i);
+		}
+		return bytes;
+	}
+
+	private async getRelayKeyPair(): Promise<CryptoKeyPair> {
+		if (this.relayKeyPairPromise) {
+			return this.relayKeyPairPromise;
+		}
+
+		this.relayKeyPairPromise = crypto.subtle.generateKey(
+			{
+				name: 'ECDH',
+				namedCurve: 'P-256'
+			},
+			true,
+			['deriveKey']
+		);
+
+		return this.relayKeyPairPromise;
+	}
+
+	private async sendRelayKey(peerId: string, force = false): Promise<void> {
+		if (!peerId || (!force && this.relayKeySentToPeers.has(peerId))) {
+			return;
+		}
+
+		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+			return;
+		}
+
+		try {
+			const keyPair = await this.getRelayKeyPair();
+			const exported = await crypto.subtle.exportKey('raw', keyPair.publicKey);
+			const payload: RelayKeyPayload = {
+				version: 1,
+				curve: 'P-256',
+				publicKey: this.bytesToBase64(new Uint8Array(exported))
+			};
+
+			this.sendSignalingMessage({
+				type: 'relay-key',
+				targetId: peerId,
+				data: payload
+			});
+			this.relayKeySentToPeers.add(peerId);
+		} catch (error) {
+			console.error('[P2P] Failed to send relay key:', error);
+		}
+	}
+
+	private isRelayKeyPayload(payload: unknown): payload is RelayKeyPayload {
+		if (typeof payload !== 'object' || payload === null) return false;
+		const candidate = payload as Partial<RelayKeyPayload>;
+		return (
+			candidate.version === 1 &&
+			candidate.curve === 'P-256' &&
+			typeof candidate.publicKey === 'string'
+		);
+	}
+
+	private async handleRelayKey(peerId: string, payload: RelayKeyPayload): Promise<void> {
+		try {
+			const keyPair = await this.getRelayKeyPair();
+			const remotePublicKey = await crypto.subtle.importKey(
+				'raw',
+				this.base64ToBytes(payload.publicKey) as BufferSource,
+				{
+					name: 'ECDH',
+					namedCurve: 'P-256'
+				},
+				false,
+				[]
+			);
+
+			const sharedKey = await crypto.subtle.deriveKey(
+				{
+					name: 'ECDH',
+					public: remotePublicKey
+				},
+				keyPair.privateKey,
+				{ name: 'AES-GCM', length: 256 },
+				false,
+				['encrypt', 'decrypt']
+			);
+
+			this.relaySharedKeys.set(peerId, sharedKey);
+			await this.sendRelayKey(peerId);
+			await this.flushPendingRelayMessages(peerId);
+		} catch (error) {
+			console.error('[P2P] Failed to process relay key:', error);
+		}
+	}
+
+	private async flushPendingRelayMessages(peerId: string): Promise<void> {
+		const pending = this.pendingRelayMessages.get(peerId);
+		if (!pending || pending.length === 0) {
+			return;
+		}
+
+		this.pendingRelayMessages.delete(peerId);
+		for (const message of pending) {
+			await this.sendRelay(message, peerId);
+		}
+	}
+
+	private isEncryptedRelayPayload(payload: RelayPayload): payload is EncryptedRelayPayload {
+		if (typeof payload !== 'object' || payload === null) return false;
+
+		const candidate = payload as Partial<EncryptedRelayPayload>;
+		return (
+			candidate.version === 1 &&
+			candidate.algorithm === 'AES-GCM' &&
+			typeof candidate.iv === 'string' &&
+			typeof candidate.ciphertext === 'string'
+		);
+	}
+
+	private async encryptRelayPayload(
+		message: TypedP2PMessage,
+		key: CryptoKey
+	): Promise<EncryptedRelayPayload | null> {
+		try {
+			const iv = crypto.getRandomValues(new Uint8Array(12));
+			const plaintext = new TextEncoder().encode(JSON.stringify(message));
+			const ciphertext = await crypto.subtle.encrypt(
+				{
+					name: 'AES-GCM',
+					iv: iv as BufferSource
+				},
+				key,
+				plaintext as BufferSource
+			);
+
+			return {
+				version: 1,
+				algorithm: 'AES-GCM',
+				iv: this.bytesToBase64(iv),
+				ciphertext: this.bytesToBase64(new Uint8Array(ciphertext))
+			};
+		} catch (error) {
+			console.error('[P2P] Failed to encrypt relay payload:', error);
+			return null;
+		}
+	}
+
+	private async decryptRelayPayload(
+		payload: EncryptedRelayPayload,
+		key: CryptoKey
+	): Promise<TypedP2PMessage | null> {
+		try {
+			const iv = this.base64ToBytes(payload.iv);
+			const ciphertext = this.base64ToBytes(payload.ciphertext);
+			const plaintext = await crypto.subtle.decrypt(
+				{
+					name: 'AES-GCM',
+					iv: iv as BufferSource
+				},
+				key,
+				ciphertext as BufferSource
+			);
+
+			const decoded = new TextDecoder().decode(new Uint8Array(plaintext));
+			return JSON.parse(decoded) as TypedP2PMessage;
+		} catch (error) {
+			console.error('[P2P] Failed to decrypt relay payload:', error);
+			return null;
+		}
 	}
 
 	/**
@@ -236,6 +429,7 @@ export class P2PConnection {
 				const myServerId = this.serverClientId || this.clientId;
 				for (let i = 0; i < peers.length; i++) {
 					const peerId = peers[i];
+					void this.sendRelayKey(peerId);
 					// Use consistent deterministic rule: higher server ID creates offer
 					const shouldInitiate = myServerId > peerId;
 					// Stagger connection attempts to reduce race conditions
@@ -274,6 +468,7 @@ export class P2PConnection {
 				const myServerIdForJoin = this.serverClientId || this.clientId;
 				if (message.clientId && message.clientId !== myServerIdForJoin) {
 					this.allKnownPeers.add(message.clientId);
+					void this.sendRelayKey(message.clientId);
 
 					// Use string comparison to avoid duplicate offers (compare server IDs)
 					const shouldInitiate = myServerIdForJoin > message.clientId;
@@ -335,12 +530,35 @@ export class P2PConnection {
 				}
 				break;
 
+			case 'relay-key':
+				if (message.fromId && message.data && this.isRelayKeyPayload(message.data)) {
+					await this.handleRelayKey(message.fromId, message.data);
+				}
+				break;
+
 			case 'relay':
 				// Handle relayed message (P2P fallback via WebSocket)
 				console.log('[P2P] Received relay message from:', message.fromId);
 				if (this.onMessageCallback && message.data && message.fromId) {
 					try {
-						this.onMessageCallback(message.data as TypedP2PMessage, message.fromId);
+						const payload = message.data as RelayPayload;
+						if (this.isEncryptedRelayPayload(payload)) {
+							const key = this.relaySharedKeys.get(message.fromId);
+							if (!key) {
+								void this.sendRelayKey(message.fromId, true);
+								console.warn(`[P2P] Missing relay shared key for ${message.fromId}`);
+								return;
+							}
+
+							const decrypted = await this.decryptRelayPayload(payload, key);
+							if (decrypted) {
+								this.onMessageCallback(decrypted, message.fromId);
+							}
+							return;
+						}
+
+						// Backward compatibility for older clients that may still send plaintext relay payloads.
+						this.onMessageCallback(payload as TypedP2PMessage, message.fromId);
 					} catch (error) {
 						console.error('[P2P] Error handling relay message:', error);
 					}
@@ -548,7 +766,9 @@ export class P2PConnection {
 					this.removePeer(peerId);
 
 					// Mark peer for relay fallback
-					this.relayPeers.add(peerId);
+					if (this.shouldUseRelayFallback()) {
+						this.relayPeers.add(peerId);
+					}
 				}
 			} else if (
 				pc.iceConnectionState === 'connected' ||
@@ -916,6 +1136,7 @@ export class P2PConnection {
 	 */
 	broadcast(message: TypedP2PMessage): number {
 		let successCount = 0;
+		const allowRelayFallback = this.shouldUseRelayFallback();
 
 		// Send via P2P data channels
 		for (const [peerId, channel] of this.dataChannels.entries()) {
@@ -924,11 +1145,20 @@ export class P2PConnection {
 					channel.send(JSON.stringify(message));
 					successCount++;
 				} catch (error) {
-					console.warn(`[P2P] P2P send failed to ${peerId}, switching to relay:`, error);
-					this.relayPeers.add(peerId);
+					if (allowRelayFallback) {
+						console.warn(`[P2P] P2P send failed to ${peerId}, switching to relay:`, error);
+						this.relayPeers.add(peerId);
+					} else {
+						console.warn(`[P2P] P2P send failed to ${peerId} in strict direct mode:`, error);
+					}
 					this.handleConnectionFailure(peerId);
 				}
 			}
+		}
+
+		if (!allowRelayFallback) {
+			console.log(`[P2P] Broadcast: ${successCount} delivered (strict direct mode)`);
+			return successCount;
 		}
 
 		// Send via WebSocket relay for peers without P2P
@@ -936,7 +1166,7 @@ export class P2PConnection {
 		const myServerId = this.serverClientId || this.clientId;
 		for (const peerId of this.relayPeers) {
 			if (peerId !== myServerId && this.allKnownPeers.has(peerId)) {
-				this.sendRelay(message, peerId);
+				void this.sendRelay(message, peerId);
 				successCount++;
 			}
 		}
@@ -948,7 +1178,7 @@ export class P2PConnection {
 				!this.dataChannels.has(peerId) &&
 				!this.relayPeers.has(peerId)
 			) {
-				this.sendRelay(message, peerId);
+				void this.sendRelay(message, peerId);
 				successCount++;
 			}
 		}
@@ -960,11 +1190,33 @@ export class P2PConnection {
 	/**
 	 * Send message via WebSocket relay (fallback when P2P fails)
 	 */
-	private sendRelay(message: TypedP2PMessage, targetId: string | null = null): void {
+	private async sendRelay(message: TypedP2PMessage, targetId: string | null = null): Promise<void> {
+		if (!this.shouldUseRelayFallback()) {
+			return;
+		}
+
+		if (!targetId) {
+			return;
+		}
+
 		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+			const sharedKey = this.relaySharedKeys.get(targetId);
+			if (!sharedKey) {
+				const pending = this.pendingRelayMessages.get(targetId) ?? [];
+				pending.push(message);
+				this.pendingRelayMessages.set(targetId, pending);
+				await this.sendRelayKey(targetId, true);
+				return;
+			}
+
+			const encryptedPayload = await this.encryptRelayPayload(message, sharedKey);
+			if (!encryptedPayload) {
+				return;
+			}
+
 			const relayMessage = {
 				type: 'relay',
-				data: message,
+				data: encryptedPayload,
 				targetId: targetId
 			};
 			this.ws.send(JSON.stringify(relayMessage));
@@ -1046,6 +1298,9 @@ export class P2PConnection {
 
 		this.pendingCandidates.delete(peerId);
 		this.relayPeers.delete(peerId);
+		this.relaySharedKeys.delete(peerId);
+		this.relayKeySentToPeers.delete(peerId);
+		this.pendingRelayMessages.delete(peerId);
 		this.allKnownPeers.delete(peerId);
 		this.negotiatingPeers.delete(peerId);
 		this.pendingOffers.delete(peerId);
@@ -1090,6 +1345,9 @@ export class P2PConnection {
 
 		// Clear known peers
 		this.allKnownPeers.clear();
+		this.relaySharedKeys.clear();
+		this.relayKeySentToPeers.clear();
+		this.pendingRelayMessages.clear();
 	}
 
 	/**

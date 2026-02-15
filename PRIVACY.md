@@ -22,8 +22,9 @@ We **do not** and **cannot** collect:
 
 ### True Peer-to-Peer Architecture
 - Messages are sent directly between users' browsers using WebRTC
-- No central server ever sees, stores, or relays your messages
+- Messages are end-to-end encrypted before they leave your device
 - Encryption happens entirely on your device
+- If direct P2P fails, the signaling server may relay encrypted payloads only
 
 ### What Our Signaling Server Does
 Our signaling server has a single, limited purpose: help two browsers find each other to establish a direct connection. Once connected, your browsers talk directly to each other.
@@ -32,8 +33,9 @@ The signaling server only handles:
 - Initial WebRTC handshake coordination
 - Room presence information (who's in which room)
 - Connection dropped/reconnected events
+- Encrypted relay fallback packets when direct P2P cannot be established
 
-**It never sees your actual messages.**
+**It never sees plaintext message content.**
 
 ## Data Storage
 
@@ -65,11 +67,11 @@ Our website and signaling server are protected by Cloudflare's CDN and DDoS prot
 See [Cloudflare's Privacy Policy](https://www.cloudflare.com/privacypolicy/) for details.
 
 ### WebRTC STUN/TURN Servers
-To establish peer-to-peer connections through firewalls (NAT traversal), we use public STUN servers. These may temporarily log:
+To establish peer-to-peer connections through firewalls (NAT traversal), we use STUN/TURN servers. These may temporarily log:
 - Connection attempts
 - IP addresses for NAT traversal
 
-No message content is ever sent to STUN/TURN servers.
+No plaintext message content is sent to STUN/TURN servers.
 
 ## Security Measures
 

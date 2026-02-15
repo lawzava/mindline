@@ -1,4 +1,4 @@
-import { expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
+import { expect, test, type Page, type Browser, type BrowserContext } from '@playwright/test';
 
 // Test constants
 export const TEST_USER_A = { name: 'Alice' };
@@ -6,6 +6,7 @@ export const TEST_USER_B = { name: 'Bob' };
 export const TEST_USER_C = { name: 'Charlie' };
 export const TEST_MESSAGE = 'Hello, World!';
 export const TEST_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'];
+export const STRICT_P2P_MODE = process.env.E2E_STRICT_P2P === '1';
 
 /**
  * Generate a unique room ID for test isolation
@@ -242,6 +243,18 @@ export async function waitForPeersConnected(
 	}
 
 	return false;
+}
+
+/**
+ * Handle missing peer connectivity based on suite mode.
+ * In strict mode this fails the test; otherwise it skips as best-effort.
+ */
+export function handleUnavailableP2P(message: string): never {
+	if (STRICT_P2P_MODE) {
+		throw new Error(message);
+	}
+	test.skip(true, message);
+	throw new Error(message);
 }
 
 /**

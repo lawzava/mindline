@@ -81,6 +81,7 @@ wss.on('connection', (ws, req) => {
         case 'offer':
         case 'answer':
         case 'ice-candidate':
+        case 'relay-key':
         case 'message':
           // Relay to specific peer
           if (currentRoom && data.to) {
