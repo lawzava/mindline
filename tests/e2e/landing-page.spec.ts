@@ -64,6 +64,29 @@ test.describe('Landing Page', () => {
 		await waitForConnectionStatus(page);
 	});
 
+	test('should join existing room via invite link', async ({ page }) => {
+		const roomId = generateTestRoomId();
+
+		await page.goto('/');
+
+		// Wait for WASM
+		await expect(page.locator('[data-testid="create-room-btn"]')).toBeEnabled({ timeout: 10000 });
+
+		// Paste a full invite link
+		const origin = new URL(page.url()).origin;
+		const inviteLink = `${origin}/${roomId}`;
+
+		const input = page.locator('[data-testid="join-room-input"]');
+		await input.fill(inviteLink);
+
+		const joinBtn = page.locator('[data-testid="join-room-btn"]');
+		await expect(joinBtn).toBeEnabled();
+		await joinBtn.click();
+
+		await page.waitForURL(`/${roomId}`);
+		await waitForConnectionStatus(page);
+	});
+
 	test('should disable join button when room ID is empty', async ({ page }) => {
 		await page.goto('/');
 

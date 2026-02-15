@@ -387,30 +387,30 @@
 {#if isLoading}
 	<div class="flex flex-1 items-center justify-center">
 		<div class="flex flex-col items-center gap-4 text-muted-foreground">
-			<Loader2 class="h-8 w-8 animate-spin" />
+			<Loader2 class="h-8 w-8 animate-spin motion-reduce:animate-none" />
 			<p class="text-sm">Joining room...</p>
 		</div>
 	</div>
 {:else}
 	<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden min-h-0">
 		<!-- Connection Status Bar -->
-		<div class="flex items-center justify-between border-b px-4 py-2">
+		<div class="flex flex-col gap-2 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
 			<div class="flex items-center gap-2">
 				<span class="text-sm text-muted-foreground">Room:</span>
 				<button
 					onclick={copyRoomId}
 					aria-label="Copy room ID to clipboard"
-					class="group flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs hover:bg-muted/80 transition-colors"
-					title="Click to copy full room ID"
+					class="group inline-flex h-11 items-center gap-2 rounded-full bg-muted px-3 text-xs hover:bg-muted/80 transition-colors"
+					title="Tap to copy room ID"
 					data-testid="copy-room-btn"
 				>
 					<code>{roomId?.slice(0, 8)}...</code>
-					<Copy class="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+					<Copy class="h-4 w-4 opacity-70 transition-opacity group-hover:opacity-100 motion-reduce:transition-none" />
 				</button>
 			</div>
-			<div class="flex items-center gap-2">
+			<div class="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
 				<ConnectionStatus />
-				<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-8 gap-1.5 text-muted-foreground hover:text-foreground" data-testid="leave-room-btn">
+				<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-11 px-3 gap-2 text-muted-foreground hover:text-foreground" data-testid="leave-room-btn">
 					<LogOut class="h-4 w-4" />
 					<span class="hidden sm:inline">Leave</span>
 				</Button>

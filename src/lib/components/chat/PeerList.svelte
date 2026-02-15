@@ -17,19 +17,19 @@
 			{#if $connectedPeers.length > 0}
 				<Badge
 					variant="secondary"
-					class="flex cursor-pointer items-center gap-1.5 py-1 transition-colors hover:bg-secondary/80"
+					class="flex h-11 cursor-pointer items-center gap-1.5 px-3 transition-colors hover:bg-secondary/80"
 					data-testid="peer-count"
 				>
-					<Users class="h-3 w-3" />
+					<Users class="h-4 w-4" />
 					<span>{$connectedPeers.length} peer{$connectedPeers.length !== 1 ? 's' : ''}</span>
 				</Badge>
 			{:else}
 				<Badge
 					variant="outline"
-					class="flex cursor-pointer items-center gap-1.5 py-1 text-muted-foreground"
+					class="flex h-11 cursor-pointer items-center gap-1.5 px-3 text-muted-foreground"
 					data-testid="peer-count"
 				>
-					<Users class="h-3 w-3" />
+					<Users class="h-4 w-4" />
 					<span>Waiting for peers...</span>
 				</Badge>
 			{/if}
