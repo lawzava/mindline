@@ -68,4 +68,4 @@ export {
 export { emitToast } from './handlers';
 
 // Configuration utilities
-export { getP2PConfig, getSignalingConfig, isMobileDevice, isMobileNetwork, getDevConfig, getTestConfig, isTestMode } from './config';
+export { getP2PConfig, getSignalingConfig, isMobileDevice, isMobileNetwork, getDevConfig, getTestConfig, isTestMode, isStrictDirectMode } from './config';

@@ -21,6 +21,44 @@ const PUBLIC_TURN_SERVERS: RTCIceServer[] = [
 	}
 ];
 
+type RuntimeEnvConfig = {
+	SIGNALING_SERVER?: string;
+	USE_SSL?: boolean | string;
+	TURN_SERVERS?: RTCIceServer[];
+};
+
+function getRuntimeEnvConfig(): RuntimeEnvConfig {
+	if (!browser) return {};
+
+	const runtimeEnv = (window as Window & { MINDLINE_ENV?: unknown }).MINDLINE_ENV;
+	if (!runtimeEnv || typeof runtimeEnv !== 'object') {
+		return {};
+	}
+
+	return runtimeEnv as RuntimeEnvConfig;
+}
+
+function parseUseSsl(value: RuntimeEnvConfig['USE_SSL'], fallback: boolean): boolean {
+	if (typeof value === 'boolean') {
+		return value;
+	}
+
+	if (typeof value === 'string') {
+		const normalized = value.trim().toLowerCase();
+		if (normalized === 'true') return true;
+		if (normalized === 'false') return false;
+	}
+
+	return fallback;
+}
+
+function getConfiguredTurnServers(runtimeEnv: RuntimeEnvConfig): RTCIceServer[] {
+	if (Array.isArray(runtimeEnv.TURN_SERVERS)) {
+		return runtimeEnv.TURN_SERVERS;
+	}
+	return PUBLIC_TURN_SERVERS;
+}
+
 /**
  * Detect if user is on a mobile network
  * Uses Network Information API and user agent detection
@@ -67,6 +105,14 @@ export function getSignalingConfig(): { server: string; useSSL: boolean } {
 		return { server: 'localhost:3000', useSSL: false };
 	}
 
+	const runtimeEnv = getRuntimeEnvConfig();
+	if (runtimeEnv.SIGNALING_SERVER) {
+		return {
+			server: runtimeEnv.SIGNALING_SERVER,
+			useSSL: parseUseSsl(runtimeEnv.USE_SSL, window.location.protocol === 'https:')
+		};
+	}
+
 	// Production: Use environment variable or derive from current hostname
 	const envServer = import.meta.env.VITE_SIGNALING_SERVER;
 	if (envServer) {
@@ -90,18 +136,23 @@ export function getSignalingConfig(): { server: string; useSSL: boolean } {
  * Get optimized P2P configuration based on environment and network conditions
  */
 export function getP2PConfig(): P2PConfig {
+	const runtimeEnv = getRuntimeEnvConfig();
 	const { server, useSSL } = getSignalingConfig();
 	const mobile = isMobileDevice();
+	const strictDirect = isStrictDirectMode();
+	const turnServers = getConfiguredTurnServers(runtimeEnv);
 
 	return {
 		signalingServer: server,
 		useSSL,
 		websocketPath: '/ws',
-		turnServers: PUBLIC_TURN_SERVERS,
+		turnServers: strictDirect ? [] : turnServers,
+		allowRelayFallback: !strictDirect,
+		strictDirect,
 		// Mobile-optimized settings
 		connectionTimeout: mobile ? 5000 : 2000,
 		icePoolSize: mobile ? 20 : 10,
-		forceRelay: mobile, // Force TURN relay on mobile for reliable connections through NAT
+		forceRelay: strictDirect ? false : mobile, // Force TURN relay on mobile for reliable connections through NAT
 		maxReconnectAttempts: mobile ? 10 : 7,
 		reconnectBackoffBase: 1000
 	};
@@ -116,6 +167,8 @@ export function getDevConfig(): P2PConfig {
 		useSSL: false,
 		websocketPath: '/ws',
 		turnServers: PUBLIC_TURN_SERVERS,
+		allowRelayFallback: true,
+		strictDirect: false,
 		connectionTimeout: 2000,
 		icePoolSize: 10,
 		forceRelay: false,
@@ -143,4 +196,22 @@ export function isTestMode(): boolean {
 	if (!browser) return false;
 	const params = new URLSearchParams(window.location.search);
 	return params.get('fastConnect') === 'true';
+}
+
+/**
+ * Strict direct mode:
+ * - disables TURN
+ * - disables WebSocket relay fallback
+ * Enable with ?strictDirect=true or VITE_P2P_STRICT_DIRECT=true
+ */
+export function isStrictDirectMode(): boolean {
+	if (!browser) return false;
+
+	const params = new URLSearchParams(window.location.search);
+	const param = params.get('strictDirect');
+	if (param !== null) {
+		return param === '1' || param.toLowerCase() === 'true';
+	}
+
+	return import.meta.env.VITE_P2P_STRICT_DIRECT === 'true';
 }

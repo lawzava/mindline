@@ -92,14 +92,14 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 
 3. **WebRTC P2P Layer** (`src/lib/p2p`)
    - Direct peer-to-peer connections
-   - Signaling server coordination (connection only)
+   - Signaling server coordination (offer/answer/ICE + encrypted relay fallback)
    - Message broadcasting and routing
    - Connection failure handling and reconnection
 
 4. **Signaling Server** (`signaling-server.js`)
    - Minimal WebSocket server for peer discovery
    - Room management for connection coordination
-   - **Does not store or relay messages**
+   - Relays signaling traffic and encrypted fallback payloads only
 
 ## 🚀 Getting Started
 
@@ -162,9 +162,30 @@ pnpm dev
 # Start signaling server for P2P connections
 pnpm run signaling
 
+# Required E2E suite (blocking, strict P2P)
+pnpm run test:e2e:ci
+
+# Best-effort E2E suite (non-blocking diagnostics)
+pnpm run test:e2e:with-signaling:best-effort
+
+# Remote required E2E suite (against staging/prod URLs)
+APP_BASE_URL="https://staging.example.com" SIGNALING_HEALTH_URL="https://signal-staging.example.com/health" pnpm run test:e2e:remote:required -- --project='Desktop Chrome'
+# Optional localhost override for remote script guard rails:
+# ALLOW_LOCALHOST_REMOTE=1 APP_BASE_URL="http://localhost:5173" SIGNALING_HEALTH_URL="http://localhost:3000/health" pnpm run test:e2e:remote:required -- --project='Desktop Chrome'
+
+# Signaling load/soak test
+pnpm run test:signaling:soak -- --url=ws://localhost:3000/ws --clients=120 --rooms=12 --durationSec=90 --minJoinRate=0.9 --minReceivedPerSent=0.9 --maxSocketErrorRate=0.05 --maxServerErrors=0
+# Optional server tuning knobs for soak environments:
+# RATE_LIMIT_MESSAGES_PER_SECOND=50 RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE=240 RATE_LIMIT_ROOM_JOINS_PER_MINUTE=30 pnpm run signaling
+
 # Full AI-ready verification gate
 pnpm run verify:ai
 ```
+
+### Strict Direct Mode
+
+- Append `?strictDirect=true` to a room URL to enforce direct P2P only.
+- In strict mode, TURN and WebSocket relay fallback are disabled.
 
 ### AI-Assisted Development
 
