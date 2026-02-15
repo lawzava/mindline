@@ -8,6 +8,21 @@ export const TEST_MESSAGE = 'Hello, World!';
 export const TEST_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'];
 export const STRICT_P2P_MODE = process.env.E2E_STRICT_P2P === '1';
 
+// The local signaling server rate-limits connection attempts per IP. The full
+// with-signaling suite can create enough short-lived contexts to hit that limit,
+// causing noisy reconnect loops and unrelated flake. Throttle room navigations
+// (which trigger signaling connects) to keep the suite stable.
+let lastRoomNavigationAt = 0;
+async function throttleRoomNavigation(): Promise<void> {
+	const minIntervalMs = 2200;
+	const now = Date.now();
+	const waitMs = Math.max(0, minIntervalMs - (now - lastRoomNavigationAt));
+	if (waitMs > 0) {
+		await new Promise((resolve) => setTimeout(resolve, waitMs));
+	}
+	lastRoomNavigationAt = Date.now();
+}
+
 /**
  * Generate a unique room ID for test isolation
  */
@@ -71,6 +86,7 @@ export async function typeMessage(page: Page, text: string): Promise<void> {
  * Adds ?fastConnect=true for faster P2P connection in tests
  */
 export async function joinRoom(page: Page, roomId: string): Promise<void> {
+	await throttleRoomNavigation();
 	await page.goto(`/${roomId}?fastConnect=true`);
 	await waitForConnectionStatus(page);
 }
@@ -100,6 +116,7 @@ export async function createRoom(page: Page): Promise<string> {
 	const roomId = url.split('/').pop()?.split('?')[0] || '';
 
 	// Navigate with fastConnect param for faster P2P connection
+	await throttleRoomNavigation();
 	await page.goto(`/${roomId}?fastConnect=true`);
 	await waitForConnectionStatus(page);
 

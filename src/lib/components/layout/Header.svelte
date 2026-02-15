@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { user, connectionStatus, peerCount, currentRoomId } from '$lib/stores';
-	import { Sun, Moon, Users, Share2, Wifi, WifiOff, Loader2 } from 'lucide-svelte';
+	import { user, currentRoomId } from '$lib/stores';
+	import { Sun, Moon, Share2 } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { toggleMode, mode } from 'mode-watcher';
 
@@ -73,28 +73,11 @@
 	}
 </script>
 
-<header class="border-b border-border bg-card">
-	<div class="mx-auto flex h-14 sm:h-16 max-w-4xl items-center justify-between px-2 sm:px-4">
+<header class="border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+	<div class="mx-auto flex h-14 sm:h-16 max-w-4xl items-center justify-between px-3 sm:px-4">
 		<!-- Logo -->
 		<div class="flex items-center gap-2 sm:gap-3">
 			<h1 class="text-xl sm:text-2xl font-bold tracking-tight">MINDLINE</h1>
-			{#if $currentRoomId}
-				<div class="flex items-center gap-2 text-sm text-muted-foreground">
-					{#if $connectionStatus === 'connected'}
-						<Wifi class="h-4 w-4 text-green-500" />
-					{:else if $connectionStatus === 'connecting'}
-						<Loader2 class="h-4 w-4 text-yellow-500 animate-spin" />
-					{:else}
-						<WifiOff class="h-4 w-4 text-muted-foreground" />
-					{/if}
-					{#if $peerCount > 0}
-						<span class="flex items-center gap-1">
-							<Users class="h-3.5 w-3.5" />
-							{$peerCount}
-						</span>
-					{/if}
-				</div>
-			{/if}
 		</div>
 
 		<!-- Controls -->
@@ -107,19 +90,19 @@
 				bind:value={userName}
 				onblur={handleNameChange}
 				onkeydown={(e) => e.key === 'Enter' && handleNameChange()}
-				class="w-24 sm:w-32 text-sm"
+				class="w-28 sm:w-36"
 			/>
 
 			<!-- Share button (only when in a room) -->
 			{#if $currentRoomId}
-				<Button variant="outline" size="icon" onclick={shareRoom} class="h-9 w-9">
+				<Button variant="outline" size="icon" onclick={shareRoom} class="h-11 w-11">
 					<Share2 class="h-4 w-4" />
 					<span class="sr-only">Share room</span>
 				</Button>
 			{/if}
 
 			<!-- Theme toggle -->
-			<Button variant="ghost" size="icon" onclick={toggleMode} class="h-9 w-9">
+			<Button variant="ghost" size="icon" onclick={toggleMode} class="h-11 w-11">
 				{#if mode.current === 'dark'}
 					<Sun class="h-4 w-4" />
 				{:else}

@@ -42,7 +42,7 @@
 		{#if isInitializing}
 			<div class="flex flex-1 items-center justify-center">
 				<div class="flex flex-col items-center gap-4 text-muted-foreground">
-					<Loader2 class="h-8 w-8 animate-spin" />
+					<Loader2 class="h-8 w-8 animate-spin motion-reduce:animate-none" />
 					<p class="text-sm">Loading...</p>
 				</div>
 			</div>

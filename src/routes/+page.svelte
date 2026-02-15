@@ -9,6 +9,29 @@
 
 	let joinRoomId = $state('');
 
+	function extractRoomId(input: string): string {
+		const trimmed = input.trim();
+		if (!trimmed) return '';
+
+		// Handle full URLs (e.g. https://mindline.chat/<roomId>)
+		try {
+			const url = new URL(trimmed);
+			const last = url.pathname.split('/').filter(Boolean).pop();
+			return (last ?? '').trim();
+		} catch {
+			// Not a full URL; fall through.
+		}
+
+		// Handle partial URLs without scheme (e.g. mindline.chat/<roomId>)
+		if (trimmed.includes('/')) {
+			const withoutQuery = trimmed.split(/[?#]/)[0];
+			const last = withoutQuery.split('/').filter(Boolean).pop();
+			return (last ?? '').trim();
+		}
+
+		return trimmed;
+	}
+
 	async function createRoom() {
 		if (!isWasmReady()) return;
 
@@ -30,7 +53,8 @@
 	}
 
 	async function joinRoom() {
-		if (!isWasmReady() || !joinRoomId.trim()) return;
+		const room = extractRoomId(joinRoomId);
+		if (!isWasmReady() || !room) return;
 
 		// Ensure user is initialized
 		if (!$user.initialized) {
@@ -42,7 +66,7 @@
 		}
 
 		// Navigate to room
-		await goto(`/${joinRoomId.trim()}`);
+		await goto(`/${room}`);
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -67,7 +91,7 @@
 		</CardHeader>
 		<CardContent class="space-y-6">
 			<!-- Create Room -->
-			<Button onclick={createRoom} class="w-full" size="lg" data-testid="create-room-btn">
+			<Button onclick={createRoom} class="w-full h-11" size="lg" data-testid="create-room-btn">
 				<Plus class="mr-2 h-5 w-5" />
 				Create New Room
 			</Button>
@@ -86,13 +110,19 @@
 			<div class="flex gap-2">
 				<Input
 					type="text"
-					placeholder="Enter room ID..."
+					placeholder="Paste invite link or room ID..."
 					bind:value={joinRoomId}
 					onkeydown={handleKeydown}
 					class="flex-1"
 					data-testid="join-room-input"
 				/>
-				<Button onclick={joinRoom} disabled={!joinRoomId.trim()} size="icon" data-testid="join-room-btn">
+				<Button
+					onclick={joinRoom}
+					disabled={!extractRoomId(joinRoomId)}
+					size="icon"
+					class="h-11 w-11"
+					data-testid="join-room-btn"
+				>
 					<ArrowRight class="h-4 w-4" />
 					<span class="sr-only">Join room</span>
 				</Button>
