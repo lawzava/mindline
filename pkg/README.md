@@ -48,10 +48,10 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 - **Zero Configuration**: No accounts, registration, or setup required
 
 ### 🛠 Developer Features
-- **Modern Architecture**: Clean separation between Rust core and JavaScript frontend
+- **Modern Architecture**: Clean separation between Rust core and SvelteKit frontend
 - **WebAssembly Integration**: Safe, performant WASM bindings with error handling
 - **Modular Design**: Extensible codebase with well-defined component boundaries
-- **TypeScript-Ready**: Structured for easy TypeScript migration
+- **TypeScript-First**: Strict TypeScript across the SvelteKit app
 
 ## 🏗 Architecture
 
@@ -59,10 +59,10 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 
 ```
 ┌─────────────────────────────────────────┐
-│           Frontend (JavaScript)          │
+│        Frontend (SvelteKit + TS)         │
 │  ┌─────────────┐ ┌─────────────────────┐ │
-│  │   UI Layer  │ │    WebRTC P2P      │ │
-│  │ (Vanilla JS)│ │   Communication     │ │
+│  │  UI Layer   │ │    WebRTC P2P      │ │
+│  │  (Svelte)   │ │   Communication     │ │
 │  └─────────────┘ └─────────────────────┘ │
 └─────────────────────────────────────────┘
                     │
@@ -78,33 +78,33 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 
 ### Core Components
 
-1. **Rust/WASM Module** (`src/lib.rs`)
+1. **Rust/WASM Module** (`src-rust/lib.rs`)
    - `ChatManager`: Singleton managing rooms and user state
    - Message handling with types (Text, Typing, Edit, Delete, Media)
    - Room management with client-side encryption keys
    - Thread-safe state management
 
-2. **JavaScript Layer** (`js/index.js`)
+2. **SvelteKit Layer** (`src/routes`, `src/lib`)
    - WASM module loading and safe proxy creation
    - UI event handling and state management
    - LocalStorage persistence for user/room data
    - Theme management and responsive design
 
-3. **WebRTC P2P Layer** (`js/webrtc.js`)
+3. **WebRTC P2P Layer** (`src/lib/p2p`)
    - Direct peer-to-peer connections
-   - Signaling server coordination (connection only)
+   - Signaling server coordination (offer/answer/ICE + encrypted relay fallback)
    - Message broadcasting and routing
    - Connection failure handling and reconnection
 
 4. **Signaling Server** (`signaling-server.js`)
    - Minimal WebSocket server for peer discovery
    - Room management for connection coordination
-   - **Does not store or relay messages**
+   - Relays signaling traffic and encrypted fallback payloads only
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 16+ and npm
+- Node.js 18+ and pnpm
 - Rust and wasm-pack for development
 
 ### Quick Start
@@ -113,26 +113,26 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
    ```bash
    git clone <repository-url>
    cd mindline
-   npm install
+   pnpm install
    ```
 
 2. **Build the application**
    ```bash
-   npm run build
+   pnpm run build
    ```
 
 3. **Start development server**
    ```bash
-   npm start
+   pnpm dev
    ```
 
 4. **Start signaling server** (in separate terminal)
    ```bash
-   npm run signaling
+   pnpm run signaling
    ```
 
 5. **Open your browser**
-   - Navigate to `http://localhost:8080`
+   - Navigate to `http://localhost:5173`
    - Create a username
    - Create or join a room
    - Start experiencing radical transparency!
@@ -141,7 +141,7 @@ Mindline revolutionizes digital communication by eliminating the artificial barr
 
 To experience the revolutionary transparency feature:
 
-1. **Open two browser windows** to `http://localhost:8080`
+1. **Open two browser windows** to `http://localhost:5173`
 2. **Initialize users** with different names in each window
 3. **Join the same room** from both windows
 4. **Start typing in one window** - watch the other window show your draft message in real-time
@@ -151,17 +151,47 @@ To experience the revolutionary transparency feature:
 
 ```bash
 # Build only the WebAssembly module
-npm run build-wasm
+pnpm run build-wasm
 
-# Build entire project (WASM + webpack)
-npm run build
+# Build entire project (WASM + app bundle)
+pnpm run build
 
 # Start development server with hot reload
-npm start
+pnpm dev
 
 # Start signaling server for P2P connections
-npm run signaling
+pnpm run signaling
+
+# Required E2E suite (blocking, strict P2P)
+pnpm run test:e2e:ci
+
+# Best-effort E2E suite (non-blocking diagnostics)
+pnpm run test:e2e:with-signaling:best-effort
+
+# Remote required E2E suite (against staging/prod URLs)
+APP_BASE_URL="https://staging.example.com" SIGNALING_HEALTH_URL="https://signal-staging.example.com/health" pnpm run test:e2e:remote:required -- --project='Desktop Chrome'
+# Optional localhost override for remote script guard rails:
+# ALLOW_LOCALHOST_REMOTE=1 APP_BASE_URL="http://localhost:5173" SIGNALING_HEALTH_URL="http://localhost:3000/health" pnpm run test:e2e:remote:required -- --project='Desktop Chrome'
+
+# Signaling load/soak test
+pnpm run test:signaling:soak -- --url=ws://localhost:3000/ws --clients=120 --rooms=12 --durationSec=90 --minJoinRate=0.9 --minReceivedPerSent=0.9 --maxSocketErrorRate=0.05 --maxServerErrors=0
+# Optional server tuning knobs for soak environments:
+# RATE_LIMIT_MESSAGES_PER_SECOND=50 RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE=240 RATE_LIMIT_ROOM_JOINS_PER_MINUTE=30 pnpm run signaling
+
+# Full AI-ready verification gate
+pnpm run verify:ai
 ```
+
+### Strict Direct Mode
+
+- Append `?strictDirect=true` to a room URL to enforce direct P2P only.
+- In strict mode, TURN and WebSocket relay fallback are disabled.
+
+### AI-Assisted Development
+
+- Agent instructions: `AGENTS.md` (plus scoped overrides in `src/` and `src-rust/`)
+- Skill catalog: `docs/ai-skills.md`
+- MCP usage guidance: `docs/mcp-usage.md`
 
 ## 💡 How It Works
 

@@ -13,6 +13,8 @@ export interface P2PConfig {
 	useSSL: boolean;
 	websocketPath: string;
 	turnServers?: RTCIceServer[];
+	allowRelayFallback?: boolean; // Allow encrypted WebSocket relay when direct P2P fails
+	strictDirect?: boolean; // Disable TURN + relay fallback (direct P2P only)
 	// Mobile optimization settings
 	connectionTimeout?: number; // WebSocket connection timeout (ms)
 	icePoolSize?: number; // ICE candidate pool size
@@ -29,6 +31,8 @@ export const DEFAULT_CONFIG: P2PConfig = {
 	signalingServer: 'localhost:3000',
 	useSSL: false,
 	websocketPath: '/ws',
+	allowRelayFallback: true,
+	strictDirect: false,
 	connectionTimeout: 2000,
 	icePoolSize: 10,
 	forceRelay: false,
@@ -48,6 +52,7 @@ export type SignalingMessageType =
 	| 'offer'
 	| 'answer'
 	| 'ice-candidate'
+	| 'relay-key'
 	| 'relay'
 	| 'client-id'
 	| 'error'
@@ -61,8 +66,23 @@ export interface SignalingMessage {
 	peers?: string[];
 	fromId?: string;
 	targetId?: string;
-	data?: RTCSessionDescriptionInit | RTCIceCandidateInit | TypedP2PMessage;
+	data?: RTCSessionDescriptionInit | RTCIceCandidateInit | RelayPayload | RelayKeyPayload;
 	error?: string;
+}
+
+export interface EncryptedRelayPayload {
+	version: 1;
+	algorithm: 'AES-GCM';
+	iv: string; // base64
+	ciphertext: string; // base64
+}
+
+export type RelayPayload = TypedP2PMessage | EncryptedRelayPayload;
+
+export interface RelayKeyPayload {
+	version: 1;
+	curve: 'P-256';
+	publicKey: string; // base64 (raw uncompressed EC point)
 }
 
 // ============================================
