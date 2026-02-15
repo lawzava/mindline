@@ -82,14 +82,18 @@ Always structure your report to the orchestrator as follows:
 For this Rust/WASM + SvelteKit project, be aware of these test commands:
 
 **Rust Tests**:
+- `pnpm run verify:rust` - Canonical Rust verification stage
 - `cargo test` - Run all Rust unit tests
 - `cargo test [module]` - Run tests for specific module
-- `cargo clippy` - Lint checking (treat warnings as findings)
-- `cargo fmt --check` - Format verification
 
 **TypeScript/Svelte**:
+- `pnpm run verify:web` - Canonical web verification stage
 - `pnpm check` - Type checking
 - `pnpm build` - Build verification (catches compile errors)
+
+**E2E/P2P**:
+- `pnpm run test:e2e:ci` - Desktop Chrome run with signaling orchestration
+- `pnpm run test:e2e:with-signaling` - Full signaling-aware e2e execution
 
 **Rust Modules to Know**:
 - `core.rs` - Initialization and message handling

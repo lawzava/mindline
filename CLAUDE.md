@@ -29,6 +29,9 @@ pnpm run signaling
 
 # Type checking
 pnpm check
+
+# Full verification gate
+pnpm run verify:ai
 ```
 
 ### Rust Commands
@@ -87,6 +90,12 @@ Types: feat, fix, docs, style, refactor, perf, test, chore
 - **Rust**: snake_case, explicit error handling (no unwrap in production)
 - **TypeScript/Svelte**: Svelte 5 runes ($state, $derived, $effect), TypeScript strict mode
 - Safe WASM proxy pattern: TypeScript wraps WASM functions with error handling
+
+## Agent Behavior
+
+- Follow repository-wide rules in `AGENTS.md` and scoped overrides in `src/AGENTS.md` and `src-rust/AGENTS.md`.
+- Prefer existing scripts in `package.json` over ad-hoc command composition.
+- Before completing work, run the smallest valid gate: `verify:rust`, `verify:web`, or `verify:ai`.
 
 ## Key Patterns
 
