@@ -7,6 +7,10 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
+      # Production-safe tuning (required for remote E2E + soak behind shared NATs).
+      - RATE_LIMIT_MESSAGES_PER_SECOND=50
+      - RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE=240
+      - RATE_LIMIT_ROOM_JOINS_PER_MINUTE=30
     volumes:
       - ./logs:/app/logs
       - ./ssl:/app/ssl:ro
