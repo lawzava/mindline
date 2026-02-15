@@ -6,6 +6,7 @@ Thank you for your interest in contributing to Mindline! This document provides 
 - [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
 - [Development Workflow](#development-workflow)
+- [AI-Assisted Workflow](#ai-assisted-workflow)
 - [Coding Standards](#coding-standards)
 - [Testing](#testing)
 - [Submitting Changes](#submitting-changes)
@@ -30,9 +31,9 @@ We are committed to providing a welcoming and inclusive experience for everyone.
 
 ### Prerequisites
 - **Rust** 1.70+ and cargo
-- **Node.js** 16+ and npm
+- **Node.js** 18+ and pnpm
 - **wasm-pack** for building WebAssembly
-- Basic understanding of Rust, JavaScript, and WebRTC
+- Basic understanding of Rust, TypeScript/Svelte, and WebRTC
 
 ### Development Setup
 
@@ -44,43 +45,42 @@ We are committed to providing a welcoming and inclusive experience for everyone.
 
 2. **Install dependencies**
    ```bash
-   npm install
+   pnpm install
    ```
 
 3. **Build the project**
    ```bash
-   npm run build
+   pnpm run build
    ```
 
 4. **Start development servers**
    ```bash
    # Terminal 1: Frontend dev server
-   npm start
+   pnpm dev
 
    # Terminal 2: Signaling server
-   npm run signaling
+   pnpm run signaling
    ```
 
 5. **Open the app**
-   - Navigate to `http://localhost:8080`
+   - Navigate to `http://localhost:5173`
 
 ### Project Structure
 ```
 mindline/
-├── src/              # Rust/WASM source code
-│   ├── lib.rs        # Main entry point
-│   ├── crypto.rs     # Encryption implementation
-│   ├── messages.rs   # Message handling
-│   ├── p2p.rs        # P2P coordination
+├── src-rust/             # Rust/WASM source code
+│   ├── lib.rs            # Main entry point
+│   ├── crypto.rs         # Encryption implementation
+│   ├── messages.rs       # Message handling
+│   ├── p2p.rs            # P2P coordination
 │   └── ...
-├── js/               # JavaScript source code
-│   ├── app.js        # Application entry
-│   ├── webrtc.js     # WebRTC P2P implementation
-│   ├── ui.js         # UI management
+├── src/                  # SvelteKit TypeScript app
+│   ├── routes/           # Pages (/, /[roomId])
+│   ├── lib/components/   # UI components
+│   ├── lib/p2p/          # WebRTC data layer
 │   └── ...
-├── css/              # Stylesheets
-├── index.html        # Main HTML file
-└── signaling-server.js  # WebSocket signaling server
+├── tests/e2e/            # Playwright end-to-end tests
+└── signaling-server.js   # WebSocket signaling server
 ```
 
 ## Development Workflow
@@ -131,6 +131,13 @@ Now shows user-friendly error and retry option.
 Fixes #67
 ```
 
+## AI-Assisted Workflow
+
+- Follow repository guardrails in `AGENTS.md` and scoped overrides in `src/AGENTS.md` and `src-rust/AGENTS.md`.
+- Use skill docs in `docs/ai-skills.md` and `.codex/skills/` for repeatable command selection.
+- Use MCP guidance from `docs/mcp-usage.md` when external systems are involved.
+- Run `pnpm run verify:ai` before opening or updating a PR unless the change is clearly narrow enough for `verify:rust` or `verify:web`.
+
 ## Coding Standards
 
 ### Rust Code
@@ -168,9 +175,9 @@ pub fn encrypt_message(content: &str, key: &[u8]) -> Result<String, JsValue> {
 }
 ```
 
-### JavaScript Code
+### TypeScript/Svelte Code
 
-**Style**: ES6+, functional where possible
+**Style**: TypeScript strict mode with Svelte 5 runes
 
 **Guidelines**:
 - Use `const` and `let`, not `var`
@@ -208,9 +215,14 @@ async function connectToPeer(peerId, options = {}) {
 cargo test
 ```
 
-**JavaScript tests** (when implemented):
+**TypeScript checks**:
 ```bash
-npm test
+pnpm run check
+```
+
+**End-to-end tests**:
+```bash
+pnpm run test:e2e:with-signaling
 ```
 
 **Manual testing checklist**:
@@ -260,10 +272,7 @@ Create test files in `/tests` directory
 
 3. **Test thoroughly**
    ```bash
-   npm run build          # Build succeeds
-   cargo test            # Tests pass
-   cargo clippy          # No warnings
-   cargo fmt --check     # Properly formatted
+   pnpm run verify:ai    # Rust + web + e2e verification
    ```
 
 4. **Commit changes**
@@ -377,7 +386,7 @@ Please:
 
 4. **Build production**
    ```bash
-   npm run build:production
+   pnpm run build:production
    ```
 
 5. **Deploy**
