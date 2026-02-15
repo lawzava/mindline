@@ -4,6 +4,21 @@ import crypto from 'crypto';
 
 const server = http.createServer();
 
+function readPositiveIntEnv(name, fallback) {
+  const raw = process.env[name];
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(`Invalid ${name}=${raw}. Using default ${fallback}.`);
+    return fallback;
+  }
+
+  return parsed;
+}
+
 // Production limits to prevent resource exhaustion
 const SERVER_LIMITS = {
   maxConnections: 1000,       // Maximum concurrent WebSocket connections
@@ -27,9 +42,9 @@ let totalConnections = 0;
 
 // Rate limiting configuration
 const RATE_LIMITS = {
-  messagesPerSecond: 50,     // Max 50 messages per second per client
-  connectionAttempts: 30,    // Max 30 connection attempts per IP per minute
-  roomJoinsPerMinute: 30     // Max 30 room joins per client per minute
+  messagesPerSecond: readPositiveIntEnv('RATE_LIMIT_MESSAGES_PER_SECOND', 50),
+  connectionAttempts: readPositiveIntEnv('RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE', 30),
+  roomJoinsPerMinute: readPositiveIntEnv('RATE_LIMIT_ROOM_JOINS_PER_MINUTE', 30)
 };
 
 // Rate limiting storage with bounded size
@@ -309,6 +324,7 @@ wss.on('connection', (ws, req) => {
         case 'offer':
         case 'answer':
         case 'ice-candidate':
+        case 'relay-key':
           // Relay WebRTC signaling to specific peer
           if (currentRoom && rooms.has(currentRoom)) {
             const room = rooms.get(currentRoom);
@@ -461,7 +477,8 @@ server.listen(PORT, HOST, () => {
   console.log(`   Host: ${HOST}`);
   console.log(`   Environment: ${NODE_ENV}`);
   console.log(`   WebSocket Path: /ws`);
-  console.log(`💓 Keepalive enabled (30s interval)`);
+  console.log(`   Rate limits: msg/s=${RATE_LIMITS.messagesPerSecond}, conn/min=${RATE_LIMITS.connectionAttempts}, joins/min=${RATE_LIMITS.roomJoinsPerMinute}`);
+  console.log(`💓 Keepalive enabled (${KEEPALIVE_INTERVAL / 1000}s interval)`);
   console.log(`   Ready for connections!`);
 });
 

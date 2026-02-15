@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:5173';
+const useLocalWebServer = !process.env.APP_BASE_URL;
+
 export default defineConfig({
 	testDir: './tests/e2e',
 	timeout: 60000, // Increased for P2P connection tests
@@ -9,7 +12,7 @@ export default defineConfig({
 	workers: 1,
 	reporter: 'html',
 	use: {
-		baseURL: 'http://localhost:5173',
+		baseURL: appBaseUrl,
 		trace: 'on-first-retry',
 		video: 'on-first-retry'
 	},
@@ -27,9 +30,11 @@ export default defineConfig({
 			use: { ...devices['Pixel 5'] }
 		}
 	],
-	webServer: {
-		command: 'pnpm dev',
-		port: 5173,
-		reuseExistingServer: !process.env.CI
-	}
+	webServer: useLocalWebServer
+		? {
+				command: 'pnpm dev',
+				port: 5173,
+				reuseExistingServer: !process.env.CI
+			}
+		: undefined
 });

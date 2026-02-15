@@ -14,6 +14,7 @@ import { get } from 'svelte/store';
 let p2pConnection: P2PConnection | null = null;
 let reconnectAttempts = 0;
 let reconnectInterval: ReturnType<typeof setInterval> | null = null;
+let lastP2PConfig: Partial<P2PConfig> | undefined = undefined;
 
 const MAX_RECONNECT_ATTEMPTS = 7;
 const BASE_RECONNECT_DELAY = 1000;
@@ -38,6 +39,7 @@ let currentInitRoomId: string | null = null;
  */
 export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>): Promise<void> {
 	console.log('[P2P Manager] Initializing P2P for room:', roomId);
+	lastP2PConfig = config;
 
 	// Prevent concurrent initialization for the same room
 	if (isInitializing && currentInitRoomId === roomId) {
@@ -512,7 +514,7 @@ export async function reconnectP2P(): Promise<void> {
 	}
 
 	// Attempt to reconnect
-	await initializeP2P(roomId);
+	await initializeP2P(roomId, lastP2PConfig);
 }
 
 /**

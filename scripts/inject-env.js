@@ -3,8 +3,12 @@
 // This script injects environment variables into the env-config.js file
 // It's meant to be run during the Cloudflare Pages build process
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Get environment variables
 const SIGNALING_SERVER = process.env.SIGNALING_SERVER || 'signal.yourdomain.com';
@@ -20,14 +24,19 @@ if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-// Build TURN servers configuration
-let turnServersConfig = '';
+const runtimeConfig = {
+  SIGNALING_SERVER,
+  USE_SSL: USE_SSL === 'true'
+};
+
 if (TURN_SERVERS) {
   try {
-    // Validate JSON format
-    JSON.parse(TURN_SERVERS);
-    turnServersConfig = `,
-  TURN_SERVERS: ${TURN_SERVERS}`;
+    const parsedTurnServers = JSON.parse(TURN_SERVERS);
+    if (Array.isArray(parsedTurnServers)) {
+      runtimeConfig.TURN_SERVERS = parsedTurnServers;
+    } else {
+      console.warn('Warning: TURN_SERVERS must be a JSON array of RTCIceServer entries, skipping');
+    }
   } catch (e) {
     console.warn('Warning: Invalid TURN_SERVERS JSON format, skipping');
   }
@@ -37,10 +46,7 @@ if (TURN_SERVERS) {
 const content = `// Auto-generated configuration for Cloudflare Pages
 // Generated at: ${new Date().toISOString()}
 
-window.MINDLINE_ENV = {
-  SIGNALING_SERVER: '${SIGNALING_SERVER}',
-  USE_SSL: ${USE_SSL}${turnServersConfig}
-};
+window.MINDLINE_ENV = ${JSON.stringify(runtimeConfig, null, 2)};
 
 console.log('Loaded MINDLINE_ENV configuration:', window.MINDLINE_ENV);
 `;

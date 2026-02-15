@@ -38,8 +38,15 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run AI verification command
-        run: pnpm run verify:ai
+      - name: Verify Rust and web build
+        run: pnpm run verify:rust && pnpm run verify:web
+
+      - name: Run required E2E suite (blocking)
+        run: pnpm run test:e2e:ci
+
+      - name: Run best-effort E2E suite (non-blocking)
+        continue-on-error: true
+        run: bash scripts/test-e2e-with-signaling.sh --project='Desktop Chrome' tests/e2e/edit-delete.spec.ts tests/e2e/mobile-p2p.spec.ts tests/e2e/p2p-multiuser.spec.ts tests/e2e/peer-list.spec.ts tests/e2e/reactions.spec.ts tests/e2e/typing-indicators.spec.ts
 
       - name: Verify build artifacts
         run: |

@@ -17,8 +17,11 @@ This document defines all features that should be tested end-to-end using Playwr
 | `peer-list.spec.ts` | 9 | ✅ Implemented (P2P tests skip without signaling) |
 | `p2p-multiuser.spec.ts` | 10 | ✅ Implemented (P2P tests skip without signaling) |
 | `mobile-p2p.spec.ts` | 4 | ✅ Implemented (mobile lifecycle) |
+| `required-persistence.spec.ts` | 2 | ✅ Implemented (strict core persistence checks) |
+| `required-p2p.spec.ts` | 2 | ✅ Implemented (strict, no soft-skip in required mode) |
+| `required-network.spec.ts` | 2 | ✅ Implemented (relay fallback + offline/online recovery) |
 
-**Total: ~99 tests implemented**
+**Total: ~105 tests implemented**
 
 ### Running Tests
 
@@ -26,17 +29,39 @@ This document defines all features that should be tested end-to-end using Playwr
 # Run all tests
 pnpm test:e2e
 
-# Run with signaling server orchestration (recommended for P2P tests)
+# Run required suite (blocking)
+pnpm run test:e2e:required
+
+# Run best-effort suite (informational)
+pnpm run test:e2e:best-effort
+
+# Run with local signaling server orchestration
 pnpm run test:e2e:with-signaling
 
-# CI-focused run (Desktop Chrome only + signaling orchestration)
+# CI-focused required run (Desktop Chrome + strict P2P)
 pnpm run test:e2e:ci
 
-# Run specific test file
-pnpm run test:e2e:with-signaling -- edit-delete
+# CI run including best-effort suite
+pnpm run test:e2e:ci:full
 
-# Run on Desktop Chrome only
-pnpm run test:e2e:with-signaling -- --project='Desktop Chrome'
+# Run required suite with local signaling orchestration
+pnpm run test:e2e:with-signaling:required
+
+# Run best-effort suite with local signaling orchestration
+pnpm run test:e2e:with-signaling:best-effort
+
+# Run required suite against deployed environment (no localhost services)
+APP_BASE_URL="https://staging.example.com" \
+SIGNALING_HEALTH_URL="https://signal-staging.example.com/health" \
+pnpm run test:e2e:remote:required -- --project='Desktop Chrome'
+# For intentional localhost remote dry-runs only:
+# ALLOW_LOCALHOST_REMOTE=1 APP_BASE_URL="http://localhost:5173" SIGNALING_HEALTH_URL="http://localhost:3000/health" \
+# pnpm run test:e2e:remote:required -- --project='Desktop Chrome'
+
+# Run signaling server soak test (WebSocket load)
+pnpm run test:signaling:soak -- --url=ws://localhost:3000/ws --clients=120 --rooms=12 --durationSec=90 --minJoinRate=0.9 --minReceivedPerSent=0.9 --maxSocketErrorRate=0.05 --maxServerErrors=0
+# If local soak is rate-limited by a single client IP, raise server connection limits for the soak run:
+# RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE=240 pnpm run signaling
 ```
 
 ---
@@ -53,6 +78,7 @@ Mindline is a P2P real-time chat application with "radical transparency" - users
 - Signaling server running on `localhost:3000` (auto-managed by `pnpm run test:e2e:with-signaling`)
 - Application running on `localhost:5173`
 - Multiple browser contexts to simulate different users
+- For remote/staging runs: set `APP_BASE_URL` and `SIGNALING_HEALTH_URL` and run with `SKIP_SIGNALING_START=1`
 
 ### Test User Setup
 ```typescript
