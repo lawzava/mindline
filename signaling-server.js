@@ -43,7 +43,10 @@ let totalConnections = 0;
 // Rate limiting configuration
 const RATE_LIMITS = {
   messagesPerSecond: readPositiveIntEnv('RATE_LIMIT_MESSAGES_PER_SECOND', 50),
-  connectionAttempts: readPositiveIntEnv('RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE', 30),
+  connectionAttempts: readPositiveIntEnv(
+    'RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE',
+    process.env.NODE_ENV === 'production' ? 240 : 30
+  ),
   roomJoinsPerMinute: readPositiveIntEnv('RATE_LIMIT_ROOM_JOINS_PER_MINUTE', 30)
 };
 

@@ -5,7 +5,10 @@ module.exports = {
     env: {
       PORT: 3000,
       HOST: '0.0.0.0',
-      NODE_ENV: 'production'
+      NODE_ENV: 'production',
+      RATE_LIMIT_MESSAGES_PER_SECOND: 50,
+      RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE: 240,
+      RATE_LIMIT_ROOM_JOINS_PER_MINUTE: 30
     },
     instances: 1,
     exec_mode: 'fork',
