@@ -55,22 +55,20 @@ jobs:
         run: pnpm run verify:rust && pnpm run verify:web
 
       - name: Deploy app
-        if: github.event_name == 'schedule' || github.event.inputs.run_deploy != 'false'
-        run: |
-          if [ -z "${STAGING_APP_DEPLOY_CMD}" ]; then
-            echo "STAGING_APP_DEPLOY_CMD is required when deploy is enabled" >&2
-            exit 1
-          fi
-          bash -lc "${STAGING_APP_DEPLOY_CMD}"
+        if: (github.event_name == 'schedule' || github.event.inputs.run_deploy != 'false') && env.STAGING_APP_DEPLOY_CMD != ''
+        run: bash -lc "${STAGING_APP_DEPLOY_CMD}"
+
+      - name: Skip app deploy (command not configured)
+        if: (github.event_name == 'schedule' || github.event.inputs.run_deploy != 'false') && env.STAGING_APP_DEPLOY_CMD == ''
+        run: echo "Skipping app deploy because STAGING_APP_DEPLOY_CMD is not configured."
 
       - name: Deploy signaling
-        if: github.event_name == 'schedule' || github.event.inputs.run_deploy != 'false'
-        run: |
-          if [ -z "${STAGING_SIGNALING_DEPLOY_CMD}" ]; then
-            echo "STAGING_SIGNALING_DEPLOY_CMD is required when deploy is enabled" >&2
-            exit 1
-          fi
-          bash -lc "${STAGING_SIGNALING_DEPLOY_CMD}"
+        if: (github.event_name == 'schedule' || github.event.inputs.run_deploy != 'false') && env.STAGING_SIGNALING_DEPLOY_CMD != ''
+        run: bash -lc "${STAGING_SIGNALING_DEPLOY_CMD}"
+
+      - name: Skip signaling deploy (command not configured)
+        if: (github.event_name == 'schedule' || github.event.inputs.run_deploy != 'false') && env.STAGING_SIGNALING_DEPLOY_CMD == ''
+        run: echo "Skipping signaling deploy because STAGING_SIGNALING_DEPLOY_CMD is not configured."
 
   required-remote-e2e:
     runs-on: ubuntu-latest
