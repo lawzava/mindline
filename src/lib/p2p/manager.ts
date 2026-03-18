@@ -361,9 +361,9 @@ export function broadcastReaction(messageId: string, reaction: string, action: '
 }
 
 /**
- * Request message synchronization from peers
+ * Request message synchronization from a specific peer or all peers
  */
-function requestSync(roomId: string): void {
+function requestSync(roomId: string, targetPeerId?: string): void {
 	if (!p2pConnection || !isWasmReady()) {
 		return;
 	}
@@ -385,17 +385,22 @@ function requestSync(roomId: string): void {
 			requesterId: userState.id
 		};
 
-		p2pConnection.broadcast(syncRequest);
-		console.log('[P2P Manager] Sync request sent for room:', roomId);
+		if (targetPeerId) {
+			p2pConnection.sendToPeer(targetPeerId, syncRequest);
+			console.log(`[P2P Manager] Sync request sent to peer ${targetPeerId} for room:`, roomId);
+		} else {
+			p2pConnection.broadcast(syncRequest);
+			console.log('[P2P Manager] Sync request broadcasted for room:', roomId);
+		}
 	} catch (error) {
 		console.error('[P2P Manager] Failed to request sync:', error);
 	}
 }
 
 /**
- * Broadcast user connected notification
+ * Send user connected notification to a specific peer or all peers
  */
-function broadcastUserConnected(): void {
+function sendUserConnected(targetPeerId?: string): void {
 	const userState = get(user);
 
 	if (!p2pConnection || !userState.initialized) {
@@ -409,7 +414,11 @@ function broadcastUserConnected(): void {
 		timestamp: Date.now()
 	};
 
-	p2pConnection.broadcast(message);
+	if (targetPeerId) {
+		p2pConnection.sendToPeer(targetPeerId, message);
+	} else {
+		p2pConnection.broadcast(message);
+	}
 }
 
 /**
