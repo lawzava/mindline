@@ -159,15 +159,15 @@ function checkConnectionRateLimit(ip) {
 }
 
 /**
- * Check if client has exceeded room join rate limit
+ * Check if IP has exceeded room join rate limit
  */
-function checkRoomJoinRateLimit(clientId) {
+function checkRoomJoinRateLimit(ip) {
   const now = Date.now();
-  const limit = rateLimitStore.roomJoins.get(clientId);
+  const limit = rateLimitStore.roomJoins.get(ip);
 
   if (!limit || now > limit.resetTime) {
     // Reset or create new limit
-    rateLimitStore.roomJoins.set(clientId, {
+    rateLimitStore.roomJoins.set(ip, {
       count: 1,
       resetTime: now + 60000 // 1 minute window
     });
@@ -250,8 +250,8 @@ wss.on('connection', (ws, req) => {
       switch (data.type) {
         case 'join':
           // Check room join rate limit
-          if (!checkRoomJoinRateLimit(serverClientId)) {
-            console.log(`⚠️ Room join rate limit exceeded for client: ${serverClientId}`);
+          if (!checkRoomJoinRateLimit(clientIP)) {
+            console.log(`⚠️ Room join rate limit exceeded for IP: ${clientIP}`);
             ws.send(JSON.stringify({
               type: 'error',
               message: 'Too many room join attempts. Please wait.'
