@@ -1119,13 +1119,15 @@ export class P2PConnection {
 		if (pc && candidates && candidates.length > 0) {
 			console.log(`[P2P] Processing ${candidates.length} queued ICE candidates for ${peerId}`);
 
-			for (const candidate of candidates) {
-				try {
-					await pc.addIceCandidate(new RTCIceCandidate(candidate));
-				} catch (error) {
-					console.error('[P2P] Error adding queued ICE candidate:', error);
-				}
-			}
+			await Promise.allSettled(
+				candidates.map(async (candidate) => {
+					try {
+						await pc.addIceCandidate(new RTCIceCandidate(candidate));
+					} catch (error) {
+						console.error('[P2P] Error adding queued ICE candidate:', error);
+					}
+				})
+			);
 
 			this.pendingCandidates.delete(peerId);
 		}
