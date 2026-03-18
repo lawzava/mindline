@@ -73,7 +73,7 @@ export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void 
 				console.warn(`[P2P Handler] Unknown message type: ${(message as TypedP2PMessage).type}`);
 		}
 	} catch (error) {
-		console.error('[P2P Handler] Error routing message:', error);
+		console.error('[P2P Handlers] Error routing message:', error, message);
 	}
 }
 
