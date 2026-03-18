@@ -576,6 +576,16 @@ export function setupNetworkHandler(roomId: string, config?: Partial<P2PConfig>)
 	}
 
 	networkHandler = async () => {
+
+		// Give network a moment to stabilize
+		await new Promise((r) => setTimeout(r, 1000));
+
+		// Force reconnection on network change
+		emitToast('info', 'Network changed, reconnecting...');
+		try {
+			await reconnectP2P();
+		} catch (error) {
+			console.error('[P2P Manager] Reconnect after network change failed:', error);
 		}
 	};
 
