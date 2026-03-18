@@ -220,6 +220,34 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 }
 
 /**
+ * Fast equality check for message reactions to avoid JSON.stringify overhead
+ */
+function areReactionsEqual(
+	r1: Record<string, { users: string[]; count: number }>,
+	r2: Record<string, { users: string[]; count: number }>
+): boolean {
+	if (r1 === r2) return true;
+	if (!r1 || !r2) return false;
+
+	const keys1 = Object.keys(r1);
+	const keys2 = Object.keys(r2);
+	if (keys1.length !== keys2.length) return false;
+
+	for (let i = 0; i < keys1.length; i++) {
+		const key = keys1[i];
+		const val1 = r1[key];
+		const val2 = r2[key];
+
+		if (!val2 || val1.count !== val2.count || val1.users.length !== val2.users.length) return false;
+
+		for (let j = 0; j < val1.users.length; j++) {
+			if (val1.users[j] !== val2.users[j]) return false;
+		}
+	}
+	return true;
+}
+
+/**
  * Handle sync response from peer
  */
 function handleSyncResponse(message: SyncResponseMessage, peerId: string): void {
@@ -313,7 +341,7 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 			// Also sync reactions if synced has more/different reactions
 			if (msg.reactions && Object.keys(msg.reactions).length > 0) {
 				const mergedReactions = { ...existingMsg.reactions, ...msg.reactions };
-				if (JSON.stringify(mergedReactions) !== JSON.stringify(existingMsg.reactions)) {
+				if (!areReactionsEqual(mergedReactions, existingMsg.reactions)) {
 					messages.updateMessage(targetRoomId, msg.id, { reactions: mergedReactions });
 				}
 			}
