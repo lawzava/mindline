@@ -38,18 +38,15 @@ let currentInitRoomId: string | null = null;
  * Initialize P2P connection for a room
  */
 export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>): Promise<void> {
-	console.log('[P2P Manager] Initializing P2P for room:', roomId);
 	lastP2PConfig = config;
 
 	// Prevent concurrent initialization for the same room
 	if (isInitializing && currentInitRoomId === roomId) {
-		console.log('[P2P Manager] Already initializing for this room, skipping duplicate call');
 		return;
 	}
 
 	// Wait for any in-progress disconnect to complete
 	if (disconnectPromise) {
-		console.log('[P2P Manager] Waiting for previous disconnect to complete...');
 		await disconnectPromise;
 	}
 
@@ -86,7 +83,6 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 	});
 
 	p2pConnection.onPeerConnected((peerId) => {
-		console.log('[P2P Manager] Peer connected:', peerId);
 		connection.addPeer(peerId);
 
 		// Announce our connection IMMEDIATELY so peer learns our name right away
@@ -101,7 +97,6 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 	});
 
 	p2pConnection.onPeerDisconnected((peerId) => {
-		console.log('[P2P Manager] Peer disconnected:', peerId);
 
 		// Get peer name before removing (for friendly notification)
 		const peerName = connection.getPeerName(peerId);
@@ -123,7 +118,6 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		// Don't trigger reconnection if we're intentionally disconnecting
 		// This prevents infinite reconnection loops when switching rooms
 		if (isDisconnecting) {
-			console.log('[P2P Manager] Ignoring connection loss during intentional disconnect');
 			return;
 		}
 
@@ -136,7 +130,6 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		await p2pConnection.connect();
 		connection.setStatus('connected');
 		reconnectAttempts = 0;
-		console.log('[P2P Manager] Connected successfully');
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Connection failed';
 		console.error('[P2P Manager] Connection failed:', errorMessage);
@@ -153,7 +146,6 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
  * Disconnect from P2P network (sync version for compatibility)
  */
 export function disconnectP2P(): void {
-	console.log('[P2P Manager] Disconnecting (sync)');
 
 	// Mark as disconnecting
 	isDisconnecting = true;
@@ -181,7 +173,6 @@ export function disconnectP2P(): void {
  * Disconnect from P2P network (async version with proper cleanup wait)
  */
 async function disconnectP2PAsync(): Promise<void> {
-	console.log('[P2P Manager] Disconnecting (async)');
 
 	// Prevent concurrent disconnects
 	if (isDisconnecting && disconnectPromise) {
@@ -208,7 +199,6 @@ async function disconnectP2PAsync(): Promise<void> {
 		setTimeout(() => {
 			isDisconnecting = false;
 			disconnectPromise = null;
-			console.log('[P2P Manager] Disconnect cleanup complete');
 			resolve();
 		}, DISCONNECT_CLEANUP_DELAY);
 	});
@@ -263,7 +253,6 @@ export function broadcastChat(content: string, messageId: string): void {
 	};
 
 	const deliveredCount = p2pConnection.broadcast(message);
-	console.log(`[P2P Manager] Chat broadcast to ${deliveredCount} peers, tracking ${connectedPeers.length}`);
 }
 
 /**
@@ -386,7 +375,6 @@ function requestSync(roomId: string): void {
 		};
 
 		p2pConnection.broadcast(syncRequest);
-		console.log('[P2P Manager] Sync request sent for room:', roomId);
 	} catch (error) {
 		console.error('[P2P Manager] Failed to request sync:', error);
 	}
@@ -425,7 +413,6 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 		return;
 	}
 
-	console.log('[P2P Manager] Starting reconnection with exponential backoff...');
 
 	const attemptReconnect = async () => {
 		if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
@@ -443,7 +430,6 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 
 		// Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s
 		const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
-		console.log(`[P2P Manager] Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
 
 		// Update store with reconnection state (before waiting)
 		connection.setReconnecting(true, reconnectAttempts, delay);
@@ -458,15 +444,11 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 			}
 			connection.clearReconnection();
 			emitToast('success', 'Reconnected successfully');
-			console.log('[P2P Manager] Reconnection successful');
 		} catch (error) {
 			console.warn(`[P2P Manager] Reconnection attempt ${reconnectAttempts} failed:`, error);
 			// Schedule next attempt
 			if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
 				reconnectInterval = setTimeout(attemptReconnect, 0);
-			} else {
-				connection.clearReconnection();
-			}
 		}
 	};
 
@@ -530,22 +512,18 @@ export function setupVisibilityHandler(roomId: string, config?: Partial<P2PConfi
 
 	visibilityHandler = async () => {
 		if (document.visibilityState === 'hidden') {
-			console.log('[P2P Manager] App backgrounded - recording time');
 			lastHiddenTime = Date.now();
 		} else if (document.visibilityState === 'visible') {
 			const hiddenDuration = Date.now() - lastHiddenTime;
-			console.log(`[P2P Manager] App foregrounded after ${hiddenDuration}ms`);
 
 			// Only reconnect if WebSocket is actually disconnected
 			// Don't reconnect just because we were hidden - the connection might still be working
 			const wsConnected = p2pConnection?.isWebSocketConnected?.() ?? false;
 			const hasDataChannels = (p2pConnection?.getConnectedPeers()?.length ?? 0) > 0;
 
-			console.log(`[P2P Manager] Connection state: ws=${wsConnected}, channels=${hasDataChannels}, storeConnected=${isP2PConnected()}`);
 
 			// Only reconnect if WebSocket is actually dead AND we were hidden for a while
 			if (!wsConnected && hiddenDuration > STALE_CONNECTION_THRESHOLD) {
-				console.log('[P2P Manager] WebSocket disconnected after long background, triggering reconnect');
 				emitToast('info', 'Reconnecting...');
 				try {
 					await reconnectP2P();
@@ -554,21 +532,16 @@ export function setupVisibilityHandler(roomId: string, config?: Partial<P2PConfi
 				}
 			} else if (!wsConnected && !hasDataChannels) {
 				// WebSocket dead and no data channels - definitely need to reconnect
-				console.log('[P2P Manager] No active connections, triggering reconnect');
 				emitToast('info', 'Reconnecting...');
 				try {
 					await reconnectP2P();
 				} catch (error) {
 					console.error('[P2P Manager] Reconnect failed:', error);
 				}
-			} else {
-				console.log('[P2P Manager] Connection still alive, not reconnecting');
-			}
 		}
 	};
 
 	document.addEventListener('visibilitychange', visibilityHandler);
-	console.log('[P2P Manager] Visibility handler registered');
 }
 
 /**
@@ -578,7 +551,6 @@ export function cleanupVisibilityHandler(): void {
 	if (visibilityHandler && typeof document !== 'undefined') {
 		document.removeEventListener('visibilitychange', visibilityHandler);
 		visibilityHandler = null;
-		console.log('[P2P Manager] Visibility handler removed');
 	}
 }
 
@@ -591,7 +563,6 @@ export function setupNetworkHandler(roomId: string, config?: Partial<P2PConfig>)
 	const connection = (navigator as unknown as { connection?: { addEventListener: (type: string, listener: () => void) => void; removeEventListener: (type: string, listener: () => void) => void; type?: string; effectiveType?: string; downlink?: number } }).connection;
 
 	if (!connection) {
-		console.log('[P2P Manager] Network Information API not available');
 		return;
 	}
 
@@ -601,11 +572,6 @@ export function setupNetworkHandler(roomId: string, config?: Partial<P2PConfig>)
 	}
 
 	networkHandler = async () => {
-		console.log('[P2P Manager] Network change detected:', {
-			type: connection.type,
-			effectiveType: connection.effectiveType,
-			downlink: connection.downlink
-		});
 
 		// Give network a moment to stabilize
 		await new Promise((r) => setTimeout(r, 1000));
@@ -620,7 +586,6 @@ export function setupNetworkHandler(roomId: string, config?: Partial<P2PConfig>)
 	};
 
 	connection.addEventListener('change', networkHandler);
-	console.log('[P2P Manager] Network handler registered');
 }
 
 /**
@@ -633,7 +598,6 @@ export function cleanupNetworkHandler(): void {
 			connection.removeEventListener('change', networkHandler);
 		}
 		networkHandler = null;
-		console.log('[P2P Manager] Network handler removed');
 	}
 }
 
@@ -645,7 +609,6 @@ export function setupPageLifecycleHandlers(): void {
 
 	// pagehide is more reliable than beforeunload on mobile
 	const handlePageHide = (event: PageTransitionEvent) => {
-		console.log('[P2P Manager] Page hide event, persisted:', event.persisted);
 		if (!event.persisted) {
 			// Page is being unloaded, not just hidden for bfcache
 			disconnectP2P();
@@ -654,7 +617,6 @@ export function setupPageLifecycleHandlers(): void {
 
 	// beforeunload as fallback for desktop browsers
 	const handleBeforeUnload = () => {
-		console.log('[P2P Manager] beforeunload event');
 		disconnectP2P();
 	};
 
@@ -667,7 +629,6 @@ export function setupPageLifecycleHandlers(): void {
 		window.removeEventListener('beforeunload', handleBeforeUnload);
 	};
 
-	console.log('[P2P Manager] Page lifecycle handlers registered');
 }
 
 /**
@@ -677,6 +638,5 @@ export function cleanupPageLifecycleHandlers(): void {
 	if (pageLifecycleCleanup) {
 		pageLifecycleCleanup();
 		pageLifecycleCleanup = null;
-		console.log('[P2P Manager] Page lifecycle handlers removed');
 	}
 }
