@@ -220,52 +220,40 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 }
 
 /**
- * Handle sync response from peer
+ * Helper to decrypt synced messages if they are encrypted
  */
-function handleSyncResponse(message: SyncResponseMessage, peerId: string): void {
-	const { roomId, messages: syncedMessages, encrypted } = message;
-	const targetRoomId = roomId || get(currentRoomId);
-
-	if (!targetRoomId) {
-		console.warn('[P2P Handler] No room ID for sync response');
-		return;
+function decryptSyncedMessages(syncedMessages: Message[], encrypted?: boolean): Message[] {
+	if (!encrypted || !isWasmReady()) {
+		return syncedMessages;
 	}
 
-	if (!syncedMessages || !Array.isArray(syncedMessages) || syncedMessages.length === 0) {
-		return;
-	}
+	return syncedMessages.map((msg) => {
+		// Skip system messages or already-decrypted content
+		if (msg.message_type === 'Deleted' || !(msg as Message & { encrypted?: boolean }).encrypted) {
+			return msg;
+		}
 
-	const totalMessages = syncedMessages.length;
+		try {
+			const decryptedContent = wasm.decryptMessageContent(msg.content);
+			return {
+				...msg,
+				content: decryptedContent || msg.content,
+				encrypted: false
+			};
+		} catch (error) {
+			console.warn(`[P2P Handler] Failed to decrypt synced message ${msg.id}:`, error);
+			return {
+				...msg,
+				content: '[Encrypted message - unable to decrypt]'
+			};
+		}
+	});
+}
 
-	// Start sync tracking
-	connection.startSync(peerId);
-
-	// Decrypt messages if they are encrypted
-	let processedMessages = syncedMessages;
-	if (encrypted && isWasmReady()) {
-		processedMessages = syncedMessages.map((msg) => {
-			// Skip system messages or already-decrypted content
-			if (msg.message_type === 'Deleted' || !(msg as Message & { encrypted?: boolean }).encrypted) {
-				return msg;
-			}
-
-			try {
-				const decryptedContent = wasm.decryptMessageContent(msg.content);
-				return {
-					...msg,
-					content: decryptedContent || msg.content,
-					encrypted: false
-				};
-			} catch (error) {
-				console.warn(`[P2P Handler] Failed to decrypt synced message ${msg.id}:`, error);
-				return {
-					...msg,
-					content: '[Encrypted message - unable to decrypt]'
-				};
-			}
-		});
-	}
-
+/**
+ * Helper to process and store synced messages
+ */
+function processSyncedMessages(targetRoomId: string, processedMessages: Message[], totalMessages: number): number {
 	// Get existing messages to check for duplicates and state
 	const existingMessages = messages.getRoomMessages(targetRoomId);
 	const existingById = new Map(existingMessages.map((msg) => [msg.id, msg]));
@@ -324,6 +312,36 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 			connection.updateSyncProgress(newCount, totalMessages);
 		}
 	}
+
+	return newCount;
+}
+
+/**
+ * Handle sync response from peer
+ */
+function handleSyncResponse(message: SyncResponseMessage, peerId: string): void {
+	const { roomId, messages: syncedMessages, encrypted } = message;
+	const targetRoomId = roomId || get(currentRoomId);
+
+	if (!targetRoomId) {
+		console.warn('[P2P Handler] No room ID for sync response');
+		return;
+	}
+
+	if (!syncedMessages || !Array.isArray(syncedMessages) || syncedMessages.length === 0) {
+		return;
+	}
+
+	const totalMessages = syncedMessages.length;
+
+	// Start sync tracking
+	connection.startSync(peerId);
+
+	// Decrypt messages if they are encrypted
+	const processedMessages = decryptSyncedMessages(syncedMessages, encrypted);
+
+	// Process and store synced messages
+	const newCount = processSyncedMessages(targetRoomId, processedMessages, totalMessages);
 
 	if (newCount > 0) {
 		// Save to WASM storage
