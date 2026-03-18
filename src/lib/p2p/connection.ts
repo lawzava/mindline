@@ -204,9 +204,7 @@ export class P2PConnection {
 		}
 
 		this.pendingRelayMessages.delete(peerId);
-		for (const message of pending) {
-			await this.sendRelay(message, peerId);
-		}
+		await Promise.all(pending.map((message) => this.sendRelay(message, peerId)));
 	}
 
 	private isEncryptedRelayPayload(payload: RelayPayload): payload is EncryptedRelayPayload {
