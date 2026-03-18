@@ -202,6 +202,43 @@ function debugString(val) {
     // TODO we could test for more things here, like `Set`s and `Map`s.
     return className;
 }
+
+function takeFromExternrefTable0(idx) {
+    const value = wasm.__wbindgen_export_5.get(idx);
+    wasm.__externref_table_dealloc(idx);
+    return value;
+}
+/**
+ * Load room encryption key from localStorage
+ * Returns true if key was loaded, false if no key exists
+ * @param {string} room_id
+ * @returns {boolean}
+ */
+export function load_room_key_from_storage(room_id) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.load_room_key_from_storage(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] !== 0;
+}
+
+/**
+ * Check if room has a key in localStorage
+ * @param {string} room_id
+ * @returns {boolean}
+ */
+export function has_room_key_in_storage(room_id) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.has_room_key_in_storage(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] !== 0;
+}
+
 /**
  * Check if room has a key in memory
  * @param {string} room_id
@@ -212,6 +249,34 @@ export function has_room_key(room_id) {
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.has_room_key(ptr0, len0);
     return ret !== 0;
+}
+
+/**
+ * Initialize room encryption - loads from storage or generates new key
+ * @param {string} room_id
+ * @returns {boolean}
+ */
+export function initialize_room_encryption(room_id) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.initialize_room_encryption(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] !== 0;
+}
+
+/**
+ * Save room encryption key to localStorage
+ * @param {string} room_id
+ */
+export function save_room_key_to_storage(room_id) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.save_room_key_to_storage(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
 }
 
 /**
@@ -243,98 +308,28 @@ export function encrypt_message_content(room_id, content) {
     return ret;
 }
 
-function takeFromExternrefTable0(idx) {
-    const value = wasm.__wbindgen_export_5.get(idx);
-    wasm.__externref_table_dealloc(idx);
-    return value;
-}
 /**
- * Initialize room encryption - loads from storage or generates new key
- * @param {string} room_id
- * @returns {boolean}
+ * @param {string} label
  */
-export function initialize_room_encryption(room_id) {
-    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+export function start_log_group(label) {
+    const ptr0 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.initialize_room_encryption(ptr0, len0);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return ret[0] !== 0;
-}
-
-/**
- * Save room encryption key to localStorage
- * @param {string} room_id
- */
-export function save_room_key_to_storage(room_id) {
-    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.save_room_key_to_storage(ptr0, len0);
+    const ret = wasm.start_log_group(ptr0, len0);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
-}
-
-/**
- * Check if room has a key in localStorage
- * @param {string} room_id
- * @returns {boolean}
- */
-export function has_room_key_in_storage(room_id) {
-    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.has_room_key_in_storage(ptr0, len0);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return ret[0] !== 0;
-}
-
-/**
- * Load room encryption key from localStorage
- * Returns true if key was loaded, false if no key exists
- * @param {string} room_id
- * @returns {boolean}
- */
-export function load_room_key_from_storage(room_id) {
-    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.load_room_key_from_storage(ptr0, len0);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return ret[0] !== 0;
 }
 
 /**
  * @param {string} component
  * @param {string} message
  */
-export function log_info(component, message) {
+export function log_debug(component, message) {
     const ptr0 = passStringToWasm0(component, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
-    wasm.log_info(ptr0, len0, ptr1, len1);
-}
-
-/**
- * @param {string | null} [user_id]
- * @param {string | null} [room_id]
- * @param {string | null} [component]
- */
-export function set_log_context(user_id, room_id, component) {
-    var ptr0 = isLikeNone(user_id) ? 0 : passStringToWasm0(user_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    var len0 = WASM_VECTOR_LEN;
-    var ptr1 = isLikeNone(room_id) ? 0 : passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    var len1 = WASM_VECTOR_LEN;
-    var ptr2 = isLikeNone(component) ? 0 : passStringToWasm0(component, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    var len2 = WASM_VECTOR_LEN;
-    const ret = wasm.set_log_context(ptr0, len0, ptr1, len1, ptr2, len2);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
+    wasm.log_debug(ptr0, len0, ptr1, len1);
 }
 
 /**
@@ -350,28 +345,15 @@ export function log_error(component, message) {
 }
 
 /**
- * @param {number} max_entries
- * @param {boolean} console_output
- * @param {boolean} buffer_logs
- * @param {boolean} auto_export_errors
+ * @param {string} query
+ * @param {number | null} [limit]
+ * @returns {any}
  */
-export function configure_logger(max_entries, console_output, buffer_logs, auto_export_errors) {
-    const ret = wasm.configure_logger(max_entries, console_output, buffer_logs, auto_export_errors);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
- * @param {string} label
- */
-export function start_log_group(label) {
-    const ptr0 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+export function search_logs(query, limit) {
+    const ptr0 = passStringToWasm0(query, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.start_log_group(ptr0, len0);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
+    const ret = wasm.search_logs(ptr0, len0, isLikeNone(limit) ? 0x100000001 : (limit) >>> 0);
+    return ret;
 }
 
 /**
@@ -379,13 +361,6 @@ export function start_log_group(label) {
  */
 export function log_table(data) {
     const ret = wasm.log_table(data);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-export function enable_debug_logging() {
-    const ret = wasm.enable_debug_logging();
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
@@ -411,42 +386,41 @@ export function export_logs_json(filter_json) {
 }
 
 /**
- * @param {number} last_n_minutes
- * @returns {any}
+ * @param {boolean} is_development
+ * @param {boolean} debug_enabled
  */
-export function get_error_summary(last_n_minutes) {
-    const ret = wasm.get_error_summary(last_n_minutes);
-    return ret;
+export function initialize_logger(is_development, debug_enabled) {
+    const ret = wasm.initialize_logger(is_development, debug_enabled);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
 }
 
-export function disable_debug_logging() {
-    const ret = wasm.disable_debug_logging();
+export function end_log_group() {
+    const ret = wasm.end_log_group();
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
 /**
- * @param {string} component
- * @param {string} message
+ * @param {number} max_entries
+ * @param {boolean} console_output
+ * @param {boolean} buffer_logs
+ * @param {boolean} auto_export_errors
  */
-export function log_warn(component, message) {
-    const ptr0 = passStringToWasm0(component, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    wasm.log_warn(ptr0, len0, ptr1, len1);
+export function configure_logger(max_entries, console_output, buffer_logs, auto_export_errors) {
+    const ret = wasm.configure_logger(max_entries, console_output, buffer_logs, auto_export_errors);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
 }
 
-/**
- * @param {string | null} [filter_json]
- * @returns {any}
- */
-export function get_log_entries(filter_json) {
-    var ptr0 = isLikeNone(filter_json) ? 0 : passStringToWasm0(filter_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    var len0 = WASM_VECTOR_LEN;
-    const ret = wasm.get_log_entries(ptr0, len0);
-    return ret;
+export function enable_debug_logging() {
+    const ret = wasm.enable_debug_logging();
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
 }
 
 /**
@@ -458,33 +432,41 @@ export function get_log_statistics() {
 }
 
 /**
- * @param {boolean} is_development
- * @param {boolean} debug_enabled
+ * @param {string | null} [user_id]
+ * @param {string | null} [room_id]
+ * @param {string | null} [component]
  */
-export function initialize_logger(is_development, debug_enabled) {
-    const ret = wasm.initialize_logger(is_development, debug_enabled);
+export function set_log_context(user_id, room_id, component) {
+    var ptr0 = isLikeNone(user_id) ? 0 : passStringToWasm0(user_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    var len0 = WASM_VECTOR_LEN;
+    var ptr1 = isLikeNone(room_id) ? 0 : passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    var len1 = WASM_VECTOR_LEN;
+    var ptr2 = isLikeNone(component) ? 0 : passStringToWasm0(component, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    var len2 = WASM_VECTOR_LEN;
+    const ret = wasm.set_log_context(ptr0, len0, ptr1, len1, ptr2, len2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
 /**
- * @param {string} component
- * @param {string} message
+ * @param {number} last_n_minutes
+ * @returns {any}
  */
-export function log_debug(component, message) {
-    const ptr0 = passStringToWasm0(component, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    wasm.log_debug(ptr0, len0, ptr1, len1);
+export function get_error_summary(last_n_minutes) {
+    const ret = wasm.get_error_summary(last_n_minutes);
+    return ret;
 }
 
-export function end_log_group() {
-    const ret = wasm.end_log_group();
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
+/**
+ * @param {string | null} [filter_json]
+ * @returns {any}
+ */
+export function get_log_entries(filter_json) {
+    var ptr0 = isLikeNone(filter_json) ? 0 : passStringToWasm0(filter_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    var len0 = WASM_VECTOR_LEN;
+    const ret = wasm.get_log_entries(ptr0, len0);
+    return ret;
 }
 
 /**
@@ -509,24 +491,63 @@ export function log_with_data(level, component, message, data) {
 }
 
 /**
- * @param {string} query
- * @param {number | null} [limit]
- * @returns {any}
+ * @param {string} component
+ * @param {string} message
  */
-export function search_logs(query, limit) {
-    const ptr0 = passStringToWasm0(query, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+export function log_warn(component, message) {
+    const ptr0 = passStringToWasm0(component, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.search_logs(ptr0, len0, isLikeNone(limit) ? 0x100000001 : (limit) >>> 0);
-    return ret;
+    const ptr1 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.log_warn(ptr0, len0, ptr1, len1);
+}
+
+export function disable_debug_logging() {
+    const ret = wasm.disable_debug_logging();
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
 }
 
 /**
- * @param {string} user_id
+ * @param {string} component
+ * @param {string} message
  */
-export function set_message_manager_user(user_id) {
-    const ptr0 = passStringToWasm0(user_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+export function log_info(component, message) {
+    const ptr0 = passStringToWasm0(component, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.set_message_manager_user(ptr0, len0);
+    const ptr1 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.log_info(ptr0, len0, ptr1, len1);
+}
+
+/**
+ * @param {string} room_id
+ * @returns {boolean}
+ */
+export function load_room_messages_from_storage(room_id) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.load_room_messages_from_storage(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] !== 0;
+}
+
+/**
+ * @param {string} room_id
+ * @param {string} message_id
+ * @param {string} new_content
+ */
+export function edit_message(room_id, message_id, new_content) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(message_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(new_content, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.edit_message(ptr0, len0, ptr1, len1, ptr2, len2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
@@ -555,52 +576,11 @@ export function remove_reaction(room_id, message_id, emoji, user_id) {
 
 /**
  * @param {string} room_id
- * @returns {boolean}
  */
-export function load_room_messages_from_storage(room_id) {
+export function save_room_messages_to_storage(room_id) {
     const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.load_room_messages_from_storage(ptr0, len0);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return ret[0] !== 0;
-}
-
-/**
- * @param {any} request_data
- * @returns {any}
- */
-export function handle_sync_request(request_data) {
-    const ret = wasm.handle_sync_request(request_data);
-    return ret;
-}
-
-/**
- * @param {string} room_id
- * @param {number | null} [limit]
- * @returns {any}
- */
-export function get_room_messages(room_id, limit) {
-    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.get_room_messages(ptr0, len0, isLikeNone(limit) ? 0x100000001 : (limit) >>> 0);
-    return ret;
-}
-
-/**
- * @param {string} room_id
- * @param {string} message_id
- * @param {string} new_content
- */
-export function edit_message(room_id, message_id, new_content) {
-    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(message_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passStringToWasm0(new_content, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.edit_message(ptr0, len0, ptr1, len1, ptr2, len2);
+    const ret = wasm.save_room_messages_to_storage(ptr0, len0);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
@@ -619,6 +599,18 @@ export function delete_message(room_id, message_id) {
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
+}
+
+/**
+ * @param {string} room_id
+ * @param {number | null} [limit]
+ * @returns {any}
+ */
+export function get_room_messages(room_id, limit) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.get_room_messages(ptr0, len0, isLikeNone(limit) ? 0x100000001 : (limit) >>> 0);
+    return ret;
 }
 
 /**
@@ -656,6 +648,15 @@ export function add_reaction(room_id, message_id, emoji, user_id) {
 }
 
 /**
+ * @param {any} request_data
+ * @returns {any}
+ */
+export function handle_sync_request(request_data) {
+    const ret = wasm.handle_sync_request(request_data);
+    return ret;
+}
+
+/**
  * @param {string} room_id
  * @returns {any}
  */
@@ -664,6 +665,18 @@ export function get_room_message_stats(room_id) {
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.get_room_message_stats(ptr0, len0);
     return ret;
+}
+
+/**
+ * @param {string} user_id
+ */
+export function set_message_manager_user(user_id) {
+    const ptr0 = passStringToWasm0(user_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.set_message_manager_user(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
 }
 
 /**
@@ -699,15 +712,11 @@ export function receive_message_from_peer(message_data) {
 }
 
 /**
- * @param {string} room_id
+ * @returns {any}
  */
-export function save_room_messages_to_storage(room_id) {
-    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.save_room_messages_to_storage(ptr0, len0);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
+export function list_encryption_keys() {
+    const ret = wasm.list_encryption_keys();
+    return ret;
 }
 
 /**
@@ -729,15 +738,90 @@ export function record_performance_metric(name, value, unit, category) {
     }
 }
 
+export function start_performance_monitoring() {
+    const ret = wasm.start_performance_monitoring();
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {number} days_old
+ * @returns {number}
+ */
+export function cleanup_old_storage_data(days_old) {
+    const ret = wasm.cleanup_old_storage_data(days_old);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] >>> 0;
+}
+
 /**
  * @param {string} label
- * @returns {number | undefined}
  */
-export function end_performance_timer(label) {
+export function start_performance_timer(label) {
     const ptr0 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.end_performance_timer(ptr0, len0);
-    return ret[0] === 0 ? undefined : ret[1];
+    const ret = wasm.start_performance_timer(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} key_id
+ * @returns {boolean}
+ */
+export function delete_encryption_key(key_id) {
+    const ptr0 = passStringToWasm0(key_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.delete_encryption_key(ptr0, len0);
+    return ret !== 0;
+}
+
+/**
+ * @returns {any}
+ */
+export function get_performance_summary() {
+    const ret = wasm.get_performance_summary();
+    return ret;
+}
+
+/**
+ * @param {string} name
+ * @returns {bigint}
+ */
+export function get_performance_counter(name) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.get_performance_counter(ptr0, len0);
+    return BigInt.asUintN(64, ret);
+}
+
+/**
+ * @param {string} database_name
+ * @param {number} version
+ */
+export function initialize_storage(database_name, version) {
+    const ptr0 = passStringToWasm0(database_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.initialize_storage(ptr0, len0, version);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @param {string} name
+ */
+export function increment_performance_counter(name) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.increment_performance_counter(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
 }
 
 /**
@@ -768,22 +852,6 @@ export function generate_room_encryption_key(room_id) {
 /**
  * @returns {any}
  */
-export function get_performance_summary() {
-    const ret = wasm.get_performance_summary();
-    return ret;
-}
-
-/**
- * @returns {any}
- */
-export function list_encryption_keys() {
-    const ret = wasm.list_encryption_keys();
-    return ret;
-}
-
-/**
- * @returns {any}
- */
 export function list_stored_rooms() {
     const ret = wasm.list_stored_rooms();
     if (ret[2]) {
@@ -794,99 +862,13 @@ export function list_stored_rooms() {
 
 /**
  * @param {string} label
+ * @returns {number | undefined}
  */
-export function start_performance_timer(label) {
+export function end_performance_timer(label) {
     const ptr0 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.start_performance_timer(ptr0, len0);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
- * @param {string} name
- */
-export function increment_performance_counter(name) {
-    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.increment_performance_counter(ptr0, len0);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
- * @param {number} days_old
- * @returns {number}
- */
-export function cleanup_old_storage_data(days_old) {
-    const ret = wasm.cleanup_old_storage_data(days_old);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return ret[0] >>> 0;
-}
-
-export function start_performance_monitoring() {
-    const ret = wasm.start_performance_monitoring();
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
- * @param {string} database_name
- * @param {number} version
- */
-export function initialize_storage(database_name, version) {
-    const ptr0 = passStringToWasm0(database_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.initialize_storage(ptr0, len0, version);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
- * @param {string} name
- * @returns {bigint}
- */
-export function get_performance_counter(name) {
-    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.get_performance_counter(ptr0, len0);
-    return BigInt.asUintN(64, ret);
-}
-
-/**
- * @param {string} key_id
- * @returns {boolean}
- */
-export function delete_encryption_key(key_id) {
-    const ptr0 = passStringToWasm0(key_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.delete_encryption_key(ptr0, len0);
-    return ret !== 0;
-}
-
-/**
- * @param {string} message
- * @returns {string}
- */
-export function validate_message(message) {
-    let deferred2_0;
-    let deferred2_1;
-    try {
-        const ptr0 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.validate_message(ptr0, len0);
-        deferred2_0 = ret[0];
-        deferred2_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
-    }
+    const ret = wasm.end_performance_timer(ptr0, len0);
+    return ret[0] === 0 ? undefined : ret[1];
 }
 
 /**
@@ -900,6 +882,25 @@ export function validate_room_id(room_id) {
         const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.validate_room_id(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * @param {string} message
+ * @returns {string}
+ */
+export function validate_message(message) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.validate_message(ptr0, len0);
         deferred2_0 = ret[0];
         deferred2_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
@@ -924,32 +925,6 @@ export function validate_username(username) {
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
-    }
-}
-
-/**
- * @param {any} room_id
- * @param {string} signal_data
- * @returns {string}
- */
-export function join_room(room_id, signal_data) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passStringToWasm0(signal_data, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.join_room(room_id, ptr0, len0);
-        var ptr2 = ret[0];
-        var len2 = ret[1];
-        if (ret[3]) {
-            ptr2 = 0; len2 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred3_0 = ptr2;
-        deferred3_1 = len2;
-        return getStringFromWasm0(ptr2, len2);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
     }
 }
 
@@ -985,6 +960,32 @@ export function send_message(room_id, content, message_id) {
 }
 
 /**
+ * @param {any} room_id
+ * @param {string} signal_data
+ * @returns {string}
+ */
+export function join_room(room_id, signal_data) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(signal_data, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.join_room(room_id, ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
  * @param {string} user_name
  * @param {string} user_id
  */
@@ -997,6 +998,19 @@ export function initialize(user_name, user_id) {
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
+}
+
+/**
+ * @returns {string | undefined}
+ */
+export function get_room_from_url() {
+    const ret = wasm.get_room_from_url();
+    let v1;
+    if (ret[0] !== 0) {
+        v1 = getStringFromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    }
+    return v1;
 }
 
 /**
@@ -1016,25 +1030,40 @@ export function generate_uuid() {
 }
 
 /**
- * @returns {string | undefined}
- */
-export function get_room_from_url() {
-    const ret = wasm.get_room_from_url();
-    let v1;
-    if (ret[0] !== 0) {
-        v1 = getStringFromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    }
-    return v1;
-}
-
-/**
  * @param {string} room_id
  */
 export function update_url_with_room(room_id) {
     const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.update_url_with_room(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
+ * @returns {string}
+ */
+export function get_current_room_id() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.get_current_room_id();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * @param {string} room_id
+ */
+export function set_current_room_id(room_id) {
+    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.set_current_room_id(ptr0, len0);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
@@ -1048,12 +1077,15 @@ export function clear_all_connected_peers() {
 }
 
 /**
- * @param {string} peer_id
+ * @param {string} name
+ * @param {string} user_id
  */
-export function add_connected_peer(peer_id) {
-    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+export function update_user_session(name, user_id) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.add_connected_peer(ptr0, len0);
+    const ptr1 = passStringToWasm0(user_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.update_user_session(ptr0, len0, ptr1, len1);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
@@ -1062,28 +1094,12 @@ export function add_connected_peer(peer_id) {
 /**
  * @param {string} peer_id
  */
-export function clear_draft_message(peer_id) {
+export function remove_connected_peer(peer_id) {
     const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.clear_draft_message(ptr0, len0);
+    const ret = wasm.remove_connected_peer(ptr0, len0);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
- * @returns {string}
- */
-export function get_current_user_id() {
-    let deferred1_0;
-    let deferred1_1;
-    try {
-        const ret = wasm.get_current_user_id();
-        deferred1_0 = ret[0];
-        deferred1_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
 }
 
@@ -1106,45 +1122,6 @@ export function set_draft_message(peer_id, content, sender_name) {
 }
 
 /**
- * @param {string} peer_id
- */
-export function remove_connected_peer(peer_id) {
-    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.remove_connected_peer(ptr0, len0);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
- * @param {string} name
- * @param {string} user_id
- */
-export function update_user_session(name, user_id) {
-    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(user_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.update_user_session(ptr0, len0, ptr1, len1);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
- * @param {string} room_id
- */
-export function set_current_room_id(room_id) {
-    const ptr0 = passStringToWasm0(room_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.set_current_room_id(ptr0, len0);
-    if (ret[1]) {
-        throw takeFromExternrefTable0(ret[0]);
-    }
-}
-
-/**
  * @returns {any}
  */
 export function get_connected_peers() {
@@ -1155,16 +1132,28 @@ export function get_connected_peers() {
 /**
  * @returns {string}
  */
-export function get_current_room_id() {
+export function get_current_user_id() {
     let deferred1_0;
     let deferred1_1;
     try {
-        const ret = wasm.get_current_room_id();
+        const ret = wasm.get_current_user_id();
         deferred1_0 = ret[0];
         deferred1_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
         wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * @param {string} peer_id
+ */
+export function add_connected_peer(peer_id) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.add_connected_peer(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
     }
 }
 
@@ -1176,11 +1165,23 @@ export function get_draft_messages() {
     return ret;
 }
 
+/**
+ * @param {string} peer_id
+ */
+export function clear_draft_message(peer_id) {
+    const ptr0 = passStringToWasm0(peer_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.clear_draft_message(ptr0, len0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
 function __wbg_adapter_50(arg0, arg1, arg2) {
     wasm.closure246_externref_shim(arg0, arg1, arg2);
 }
 
-function __wbg_adapter_154(arg0, arg1, arg2, arg3) {
+function __wbg_adapter_158(arg0, arg1, arg2, arg3) {
     wasm.closure110_externref_shim(arg0, arg1, arg2, arg3);
 }
 
@@ -1404,7 +1405,7 @@ function __wbg_get_imports() {
                 const a = state0.a;
                 state0.a = 0;
                 try {
-                    return __wbg_adapter_154(a, state0.b, arg0, arg1);
+                    return __wbg_adapter_158(a, state0.b, arg0, arg1);
                 } finally {
                     state0.a = a;
                 }
@@ -1603,7 +1604,7 @@ function __wbg_get_imports() {
         const ret = false;
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper3041 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper3025 = function(arg0, arg1, arg2) {
         const ret = makeMutClosure(arg0, arg1, 247, __wbg_adapter_50);
         return ret;
     };
