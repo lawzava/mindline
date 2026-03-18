@@ -605,6 +605,14 @@ export class P2PConnection {
 			this.negotiatingPeers.add(peerId);
 		}
 
+		this.setupPeerConnectionEventHandlers(pc, peerId);
+		await this.setupDataChannelAndOffer(pc, peerId, createOffer);
+	}
+
+	/**
+	 * Setup peer connection event handlers
+	 */
+	private setupPeerConnectionEventHandlers(pc: RTCPeerConnection, peerId: string): void {
 		// Handle ICE candidates
 		pc.onicecandidate = (event) => {
 			if (event.candidate) {
@@ -620,69 +628,6 @@ export class P2PConnection {
 				});
 			}
 		};
-
-		// Only create data channel if we're the initiator to prevent duplicates
-		if (createOffer) {
-			console.log(`[P2P] Creating data channel for peer ${peerId} (we are initiator)`);
-			const dataChannel = pc.createDataChannel('chat', {
-				ordered: true,
-				maxRetransmits: 3
-			});
-			this.setupDataChannel(dataChannel, peerId);
-		} else {
-			console.log(`[P2P] Waiting for data channel from ${peerId} (they are initiator)`);
-		}
-
-		// Listen for incoming data channel from remote peer
-		pc.ondatachannel = (event) => {
-			console.log(`[P2P] Received data channel from ${peerId}`);
-
-			// Close existing channel if any to prevent conflicts
-			const existingChannel = this.dataChannels.get(peerId);
-			if (existingChannel) {
-				// CRITICAL: Remove onclose handler BEFORE closing to prevent race condition
-				// The async onclose event could otherwise fire after new channel is set up
-				// and incorrectly trigger peer removal
-				existingChannel.onclose = null;
-				existingChannel.onerror = null;
-				existingChannel.close();
-				this.dataChannels.delete(peerId);
-			}
-
-			this.setupDataChannel(event.channel, peerId);
-		};
-
-		// Create and send offer only if we're the initiator
-		if (createOffer) {
-			try {
-				const offer = await pc.createOffer({
-					offerToReceiveAudio: false,
-					offerToReceiveVideo: false
-				});
-				await pc.setLocalDescription(offer);
-
-				console.log(`[P2P] Sending offer to ${peerId}`);
-				this.sendSignalingMessage({
-					type: 'offer',
-					targetId: peerId,
-					data: offer
-				});
-
-				// Set timeout for offer response (configurable)
-				const offerTimeout = this.config.offerTimeout ?? 15000;
-				setTimeout(() => {
-					if (pc.signalingState === 'have-local-offer') {
-						console.warn(`[P2P] Offer to ${peerId} timed out - restarting connection`);
-						this.removePeer(peerId);
-						const retryDelay = this.config.fastConnect ? 500 : 2000;
-						setTimeout(() => this.createPeerConnection(peerId, true), retryDelay);
-					}
-				}, offerTimeout);
-			} catch (error) {
-				console.error(`[P2P] Failed to create offer for ${peerId}:`, error);
-				this.removePeer(peerId);
-			}
-		}
 
 		// Handle connection state changes
 		pc.onconnectionstatechange = () => {
@@ -778,6 +723,78 @@ export class P2PConnection {
 				this.iceRestartAttempts.delete(peerId);
 			}
 		};
+	}
+
+	/**
+	 * Setup data channel and initial offer
+	 */
+	private async setupDataChannelAndOffer(
+		pc: RTCPeerConnection,
+		peerId: string,
+		createOffer: boolean
+	): Promise<void> {
+		// Only create data channel if we're the initiator to prevent duplicates
+		if (createOffer) {
+			console.log(`[P2P] Creating data channel for peer ${peerId} (we are initiator)`);
+			const dataChannel = pc.createDataChannel('chat', {
+				ordered: true,
+				maxRetransmits: 3
+			});
+			this.setupDataChannel(dataChannel, peerId);
+		} else {
+			console.log(`[P2P] Waiting for data channel from ${peerId} (they are initiator)`);
+		}
+
+		// Listen for incoming data channel from remote peer
+		pc.ondatachannel = (event) => {
+			console.log(`[P2P] Received data channel from ${peerId}`);
+
+			// Close existing channel if any to prevent conflicts
+			const existingChannel = this.dataChannels.get(peerId);
+			if (existingChannel) {
+				// CRITICAL: Remove onclose handler BEFORE closing to prevent race condition
+				// The async onclose event could otherwise fire after new channel is set up
+				// and incorrectly trigger peer removal
+				existingChannel.onclose = null;
+				existingChannel.onerror = null;
+				existingChannel.close();
+				this.dataChannels.delete(peerId);
+			}
+
+			this.setupDataChannel(event.channel, peerId);
+		};
+
+		// Create and send offer only if we're the initiator
+		if (createOffer) {
+			try {
+				const offer = await pc.createOffer({
+					offerToReceiveAudio: false,
+					offerToReceiveVideo: false
+				});
+				await pc.setLocalDescription(offer);
+
+				console.log(`[P2P] Sending offer to ${peerId}`);
+				this.sendSignalingMessage({
+					type: 'offer',
+					targetId: peerId,
+					data: offer
+				});
+
+				// Set timeout for offer response (configurable)
+				const offerTimeout = this.config.offerTimeout ?? 15000;
+				setTimeout(() => {
+					if (pc.signalingState === 'have-local-offer') {
+						console.warn(`[P2P] Offer to ${peerId} timed out - restarting connection`);
+						this.removePeer(peerId);
+						const retryDelay = this.config.fastConnect ? 500 : 2000;
+						setTimeout(() => this.createPeerConnection(peerId, true), retryDelay);
+					}
+				}, offerTimeout);
+			} catch (error) {
+				console.error(`[P2P] Failed to create offer for ${peerId}:`, error);
+				this.removePeer(peerId);
+			}
+		}
 	}
 
 	/**
