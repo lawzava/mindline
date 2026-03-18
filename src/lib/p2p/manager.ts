@@ -284,7 +284,11 @@ export function broadcastTyping(content: string): void {
 		timestamp: Date.now()
 	};
 
-	p2pConnection.broadcast(message);
+	try {
+		p2pConnection.broadcast(message);
+	} catch (error) {
+		console.error('[P2P Manager] Error broadcasting delete message:', error);
+	}
 }
 
 /**
@@ -308,7 +312,11 @@ export function broadcastEdit(messageId: string, newContent: string): void {
 		timestamp: Date.now()
 	};
 
-	p2pConnection.broadcast(message);
+	try {
+		p2pConnection.broadcast(message);
+	} catch (error) {
+		console.error('[P2P Manager] Error broadcasting delete message:', error);
+	}
 }
 
 /**
@@ -331,7 +339,11 @@ export function broadcastDelete(messageId: string): void {
 		timestamp: Date.now()
 	};
 
-	p2pConnection.broadcast(message);
+	try {
+		p2pConnection.broadcast(message);
+	} catch (error) {
+		console.error('[P2P Manager] Error broadcasting delete message:', error);
+	}
 }
 
 /**
@@ -357,7 +369,11 @@ export function broadcastReaction(messageId: string, reaction: string, action: '
 		timestamp: Date.now()
 	};
 
-	p2pConnection.broadcast(message);
+	try {
+		p2pConnection.broadcast(message);
+	} catch (error) {
+		console.error('[P2P Manager] Error broadcasting delete message:', error);
+	}
 }
 
 /**
