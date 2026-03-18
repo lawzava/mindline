@@ -1,26 +1,9 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * Load room encryption key from localStorage
- * Returns true if key was loaded, false if no key exists
- */
-export function load_room_key_from_storage(room_id: string): boolean;
-/**
- * Check if room has a key in localStorage
- */
-export function has_room_key_in_storage(room_id: string): boolean;
-/**
  * Check if room has a key in memory
  */
 export function has_room_key(room_id: string): boolean;
-/**
- * Initialize room encryption - loads from storage or generates new key
- */
-export function initialize_room_encryption(room_id: string): boolean;
-/**
- * Save room encryption key to localStorage
- */
-export function save_room_key_to_storage(room_id: string): void;
 /**
  * Decrypt message content using room key (async - returns Promise)
  * Uses real AES-256-GCM via Web Crypto API
@@ -31,72 +14,89 @@ export function decrypt_message_content(encrypted_json: string): Promise<any>;
  * Uses real AES-256-GCM via Web Crypto API
  */
 export function encrypt_message_content(room_id: string, content: string): Promise<any>;
-export function start_log_group(label: string): void;
-export function log_debug(component: string, message: string): void;
-export function log_error(component: string, message: string): void;
-export function search_logs(query: string, limit?: number | null): any;
-export function log_table(data: any): void;
-export function export_logs_json(filter_json?: string | null): string;
-export function initialize_logger(is_development: boolean, debug_enabled: boolean): void;
-export function end_log_group(): void;
-export function configure_logger(max_entries: number, console_output: boolean, buffer_logs: boolean, auto_export_errors: boolean): void;
-export function enable_debug_logging(): void;
-export function get_log_statistics(): any;
-export function set_log_context(user_id?: string | null, room_id?: string | null, component?: string | null): void;
-export function get_error_summary(last_n_minutes: number): any;
-export function get_log_entries(filter_json?: string | null): any;
-export function log_with_data(level: string, component: string, message: string, data: string): void;
-export function log_warn(component: string, message: string): void;
-export function disable_debug_logging(): void;
+/**
+ * Initialize room encryption - loads from storage or generates new key
+ */
+export function initialize_room_encryption(room_id: string): boolean;
+/**
+ * Save room encryption key to localStorage
+ */
+export function save_room_key_to_storage(room_id: string): void;
+/**
+ * Check if room has a key in localStorage
+ */
+export function has_room_key_in_storage(room_id: string): boolean;
+/**
+ * Load room encryption key from localStorage
+ * Returns true if key was loaded, false if no key exists
+ */
+export function load_room_key_from_storage(room_id: string): boolean;
 export function log_info(component: string, message: string): void;
-export function load_room_messages_from_storage(room_id: string): boolean;
-export function edit_message(room_id: string, message_id: string, new_content: string): void;
+export function set_log_context(user_id?: string | null, room_id?: string | null, component?: string | null): void;
+export function log_error(component: string, message: string): void;
+export function configure_logger(max_entries: number, console_output: boolean, buffer_logs: boolean, auto_export_errors: boolean): void;
+export function start_log_group(label: string): void;
+export function log_table(data: any): void;
+export function enable_debug_logging(): void;
+export function export_logs_json(filter_json?: string | null): string;
+export function get_error_summary(last_n_minutes: number): any;
+export function disable_debug_logging(): void;
+export function log_warn(component: string, message: string): void;
+export function get_log_entries(filter_json?: string | null): any;
+export function get_log_statistics(): any;
+export function initialize_logger(is_development: boolean, debug_enabled: boolean): void;
+export function log_debug(component: string, message: string): void;
+export function end_log_group(): void;
+export function log_with_data(level: string, component: string, message: string, data: string): void;
+export function search_logs(query: string, limit?: number | null): any;
+export function set_message_manager_user(user_id: string): void;
 export function remove_reaction(room_id: string, message_id: string, emoji: string, user_id: string): void;
-export function save_room_messages_to_storage(room_id: string): void;
-export function delete_message(room_id: string, message_id: string): void;
+export function load_room_messages_from_storage(room_id: string): boolean;
+export function handle_sync_request(request_data: any): any;
 export function get_room_messages(room_id: string, limit?: number | null): any;
+export function edit_message(room_id: string, message_id: string, new_content: string): void;
+export function delete_message(room_id: string, message_id: string): void;
 export function create_sync_request(room_id: string, last_sync: number, message_count: number): any;
 export function add_reaction(room_id: string, message_id: string, emoji: string, user_id: string): void;
-export function handle_sync_request(request_data: any): any;
 export function get_room_message_stats(room_id: string): any;
-export function set_message_manager_user(user_id: string): void;
 export function send_message_enhanced(room_id: string, content: string, message_id: string): any;
 export function receive_message_from_peer(message_data: any): boolean;
-export function list_encryption_keys(): any;
+export function save_room_messages_to_storage(room_id: string): void;
 export function record_performance_metric(name: string, value: number, unit: string, category: string): void;
-export function start_performance_monitoring(): void;
-export function cleanup_old_storage_data(days_old: number): number;
-export function start_performance_timer(label: string): void;
-export function delete_encryption_key(key_id: string): boolean;
-export function get_performance_summary(): any;
-export function get_performance_counter(name: string): bigint;
-export function initialize_storage(database_name: string, version: number): void;
-export function increment_performance_counter(name: string): void;
-export function generate_room_encryption_key(room_id: string): string;
-export function list_stored_rooms(): any;
 export function end_performance_timer(label: string): number | undefined;
-export function validate_room_id(room_id: string): string;
+export function generate_room_encryption_key(room_id: string): string;
+export function get_performance_summary(): any;
+export function list_encryption_keys(): any;
+export function list_stored_rooms(): any;
+export function start_performance_timer(label: string): void;
+export function increment_performance_counter(name: string): void;
+export function cleanup_old_storage_data(days_old: number): number;
+export function start_performance_monitoring(): void;
+export function initialize_storage(database_name: string, version: number): void;
+export function get_performance_counter(name: string): bigint;
+export function delete_encryption_key(key_id: string): boolean;
 export function validate_message(message: string): string;
+export function validate_room_id(room_id: string): string;
 export function validate_username(username: string): string;
+export function join_room(room_id: any, signal_data: string): string;
 export function create_room_with_id(room_id: any): void;
 export function get_messages(room_id: any): any;
 export function send_message(room_id: any, content: any, message_id: any): void;
-export function join_room(room_id: any, signal_data: string): string;
 export function initialize(user_name: string, user_id: string): void;
-export function get_room_from_url(): string | undefined;
 export function generate_uuid(): string;
+export function get_room_from_url(): string | undefined;
 export function update_url_with_room(room_id: string): void;
-export function get_current_room_id(): string;
-export function set_current_room_id(room_id: string): void;
 export function clear_all_connected_peers(): void;
-export function update_user_session(name: string, user_id: string): void;
-export function remove_connected_peer(peer_id: string): void;
-export function set_draft_message(peer_id: string, content: string, sender_name: string): void;
-export function get_connected_peers(): any;
-export function get_current_user_id(): string;
 export function add_connected_peer(peer_id: string): void;
-export function get_draft_messages(): any;
 export function clear_draft_message(peer_id: string): void;
+export function get_current_user_id(): string;
+export function set_draft_message(peer_id: string, content: string, sender_name: string): void;
+export function remove_connected_peer(peer_id: string): void;
+export function update_user_session(name: string, user_id: string): void;
+export function set_current_room_id(room_id: string): void;
+export function get_connected_peers(): any;
+export function get_current_room_id(): string;
+export function get_draft_messages(): any;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
