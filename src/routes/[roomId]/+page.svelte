@@ -235,26 +235,9 @@
 				persistedToStorage = true;
 			} catch (error) {
 				console.warn('[Edit] WASM edit failed:', error);
-				// Fallback: Try direct localStorage update for persistence
-				try {
-					const storageKey = `chatHistory_${roomId}`;
-					const stored = localStorage.getItem(storageKey);
-					if (stored) {
-						const roomState = JSON.parse(stored);
-						const msgIndex = roomState.messages?.findIndex((m: Message) => m.id === messageId);
-						if (msgIndex !== undefined && msgIndex !== -1 && roomState.messages) {
-							roomState.messages[msgIndex].content = newContent;
-							roomState.messages[msgIndex].edited = true;
-							roomState.messages[msgIndex].edit_timestamp = Date.now();
-							roomState.messages[msgIndex].original_content = originalContent;
-							localStorage.setItem(storageKey, JSON.stringify(roomState));
-							persistedToStorage = true;
-							console.log('[Edit] Fallback localStorage update succeeded');
-						}
-					}
-				} catch (fallbackError) {
-					console.error('[Edit] Fallback localStorage update also failed:', fallbackError);
-				}
+				// Removed expensive bulk JSON fallback; relying entirely on WASM state sync
+				// If WASM fails to edit, we accept it as a local-only optimistic update
+				// rather than parsing/stringifying the entire history which kills performance.
 			}
 		}
 
@@ -292,24 +275,7 @@
 				persistedToStorage = true;
 			} catch (error) {
 				console.warn('[Delete] WASM delete failed:', error);
-				// Fallback: Try direct localStorage update for persistence
-				try {
-					const storageKey = `chatHistory_${roomId}`;
-					const stored = localStorage.getItem(storageKey);
-					if (stored) {
-						const roomState = JSON.parse(stored);
-						const msgIndex = roomState.messages?.findIndex((m: Message) => m.id === messageId);
-						if (msgIndex !== undefined && msgIndex !== -1 && roomState.messages) {
-							roomState.messages[msgIndex].content = '[Message deleted]';
-							roomState.messages[msgIndex].message_type = 'Deleted';
-							localStorage.setItem(storageKey, JSON.stringify(roomState));
-							persistedToStorage = true;
-							console.log('[Delete] Fallback localStorage update succeeded');
-						}
-					}
-				} catch (fallbackError) {
-					console.error('[Delete] Fallback localStorage update also failed:', fallbackError);
-				}
+				// Removed expensive bulk JSON fallback; relying entirely on WASM state sync
 			}
 		}
 
