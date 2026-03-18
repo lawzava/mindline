@@ -73,9 +73,16 @@ pub fn initialize(user_name: &str, user_id: &str) -> Result<(), JsValue> {
 
 // Validates a string parameter from JS
 pub fn validate_js_string_param(param: &JsValue, param_name: &str) -> Result<String, JsValue> {
+    if param.is_undefined() || param.is_null() {
+        return Err(JsValue::from_str(&format!(
+            "{} parameter is missing",
+            param_name
+        )));
+    }
+
     let value = param.as_string().ok_or_else(|| {
         console_log!("Failed to convert {} to string", param_name);
-        JsValue::from_str(&format!("Invalid {}", param_name))
+        JsValue::from_str(&format!("{} parameter must be a string", param_name))
     })?;
 
     if value.is_empty() {
@@ -250,4 +257,60 @@ pub fn create_room_with_id(room_id: &JsValue) -> Result<(), JsValue> {
     // Room creation is now handled by the enhanced message system
     console_log!("Room creation logged for: '{}'", room_id);
     Ok(())
+}
+
+#[cfg(test)]
+#[cfg(target_arch = "wasm32")]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    fn test_validate_js_string_param_valid() {
+        let js_str = JsValue::from_str("valid string");
+        let result = validate_js_string_param(&js_str, "test_param");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "valid string");
+    }
+
+    #[wasm_bindgen_test]
+    fn test_validate_js_string_param_empty() {
+        let js_str = JsValue::from_str("");
+        let result = validate_js_string_param(&js_str, "test_param");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.as_string().unwrap(), "test_param cannot be empty");
+    }
+
+    #[wasm_bindgen_test]
+    fn test_validate_js_string_param_invalid_type() {
+        let js_num = JsValue::from_f64(42.0);
+        let result = validate_js_string_param(&js_num, "test_param");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.as_string().unwrap(),
+            "test_param parameter must be a string"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn test_validate_js_string_param_null() {
+        let js_null = JsValue::null();
+        let result = validate_js_string_param(&js_null, "test_param");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.as_string().unwrap(), "test_param parameter is missing");
+    }
+
+    #[wasm_bindgen_test]
+    fn test_validate_js_string_param_undefined() {
+        let js_undefined = JsValue::undefined();
+        let result = validate_js_string_param(&js_undefined, "test_param");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.as_string().unwrap(), "test_param parameter is missing");
+    }
 }
