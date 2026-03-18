@@ -1417,10 +1417,9 @@ export class P2PConnection {
 		}
 
 		this.meshCheckInterval = setInterval(() => {
-			const knownPeers = Array.from(this.allKnownPeers);
 			const myServerId = this.serverClientId || this.clientId;
 
-			for (const peerId of knownPeers) {
+			for (const peerId of this.allKnownPeers) {
 				// Skip self (use server ID for comparison)
 				if (peerId === myServerId) {
 					continue;
