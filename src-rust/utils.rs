@@ -73,3 +73,56 @@ pub fn update_url_with_room(room_id: &str) -> Result<(), JsValue> {
     console_log!("URL updated with room ID: {}", room_id);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_uuid_format() {
+        let uuid = generate_uuid();
+
+        // Length should be 36
+        assert_eq!(uuid.len(), 36);
+
+        // Should have 5 parts separated by hyphens
+        let parts: Vec<&str> = uuid.split('-').collect();
+        assert_eq!(parts.len(), 5);
+        assert_eq!(parts[0].len(), 8);
+        assert_eq!(parts[1].len(), 4);
+        assert_eq!(parts[2].len(), 4);
+        assert_eq!(parts[3].len(), 4);
+        assert_eq!(parts[4].len(), 12);
+
+        // All characters (except hyphens) should be valid lowercase hex digits
+        for c in uuid.chars() {
+            if c != '-' {
+                assert!(
+                    c.is_ascii_hexdigit(),
+                    "Character {} is not a valid hex digit",
+                    c
+                );
+                if c.is_alphabetic() {
+                    assert!(c.is_lowercase(), "Character {} is not lowercase", c);
+                }
+            }
+        }
+
+        // UUID v4 specific checks
+        assert!(parts[2].starts_with('4'));
+        let variant_char = parts[3].chars().next().unwrap();
+        assert!(matches!(variant_char, '8' | '9' | 'a' | 'b'));
+    }
+
+    #[test]
+    fn test_generate_uuid_uniqueness() {
+        use std::collections::HashSet;
+
+        let mut uuids = HashSet::new();
+        // Generate a reasonable number of UUIDs to test uniqueness
+        for _ in 0..1000 {
+            let uuid = generate_uuid();
+            assert!(uuids.insert(uuid), "Generated duplicate UUID");
+        }
+    }
+}
