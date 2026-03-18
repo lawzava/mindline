@@ -78,6 +78,10 @@ export class P2PConnection {
 	private relayKeySentToPeers: Set<string> = new Set();
 	private pendingRelayMessages: Map<string, TypedP2PMessage[]> = new Map();
 
+	// WebSocket Message Queue
+	private wsQueue: string[] = [];
+	private isProcessingWsQueue = false;
+
 	constructor(clientId: string, roomId: string, config?: Partial<P2PConfig>) {
 		this.validateClientId(clientId);
 
@@ -348,13 +352,11 @@ export class P2PConnection {
 				this.ws.onopen = () => {
 					clearTimeout(connectionTimer);
 					console.log('[P2P] Connected to signaling server');
-					this.ws?.send(
-						JSON.stringify({
-							type: 'join',
-							roomId: this.roomId,
-							clientId: this.clientId
-						})
-					);
+					this.sendToServer({
+						type: 'join',
+						roomId: this.roomId,
+						clientId: this.clientId
+					});
 					// Resolve on actual connection, not arbitrary timeout
 					resolve();
 				};
@@ -434,8 +436,8 @@ export class P2PConnection {
 					const shouldInitiate = myServerId > peerId;
 					// Stagger connection attempts to reduce race conditions
 					// Use faster delays in fastConnect mode for tests
-					const baseDelay = this.config.fastConnect ? 100 : 2000;
-					const randomDelay = this.config.fastConnect ? 100 : 1000;
+					const baseDelay = this.config.fastConnect ? 100 : 300;
+					const randomDelay = this.config.fastConnect ? 100 : 200;
 					setTimeout(
 						async () => {
 							try {
@@ -473,9 +475,14 @@ export class P2PConnection {
 					// Use string comparison to avoid duplicate offers (compare server IDs)
 					const shouldInitiate = myServerIdForJoin > message.clientId;
 					// Use faster delays in fastConnect mode for tests
-					const delay = this.config.fastConnect
+					const baseDelay = this.config.fastConnect
 						? (shouldInitiate ? 50 : 150)
 						: (shouldInitiate ? 500 : 1500);
+
+					// Add jitter based on our own client ID to spread out the load when many peers
+					// send offers to a newly joined peer simultaneously.
+					const jitter = this.config.fastConnect ? 0 : ((this.clientId.charCodeAt(0) + this.clientId.charCodeAt(1)) % 1000);
+					const delay = baseDelay + jitter;
 
 					console.log(
 						`[P2P] Will ${shouldInitiate ? 'initiate' : 'wait for'} connection to peer:`,
@@ -1219,7 +1226,7 @@ export class P2PConnection {
 				data: encryptedPayload,
 				targetId: targetId
 			};
-			this.ws.send(JSON.stringify(relayMessage));
+			this.sendToServer(relayMessage);
 			console.log(`[P2P] Relay sent to ${targetId ?? 'all'}`);
 		}
 	}
@@ -1246,12 +1253,49 @@ export class P2PConnection {
 	}
 
 	/**
+	 * Queue and send a message to the signaling server
+	 */
+	private sendToServer(message: any): void {
+		this.wsQueue.push(typeof message === 'string' ? message : JSON.stringify(message));
+		this.processWsQueue();
+	}
+
+	/**
+	 * Process the WebSocket message queue while respecting rate limits (max 40/sec)
+	 */
+	private processWsQueue(): void {
+		if (this.isProcessingWsQueue || this.wsQueue.length === 0) return;
+		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+		this.isProcessingWsQueue = true;
+
+		try {
+			// Take up to 4 messages for this batch (4 msgs per 100ms = 40 msgs/sec)
+			const batch = this.wsQueue.splice(0, 4);
+			for (const msg of batch) {
+				if (this.ws.readyState === WebSocket.OPEN) {
+					this.ws.send(msg);
+				}
+			}
+		} catch (error) {
+			console.error('[P2P] Error sending queued message:', error);
+		} finally {
+			if (this.wsQueue.length > 0 && this.ws?.readyState === WebSocket.OPEN) {
+				setTimeout(() => {
+					this.isProcessingWsQueue = false;
+					this.processWsQueue();
+				}, 100);
+			} else {
+				this.isProcessingWsQueue = false;
+			}
+		}
+	}
+
+	/**
 	 * Send signaling message
 	 */
 	private sendSignalingMessage(message: Partial<SignalingMessage>): void {
-		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-			this.ws.send(JSON.stringify(message));
-		}
+		this.sendToServer(message);
 	}
 
 	/**
