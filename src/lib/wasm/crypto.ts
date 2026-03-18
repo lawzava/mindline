@@ -87,9 +87,13 @@ export async function webcryptoDeriveKey(
  * Generate cryptographically secure random bytes
  */
 export function webcryptoRandomBytes(length: number): Uint8Array {
-	const bytes = new Uint8Array(length);
-	crypto.getRandomValues(bytes);
-	return bytes;
+	const array = new Uint8Array(length);
+	if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+		window.crypto.getRandomValues(array);
+	} else {
+		for (let i = 0; i < length; i++) array[i] = Math.floor(Math.random() * 256);
+	}
+	return array;
 }
 
 /**
