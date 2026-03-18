@@ -611,14 +611,12 @@ pub struct DebugReport {
 // Utility functions
 fn generate_log_id() -> String {
     let timestamp = js_sys::Date::now() as u64;
-    let random = (js_sys::Math::random() * 1000000.0) as u32;
-    format!("log_{}_{}", timestamp, random)
+    format!("log_{}_{}", timestamp, crate::utils::generate_uuid())
 }
 
 fn generate_session_id() -> String {
     let timestamp = js_sys::Date::now() as u64;
-    let random = (js_sys::Math::random() * 1000000.0) as u32;
-    format!("session_{}_{}", timestamp, random)
+    format!("session_{}_{}", timestamp, crate::utils::generate_uuid())
 }
 
 fn detect_development_mode() -> bool {
