@@ -88,6 +88,9 @@
 				Real-time P2P chat with radical transparency.<br />
 				See messages as they're typed.
 			</CardDescription>
+			<p class="text-sm text-muted-foreground">
+				Drafts are live: people in the room can see what you type before you send.
+			</p>
 		</CardHeader>
 		<CardContent class="space-y-6">
 			<!-- Create Room -->
