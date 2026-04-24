@@ -31,7 +31,7 @@
 			try {
 				await navigator.share({
 					title: 'Join my Mindline chat',
-					text: 'Join my real-time chat room',
+					text: 'Join my Mindline room. Anyone with this link can join.',
 					url
 				});
 				return; // Success, exit early
@@ -43,7 +43,7 @@
 		// Try modern clipboard API (don't verify - readText often fails due to permissions)
 		try {
 			await navigator.clipboard.writeText(url);
-			toast.success('Link copied to clipboard!');
+			toast.success('Invite link copied. Anyone with this link can join the room.');
 			return;
 		} catch {
 			// Modern clipboard API failed - try legacy fallback
@@ -63,7 +63,7 @@
 			document.body.removeChild(textArea);
 
 			if (success) {
-				toast.success('Link copied to clipboard!');
+				toast.success('Invite link copied. Anyone with this link can join the room.');
 			} else {
 				toast.error('Failed to copy link');
 			}
@@ -95,9 +95,15 @@
 
 			<!-- Share button (only when in a room) -->
 			{#if $currentRoomId}
-				<Button variant="outline" size="icon" onclick={shareRoom} class="h-11 w-11">
+				<Button
+					variant="outline"
+					size="icon"
+					onclick={shareRoom}
+					class="h-11 w-11"
+					data-testid="share-room-btn"
+				>
 					<Share2 class="h-4 w-4" />
-					<span class="sr-only">Share room</span>
+					<span class="sr-only">Share room. Anyone with the link can join.</span>
 				</Button>
 			{/if}
 

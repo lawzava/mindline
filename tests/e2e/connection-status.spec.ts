@@ -49,20 +49,20 @@ test.describe('Connection Status', () => {
 		expect(['Connected', 'Local', 'Connecting', 'Reconnecting']).toContainEqual(baseStatus);
 	});
 
-	test('should show connection status with appropriate styling', async ({ page }) => {
+	test('should explain whether messages are syncing with peers', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await page.goto(`/${roomId}`);
 
 		await waitForConnectionStatus(page);
 
-		// Badge should have styling classes
 		const statusBadge = page.locator('[data-testid="connection-status"]');
 		await expect(statusBadge).toBeVisible();
 
-		// Check the badge is rendered with some content
-		const textContent = await statusBadge.textContent();
-		expect(textContent).toBeTruthy();
-		expect(textContent!.length).toBeGreaterThan(0);
+		await expect(
+			page.getByText(
+				'Connection status explains whether messages are syncing with peers or only available locally.'
+			)
+		).toBeAttached();
 	});
 
 	test('should maintain connection status visibility throughout session', async ({ page }) => {
