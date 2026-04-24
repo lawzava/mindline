@@ -91,13 +91,13 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 
 		// Announce our connection IMMEDIATELY so peer learns our name right away
 		// This fixes race condition where peer is added but name is unknown
-		broadcastUserConnected();
+		sendUserConnected();
 
 		// Request sync after connection stabilizes
 		setTimeout(() => requestSync(roomId), 1000);
 
 		// Re-announce after stabilization in case first one was missed
-		setTimeout(() => broadcastUserConnected(), 500);
+		setTimeout(() => sendUserConnected(), 500);
 	});
 
 	p2pConnection.onPeerDisconnected((peerId) => {

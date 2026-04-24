@@ -417,6 +417,10 @@
 			</div>
 		</div>
 
+		<p class="border-b px-3 py-2 text-xs text-muted-foreground sm:px-4">
+			Live drafts are visible to room peers while you type.
+		</p>
+
 		<!-- Messages area -->
 		<MessageList
 			messages={$currentRoomMessages}
