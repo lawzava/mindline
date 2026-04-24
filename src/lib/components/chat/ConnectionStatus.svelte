@@ -61,7 +61,7 @@
 				variant: 'secondary' as const,
 				icon: Loader2,
 				iconClass: 'animate-spin motion-reduce:animate-none',
-				tooltip: `Attempting to reconnect... ${countdownSeconds > 0 ? `Next retry in ${countdownSeconds}s` : 'Connecting...'}`
+				tooltip: `Trying to reconnect to peers so messages and live drafts can sync. ${countdownSeconds > 0 ? `Next retry in ${countdownSeconds}s.` : 'Connecting now.'}`
 			};
 		}
 
@@ -72,7 +72,7 @@
 					variant: 'default' as const,
 					icon: Wifi,
 					iconClass: 'text-green-500',
-					tooltip: "Connected. You're ready to chat."
+					tooltip: 'Connected to peers. Messages and live drafts can sync with others in this room.'
 				};
 			case 'connecting':
 				return {
@@ -80,7 +80,7 @@
 					variant: 'secondary' as const,
 					icon: Loader2,
 					iconClass: 'animate-spin motion-reduce:animate-none',
-					tooltip: 'Connecting...'
+					tooltip: 'Trying to connect to peers so messages and live drafts can sync.'
 				};
 			case 'disconnected':
 				return {
@@ -88,7 +88,7 @@
 					variant: 'outline' as const,
 					icon: WifiOff,
 					iconClass: 'text-muted-foreground',
-					tooltip: 'Not connected. Tap Reconnect to try again.'
+					tooltip: 'Not connected to peers. Messages may stay on this device until you reconnect.'
 				};
 			case 'failed':
 				return {
@@ -96,7 +96,7 @@
 					variant: 'destructive' as const,
 					icon: WifiOff,
 					iconClass: '',
-					tooltip: 'Connection failed. Tap Reconnect to try again.'
+					tooltip: 'Connection failed. Messages are not syncing with peers; try reconnecting.'
 				};
 			case 'local':
 				return {
@@ -104,7 +104,7 @@
 					variant: 'outline' as const,
 					icon: Wifi,
 					iconClass: 'text-yellow-500',
-					tooltip: "You're working offline. Messages are saved locally but won't sync with other users until you reconnect."
+					tooltip: 'Local-only mode. Messages are saved here but are not syncing with other users.'
 				};
 			default:
 				return {
@@ -112,7 +112,7 @@
 					variant: 'outline' as const,
 					icon: WifiOff,
 					iconClass: '',
-					tooltip: 'Unknown connection status'
+					tooltip: 'Connection status is unknown. Messages may not be syncing with peers.'
 				};
 		}
 	});
@@ -139,6 +139,9 @@
 </script>
 
 <div class="flex items-center gap-2">
+	<p class="sr-only">
+		Connection status explains whether messages are syncing with peers or only available locally.
+	</p>
 	<!-- Connection Status Badge with Tooltip -->
 	<Tooltip.Provider>
 		<Tooltip.Root>
@@ -195,7 +198,7 @@
 					</Badge>
 				</Tooltip.Trigger>
 				<Tooltip.Content>
-					<p>Synchronizing messages with peer</p>
+					<p>Synchronizing message history with a peer.</p>
 					{#if $syncState.syncingWithPeer}
 						<p class="text-xs opacity-70">From: {$syncState.syncingWithPeer.slice(0, 8)}...</p>
 					{/if}
