@@ -80,56 +80,80 @@
 	<title>Mindline</title>
 </svelte:head>
 
-<div class="flex flex-1 items-center justify-center p-4">
-	<Card class="w-full max-w-md">
-		<CardHeader class="text-center">
-			<CardTitle class="text-3xl font-bold">Welcome to Mindline</CardTitle>
-			<CardDescription>
-				Real-time P2P chat with radical transparency.<br />
-				See messages as they're typed.
-			</CardDescription>
-			<p class="text-sm text-muted-foreground">
-				Drafts are live: people in the room can see what you type before you send.
-			</p>
-		</CardHeader>
-		<CardContent class="space-y-6">
-			<!-- Create Room -->
-			<Button onclick={createRoom} class="w-full h-11" size="lg" data-testid="create-room-btn">
-				<Plus class="mr-2 h-5 w-5" />
-				Create New Room
-			</Button>
-
-			<!-- Divider -->
-			<div class="relative">
-				<div class="absolute inset-0 flex items-center">
-					<span class="w-full border-t border-border"></span>
-				</div>
-				<div class="relative flex justify-center text-xs uppercase">
-					<span class="bg-card px-2 text-muted-foreground">or join existing</span>
+<div class="flex flex-1 bg-background">
+	<section class="mx-auto grid w-full max-w-6xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:px-8 lg:py-16">
+		<div class="space-y-8">
+			<div class="max-w-3xl space-y-5">
+				<p class="text-sm font-semibold uppercase tracking-[0.22em] text-live">Private rooms</p>
+				<h1 class="text-5xl font-bold tracking-[-0.06em] text-foreground sm:text-6xl lg:text-7xl">
+					Mindline
+				</h1>
+				<div class="space-y-4">
+					<h2 class="text-2xl font-semibold tracking-[-0.03em] text-foreground sm:text-3xl">
+						Private rooms for live thoughts.
+					</h2>
+					<p class="max-w-2xl text-lg leading-8 text-muted-foreground">
+						P2P chat for privacy-first teams where drafts are visible while they are being
+						written, and connection state tells you what is actually syncing.
+					</p>
 				</div>
 			</div>
 
-			<!-- Join Room -->
-			<div class="flex gap-2">
-				<Input
-					type="text"
-					placeholder="Paste invite link or room ID..."
-					bind:value={joinRoomId}
-					onkeydown={handleKeydown}
-					class="flex-1"
-					data-testid="join-room-input"
-				/>
-				<Button
-					onclick={joinRoom}
-					disabled={!extractRoomId(joinRoomId)}
-					size="icon"
-					class="h-11 w-11"
-					data-testid="join-room-btn"
-				>
-					<ArrowRight class="h-4 w-4" />
-					<span class="sr-only">Join room</span>
+			<div class="max-w-2xl space-y-3">
+				<div class="rounded-[2rem] border border-live/35 bg-surface-warm p-6 shadow-xs">
+					<p class="text-xs font-semibold uppercase tracking-[0.2em] text-live">Live draft rule</p>
+					<p class="mt-4 text-2xl font-semibold tracking-[-0.03em] text-foreground">
+						Drafts are live while you type.
+					</p>
+				</div>
+				<div class="ml-0 grid gap-3 sm:ml-10">
+					<div class="flex items-center gap-3 rounded-2xl border border-border bg-surface-quiet px-4 py-3 text-sm leading-6 text-foreground shadow-xs">
+						<span class="h-2 w-2 shrink-0 rounded-full bg-local"></span>
+						<span>Anyone with a room link can join.</span>
+					</div>
+					<div class="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-sm leading-6 text-foreground shadow-xs">
+						<span class="h-2 w-2 shrink-0 rounded-full bg-success"></span>
+						<span>Messages sync with peers when connected.</span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<Card class="border-border bg-card shadow-sm">
+			<CardHeader class="space-y-2">
+				<CardTitle class="text-2xl tracking-[-0.03em]">Open a room</CardTitle>
+				<CardDescription class="text-base leading-7">
+					Create a private room or paste an invite. No account needed.
+				</CardDescription>
+			</CardHeader>
+			<CardContent class="space-y-5">
+				<Button onclick={createRoom} class="h-12 w-full" size="lg" data-testid="create-room-btn">
+					<Plus class="mr-2 h-5 w-5" />
+					Create room
 				</Button>
-			</div>
-		</CardContent>
-	</Card>
+
+				<div class="flex gap-2">
+					<Input
+						type="text"
+						aria-label="Invite link or room ID"
+						placeholder="Paste invite link or room ID"
+						bind:value={joinRoomId}
+						onkeydown={handleKeydown}
+						class="h-12 flex-1 bg-surface-quiet"
+						data-testid="join-room-input"
+					/>
+					<Button
+						onclick={joinRoom}
+						disabled={!extractRoomId(joinRoomId)}
+						size="icon"
+						class="h-12 w-12 shrink-0"
+						data-testid="join-room-btn"
+					>
+						<ArrowRight class="h-4 w-4" />
+						<span class="sr-only">Join room</span>
+					</Button>
+				</div>
+			</CardContent>
+		</Card>
+	</section>
 </div>

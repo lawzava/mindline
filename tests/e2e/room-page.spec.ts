@@ -22,7 +22,7 @@ test.describe('Room Page', () => {
 		await expect(page.locator('[data-testid="leave-room-btn"]')).toBeVisible();
 		await expect(page.locator('[data-testid="message-input"]')).toBeVisible();
 		await expect(page.locator('[data-testid="message-list"]')).toBeVisible();
-		await expect(page.getByText('Live drafts are visible to room peers while you type.')).toBeVisible();
+		await expect(page.getByText('Drafts are live in this room while you type.')).toBeVisible();
 	});
 
 	test('should display truncated room ID', async ({ page }) => {
@@ -153,15 +153,15 @@ test.describe('Room Page', () => {
 
 		// Should navigate to home page
 		await page.waitForURL('/');
-		await expect(page.getByText('Welcome to Mindline')).toBeVisible();
+		await expect(page.getByText('Private rooms for live thoughts.')).toBeVisible();
 	});
 
 	test('should show empty message state initially', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);
 
-		// Empty state message should be visible
-		await expect(page.getByText('No messages yet. Start the conversation!')).toBeVisible();
+		await expect(page.getByText('This room is quiet.')).toBeVisible();
+		await expect(page.getByText('Type when you are ready. Your draft is visible to connected peers before you send.')).toBeVisible();
 	});
 
 	test('should focus message input on load', async ({ page }) => {
