@@ -35,25 +35,28 @@
 	});
 </script>
 
-<div class="flex h-screen flex-col overflow-hidden bg-background">
+<div class="flex h-screen flex-col overflow-hidden bg-background text-foreground">
 	<Header />
 
 	<main class="flex flex-1 flex-col overflow-hidden">
 		{#if isInitializing}
-			<div class="flex flex-1 items-center justify-center">
-				<div class="flex flex-col items-center gap-4 text-muted-foreground">
-					<Loader2 class="h-8 w-8 animate-spin motion-reduce:animate-none" />
-					<p class="text-sm">Loading...</p>
+			<div class="flex flex-1 items-center justify-center p-6">
+				<div class="flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-border/80 bg-card/90 p-8 text-center shadow-lg shadow-black/5">
+					<Loader2 class="h-8 w-8 animate-spin text-muted-foreground motion-reduce:animate-none" />
+					<div class="space-y-1">
+						<p class="text-lg font-semibold text-foreground">Opening Mindline</p>
+						<p class="text-sm text-muted-foreground">Loading the local encryption runtime.</p>
+					</div>
 				</div>
 			</div>
 		{:else if $wasmError}
-			<div class="flex flex-1 items-center justify-center">
-				<div class="flex flex-col items-center gap-4 text-destructive">
-					<p class="text-lg font-medium">Failed to load application</p>
+			<div class="flex flex-1 items-center justify-center p-6">
+				<div class="flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-destructive/30 bg-destructive/10 p-8 text-center shadow-lg shadow-destructive/10">
+					<p class="text-lg font-semibold text-destructive">Mindline could not start</p>
 					<p class="text-sm text-muted-foreground">{$wasmError.message}</p>
 					<button
 						onclick={() => window.location.reload()}
-						class="text-sm underline underline-offset-4 hover:text-foreground"
+						class="text-sm font-medium text-destructive underline underline-offset-4 hover:text-foreground"
 					>
 						Try again
 					</button>

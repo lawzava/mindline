@@ -102,22 +102,22 @@
 >
 	<!-- Sender name (only for others) -->
 	{#if !isMe}
-		<span class="px-3 text-xs font-medium text-muted-foreground truncate max-w-[200px]">
+		<span class="max-w-[220px] truncate px-3 text-xs font-bold text-muted-foreground">
 			{message.sender_name}
 		</span>
 	{/if}
 
 	<!-- Message bubble with actions -->
-	<div class={cn('flex items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
+	<div class={cn('flex w-full items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
 		<!-- Message content -->
 		<div
 			use:longPress={{ duration: 400, onLongPress: handleLongPress }}
 			class={cn(
-				'max-w-[80%] max-h-[400px] overflow-y-auto rounded-2xl px-4 py-2.5 text-sm select-none',
+				'max-h-[400px] max-w-[min(82vw,38rem)] overflow-y-auto rounded-[1.35rem] border px-4 py-3 text-sm leading-6 shadow-sm select-none sm:max-w-[72%]',
 				isMe
-					? 'bg-primary text-primary-foreground'
-					: 'bg-muted text-foreground',
-				isDeleted && 'italic text-muted-foreground',
+					? 'border-primary/25 bg-primary text-primary-foreground shadow-primary/15'
+					: 'border-border/80 bg-card text-card-foreground shadow-black/5',
+				isDeleted && 'border-dashed border-muted-foreground/35 bg-muted/35 text-muted-foreground shadow-none italic',
 				'active:scale-[0.98] transition-transform'
 			)}
 		>
@@ -181,7 +181,7 @@
 	<!-- Timestamp and delivery status (always visible) -->
 	<span
 		class={cn(
-			'px-3 text-[10px] text-muted-foreground/70 flex items-center gap-1',
+			'flex items-center gap-1 px-3 text-[11px] font-medium text-muted-foreground/80',
 			isMe ? 'justify-end' : 'justify-start'
 		)}
 	>
@@ -197,7 +197,7 @@
 					<Tooltip.Trigger>
 						<span class="inline-flex items-center cursor-help">
 							{#if isFullyDelivered}
-								<CheckCheck class="h-3 w-3 text-primary" />
+								<CheckCheck class="h-3 w-3 text-success" />
 							{:else if isPartiallyDelivered}
 								<CheckCheck class="h-3 w-3 text-muted-foreground" />
 							{:else}
