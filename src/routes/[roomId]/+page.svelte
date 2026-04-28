@@ -385,55 +385,69 @@
 </svelte:head>
 
 {#if isLoading}
-	<div class="flex flex-1 items-center justify-center">
-		<div class="flex flex-col items-center gap-4 text-muted-foreground">
+	<div class="flex flex-1 items-center justify-center px-4">
+		<div class="flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border bg-card p-8 text-center shadow-sm">
 			<Loader2 class="h-8 w-8 animate-spin motion-reduce:animate-none" />
-			<p class="text-sm">Joining room...</p>
+			<div class="space-y-1">
+				<p class="text-base font-medium text-foreground">Joining room</p>
+				<p class="text-sm text-muted-foreground">Preparing local history and peer sync.</p>
+			</div>
 		</div>
 	</div>
 {:else}
-	<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden min-h-0">
-		<!-- Connection Status Bar -->
-		<div class="flex flex-col gap-2 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
-			<div class="flex items-center gap-2">
-				<span class="text-sm text-muted-foreground">Room:</span>
-				<button
-					onclick={copyRoomId}
-					aria-label="Copy room ID to clipboard"
-					class="group inline-flex h-11 items-center gap-2 rounded-full bg-muted px-3 text-xs hover:bg-muted/80 transition-colors"
-					title="Tap to copy room ID"
-					data-testid="copy-room-btn"
-				>
-					<code>{roomId?.slice(0, 8)}...</code>
-					<Copy class="h-4 w-4 opacity-70 transition-opacity group-hover:opacity-100 motion-reduce:transition-none" />
-				</button>
-			</div>
-			<div class="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-				<ConnectionStatus />
-				<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-11 px-3 gap-2 text-muted-foreground hover:text-foreground" data-testid="leave-room-btn">
-					<LogOut class="h-4 w-4" />
-					<span class="hidden sm:inline">Leave</span>
-				</Button>
+	<div class="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-4 overflow-hidden px-3 py-4 sm:px-4 lg:px-6">
+		<div class="rounded-3xl border bg-card p-4 shadow-sm sm:p-5">
+			<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+				<div class="min-w-0 space-y-3">
+					<div class="flex flex-wrap items-center gap-2">
+						<span class="text-sm font-medium text-muted-foreground">Room</span>
+						<code class="rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-foreground">
+							{roomId?.slice(0, 8)}...
+						</code>
+					</div>
+					<span class="inline-flex w-fit rounded-full bg-live/12 px-3 py-1.5 text-xs font-bold text-primary">
+						Drafts are live in this room while you type.
+					</span>
+				</div>
+
+				<div class="flex flex-col gap-3 sm:flex-row sm:items-center lg:justify-end">
+					<button
+						onclick={copyRoomId}
+						aria-label="Copy room ID to clipboard"
+						class="group inline-flex h-11 items-center justify-center gap-2 rounded-full border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted motion-reduce:transition-none"
+						title="Tap to copy room ID"
+						data-testid="copy-room-btn"
+					>
+						<span>Copy room</span>
+						<code class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
+							{roomId?.slice(0, 8)}...
+						</code>
+						<Copy class="h-4 w-4 opacity-70 transition-opacity group-hover:opacity-100 motion-reduce:transition-none" />
+					</button>
+					<ConnectionStatus />
+					<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-11 gap-2 px-3 text-muted-foreground hover:text-foreground" data-testid="leave-room-btn">
+						<LogOut class="h-4 w-4" />
+						<span>Leave</span>
+					</Button>
+				</div>
 			</div>
 		</div>
 
-		<p class="border-b px-3 py-2 text-xs text-muted-foreground sm:px-4">
-			Live drafts are visible to room peers while you type.
-		</p>
+		<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border bg-background shadow-sm">
+			<!-- Messages area -->
+			<MessageList
+				messages={$currentRoomMessages}
+				onEdit={handleEdit}
+				onDelete={handleDelete}
+				onReaction={handleReaction}
+			/>
 
-		<!-- Messages area -->
-		<MessageList
-			messages={$currentRoomMessages}
-			onEdit={handleEdit}
-			onDelete={handleDelete}
-			onReaction={handleReaction}
-		/>
+			<!-- Draft indicators (what others are typing) -->
+			<DraftIndicator />
 
-		<!-- Draft indicators (what others are typing) -->
-		<DraftIndicator />
-
-		<!-- Message input -->
-		<MessageInput onSend={handleSend} onTyping={handleTyping} {isSending} />
+			<!-- Message input -->
+			<MessageInput onSend={handleSend} onTyping={handleTyping} {isSending} />
+		</div>
 	</div>
 
 	<!-- Leave confirmation dialog -->

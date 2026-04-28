@@ -30,16 +30,19 @@
 <div class="min-h-0 flex-1 overflow-hidden" data-testid="message-list">
 	<div
 		bind:this={scrollRef}
-		class="h-full overflow-y-auto px-4 py-4 sm:px-6"
+		class="h-full overflow-y-auto px-3 py-4 sm:px-5 sm:py-5"
 	>
 		{#if messages.length === 0}
 			<div class="flex h-full items-center justify-center">
-				<p class="text-center text-sm text-muted-foreground">
-					No messages yet. Start the conversation!
-				</p>
+				<div class="max-w-sm rounded-3xl border border-live/20 bg-surface-warm px-6 py-5 text-center shadow-sm shadow-live/10">
+					<p class="text-base font-bold text-foreground">This room is quiet.</p>
+					<p class="mt-2 text-sm leading-6 text-muted-foreground">
+						Type when you are ready. Your draft is visible to connected peers before you send.
+					</p>
+				</div>
 			</div>
 		{:else}
-			<div class="flex flex-col gap-3">
+			<div class="flex flex-col gap-4">
 				{#each messages as message (message.id)}
 					<MessageBubble
 						{message}
