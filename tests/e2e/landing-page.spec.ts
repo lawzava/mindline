@@ -7,12 +7,11 @@ test.describe('Landing Page', () => {
 	test('should render landing page correctly', async ({ page }) => {
 		await page.goto('/');
 
-		// Check main elements are visible
-		await expect(page.getByText('Welcome to Mindline')).toBeVisible();
-		await expect(page.getByText('Real-time P2P chat with radical transparency.')).toBeVisible();
-		await expect(
-			page.getByText('Drafts are live: people in the room can see what you type before you send.')
-		).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Mindline' })).toBeVisible();
+		await expect(page.getByText('Private rooms for live thoughts.')).toBeVisible();
+		await expect(page.getByText('Drafts are live while you type.')).toBeVisible();
+		await expect(page.getByText('Anyone with a room link can join.')).toBeVisible();
+		await expect(page.getByText('Messages sync with peers when connected.')).toBeVisible();
 		await expect(page.locator('[data-testid="create-room-btn"]')).toBeVisible();
 		await expect(page.locator('[data-testid="join-room-input"]')).toBeVisible();
 		await expect(page.locator('[data-testid="join-room-btn"]')).toBeVisible();
