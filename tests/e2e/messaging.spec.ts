@@ -61,7 +61,7 @@ test.describe('Messaging', () => {
 		await input.press('Enter');
 
 		// Should still show empty state
-		await expect(page.getByText('No messages yet. Start the conversation!')).toBeVisible();
+		await expect(page.getByText('This room is quiet.')).toBeVisible();
 	});
 
 	test('should not send whitespace-only message', async ({ page }) => {
@@ -74,7 +74,7 @@ test.describe('Messaging', () => {
 		await input.press('Enter');
 
 		// Should still show empty state
-		await expect(page.getByText('No messages yet. Start the conversation!')).toBeVisible();
+		await expect(page.getByText('This room is quiet.')).toBeVisible();
 	});
 
 	test('should display message in message bubble', async ({ page }) => {
@@ -113,7 +113,7 @@ test.describe('Messaging', () => {
 		await input.pressSequentially('Line 2');
 
 		// Message should not be sent yet
-		await expect(page.getByText('No messages yet. Start the conversation!')).toBeVisible();
+		await expect(page.getByText('This room is quiet.')).toBeVisible();
 
 		// Input should still have content
 		const value = await input.inputValue();
@@ -162,13 +162,13 @@ test.describe('Messaging', () => {
 		await joinRoom(page, roomId);
 
 		// Empty state should be visible initially
-		await expect(page.getByText('No messages yet. Start the conversation!')).toBeVisible();
+		await expect(page.getByText('This room is quiet.')).toBeVisible();
 
 		// Send a message
 		await sendMessage(page, TEST_MESSAGE);
 
 		// Empty state should disappear
-		await expect(page.getByText('No messages yet. Start the conversation!')).toBeHidden();
+		await expect(page.getByText('This room is quiet.')).toBeHidden();
 	});
 
 	test('should preserve message content with special characters', async ({ page }) => {
