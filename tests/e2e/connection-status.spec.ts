@@ -60,7 +60,7 @@ test.describe('Connection Status', () => {
 
 		await expect(
 			page.getByText(
-				'Connection status explains whether messages are syncing with peers or only available locally.'
+				'Connection status explains whether messages and live drafts are syncing with peers or only saved here.'
 			)
 		).toBeAttached();
 	});

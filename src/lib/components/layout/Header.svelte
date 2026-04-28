@@ -73,15 +73,33 @@
 	}
 </script>
 
-<header class="border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-	<div class="mx-auto flex h-14 sm:h-16 max-w-4xl items-center justify-between px-3 sm:px-4">
+<header class="z-10 border-b border-border/80 bg-background/92">
+	<div class="mx-auto flex h-16 min-w-0 max-w-6xl items-center justify-between gap-2 px-4 sm:px-6">
 		<!-- Logo -->
-		<div class="flex items-center gap-2 sm:gap-3">
-			<h1 class="text-xl sm:text-2xl font-bold tracking-tight">MINDLINE</h1>
-		</div>
+		{#if $currentRoomId}
+			<div class="flex min-w-0 items-center gap-2 rounded-full sm:gap-3" aria-label="Mindline">
+				<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/80 bg-card text-sm font-semibold shadow-sm">
+					M
+				</span>
+				<span class="hidden min-w-0 flex-col leading-none sm:flex">
+					<span class="truncate text-base font-semibold tracking-tight">Mindline</span>
+					<span class="mt-1 hidden truncate text-xs text-muted-foreground md:block">Live drafts. Private rooms.</span>
+				</span>
+			</div>
+		{:else}
+			<a href="/" class="flex min-w-0 items-center gap-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:gap-3">
+				<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/80 bg-card text-sm font-semibold shadow-sm">
+					M
+				</span>
+				<span class="hidden min-w-0 flex-col leading-none sm:flex">
+					<span class="truncate text-base font-semibold tracking-tight">Mindline</span>
+					<span class="mt-1 hidden truncate text-xs text-muted-foreground md:block">Live drafts. Private rooms.</span>
+				</span>
+			</a>
+		{/if}
 
 		<!-- Controls -->
-		<div class="flex items-center gap-2 sm:gap-3">
+		<div class="flex shrink-0 items-center gap-2 sm:gap-3">
 			<!-- Username input -->
 			<Input
 				type="text"
@@ -90,7 +108,7 @@
 				bind:value={userName}
 				onblur={handleNameChange}
 				onkeydown={(e) => e.key === 'Enter' && handleNameChange()}
-				class="w-28 sm:w-36"
+				class="w-24 sm:w-36"
 			/>
 
 			<!-- Share button (only when in a room) -->
@@ -99,7 +117,7 @@
 					variant="outline"
 					size="icon"
 					onclick={shareRoom}
-					class="h-11 w-11"
+					class="h-11 w-11 shrink-0"
 					data-testid="share-room-btn"
 				>
 					<Share2 class="h-4 w-4" />
@@ -108,7 +126,7 @@
 			{/if}
 
 			<!-- Theme toggle -->
-			<Button variant="ghost" size="icon" onclick={toggleMode} class="h-11 w-11">
+			<Button variant="ghost" size="icon" onclick={toggleMode} class="h-11 w-11 shrink-0">
 				{#if mode.current === 'dark'}
 					<Sun class="h-4 w-4" />
 				{:else}
