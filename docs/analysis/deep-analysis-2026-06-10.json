@@ -1,0 +1,808 @@
+{
+  "summary": "Parallel deep-read of every Mindline subsystem with structured critique",
+  "agentCount": 8,
+  "logs": [],
+  "result": [
+    {
+      "key": "rust-core",
+      "issues": [
+        {
+          "title": "\"E2E encryption\" does not exist: no key exchange, chat messages broadcast in plaintext",
+          "severity": "critical",
+          "file": "/Users/jakob/Code/lawzava/mindline/src-rust/crypto.rs:70",
+          "detail": "Room keys are generated per-browser (crypto.rs:70-91 via crypto.getRandomValues) and never leave the device — there is no key-exchange mechanism anywhere in the codebase. The JS layer admits this: src/lib/p2p/handlers.ts:203-204 \"peers may have different room keys (key sharing not yet implemented)\" and deliberately sends sync responses with encrypted:false. The send path proves it: src/routes/[roomId]/+page.svelte:153-172 calls wasm.sendMessageEnhanced(roomId, content, ...) with plaintext, then broadcastChat(content, messageId); src/lib/p2p/manager.ts:254-262 builds the ChatMessage with raw content and never sets encrypted:true. encrypt_message_content (crypto_api.rs:76) has ZERO call sites in the entire app (verified by grep). The only encryption protecting messages is WebRTC's built-in DTLS transport encryption plus the TS-only relay fallback. Meanwhile README.md:24,30,222,334 claims \"End-to-End Encryption ... All messages encrypted with 256-bit keys\" — this is false advertising for a privacy product."
+        },
+        {
+          "title": "Decrypt path has a latent type bug proving it never ran: Promise assigned as message content",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/p2p/handlers.ts:100",
+          "detail": "decrypt_message_content is an async Rust export returning js_sys::Promise (crypto_api.rs:97-111, future_to_promise). The TS proxy types it as a synchronous string function (src/lib/wasm/index.ts:291-292), and handlers.ts:98-107 calls it synchronously: `const result = wasm.decryptMessageContent(content); if (result) decryptedContent = result;`. A Promise is always truthy, so if any peer ever set encrypted:true, the rendered message content would become a Promise object (\"[object Promise]\"). Same bug at handlers.ts:253 in sync-response handling. Today this path is dead (no sender sets the flag), but it demonstrates the encryption pipeline has never been exercised end-to-end and will break the moment someone \"turns it on\"."
+        },
+        {
+          "title": "Room keys and full message history stored as plaintext JSON in localStorage",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src-rust/crypto.rs:243",
+          "detail": "save_room_key_to_storage (crypto.rs:243-265) serializes the raw 32-byte key as a JSON byte array into localStorage key `mindline_encryption_key_{roomId}`; export_key (crypto.rs:189-196) also emits plaintext JSON. Worse, the entire chat history including plaintext content is persisted via save_room_to_storage (messages.rs:524-580) into `chatHistory_{roomId}` — so even if wire encryption existed, at-rest data is fully exposed to any XSS, malicious extension, or device access. There is no encryption at rest despite README security claims. Tamper-resistance is similarly hollow: the \"integrity_hash\" (crypto.rs:128-129, verified at 147-156 and 398-411) is an unkeyed SHA-256 of ciphertext+nonce stored in the same blob — any attacker can recompute it; it adds zero security over GCM's auth tag and the code comment admits it."
+        },
+        {
+          "title": "Roughly two-thirds of the Rust code is dead or ceremonial at runtime",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src-rust/logger.rs:1",
+          "detail": "Verified by grepping all wasm.* call sites: only ~15 exports are ever called. Completely dead subsystems: logger.rs (701 lines) + logging_api.rs (220) — zero JS call sites; performance.rs (343) + bindings — zero call sites, frame rate hardcoded to 60.0 (performance.rs:289) and CPU usage is a fabricated estimate (292-298); storage.rs (154) — the \"IndexedDBManager\" is an in-memory HashMap with a comment admitting \"In production, this would use IndexedDB\" (storage.rs:42-43), zero call sites, while Cargo.toml:37-46 pulls 10 unused Idb* web-sys features; sanitizer.rs (283) + validation_api.rs — zero call sites, and its detect_sql_injection (sanitizer.rs:209-221) would flag any chat message containing \"select\", an apostrophe, or a semicolon in a database-free P2P app; legacy core.rs send_message/get_messages/join_room — unused; create_room_with_id IS called at runtime but is a pure no-op that logs (core.rs:245-253); state_api.rs draft/peer tracking — unused, duplicated by Svelte stores; utils.rs URL helpers — unused (SvelteKit routing handles this). The base64 crate (Cargo.toml:58) and Rtc* web-sys features (Cargo.toml:29-36) are entirely unused — p2p.rs no longer exists despite CLAUDE.md:55 still documenting it."
+        },
+        {
+          "title": "1.05 MB WASM payload (293 KB brotli / 410 KB gzip) for functionality that is mostly dead weight",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/pkg/mindline_bg.wasm",
+          "detail": "Measured: mindline_bg.wasm is 1,080,091 bytes raw, 410,242 gzip, 293,022 brotli — even with opt-level=\"z\", LTO, and panic=abort already applied (Cargo.toml:62-66). This is the largest single asset in a mobile-first chat app and must download+instantiate before the room page works (wasm.generateUuid/initialize are on the join path). Major size contributors are the regex crate (used only by the dead sanitizer), serde_json/serde-wasm-bindgen (every message crosses the boundary twice through serde), uuid, and sha2 — while the actual cryptography executes in JavaScript. The payload buys almost nothing the browser doesn't already provide."
+        },
+        {
+          "title": "Message state lives in three places with hand-rolled synchronization",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/p2p/handlers.ts:134",
+          "detail": "Every message is dual-written: Svelte messages store (handlers.ts:134) AND WASM MessageManager (handlers.ts:140 receiveMessageFromPeer) AND localStorage (handlers.ts:142 saveRoomMessagesToStorage). Edits/deletes/reactions repeat this triple-write pattern (handlers.ts:383-400, 423-438, 480-496). The WASM side additionally keeps a parallel legacy copy in APP_STATE (core.rs:111-162) and a multi-tab merge-on-save (messages.rs:534-569) that re-reads and re-merges localStorage on every save — O(n) JSON parse+serialize of the whole room per message. Any drift bug between the three stores produces ghost/duplicate messages; the deduplication logic exists precisely because the architecture invites divergence."
+        },
+        {
+          "title": "Mutex/Arc ceremony, no-op catch_unwind, and panic sites",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src-rust/state.rs:8",
+          "detail": "WASM here is single-threaded, yet state.rs:8-15 and messages.rs:627-629 wrap globals in thread_local!{Arc<Mutex<...>>} — triple redundancy (thread_local alone isolates; Arc is never shared; Mutex can never contend). crypto.rs:324, sanitizer.rs:268, logger.rs:650 inconsistently use RefCell for the same purpose. All ~20 \"Failed to lock\" error paths are unreachable: with panic=\"abort\" (Cargo.toml:66) Mutex poisoning cannot occur. The std::panic::catch_unwind guards in logging_api.rs:54-88 are no-ops under panic=abort — a panic still kills the whole WASM instance. Real panic risks: logger.rs:625 web_sys::window().unwrap() aborts in any non-window context, and futures::executor::block_on (advanced_api.rs:52,65) would hang the main thread if those storage futures ever did real async I/O (currently saved only by the futures being secretly synchronous, and by having zero call sites). message_api.rs:56-65 works around a wasm-bindgen Option<u32> sentinel (0x100000001) with a magic \"> 1000000\" check — evidence of fragile FFI."
+        },
+        {
+          "title": "Relay-fallback E2E (the only real working E2E) is unauthenticated ECDH, MITM-able by the signaling server",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/p2p/connection.ts:128",
+          "detail": "Noted for completeness since it is the only genuine end-to-end crypto in the product and it lives entirely in TypeScript, not WASM: connection.ts:111-250 does ECDH P-256 + AES-GCM per peer for the WebSocket relay path. Public keys are exchanged through the signaling server with no authentication or fingerprint verification, so a malicious server can substitute keys and read relayed traffic. It is nonetheless a working template for the missing room-level key exchange — and proof the team can ship WebCrypto-only crypto without Rust."
+        },
+        {
+          "title": "CLAUDE.md / docs describe an architecture that no longer exists",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/CLAUDE.md:54",
+          "detail": "CLAUDE.md:54-58 lists p2p.rs (deleted — lib.rs:18 says \"all P2P coordination now in JavaScript\"), claims \"Enter key → WASM encrypts message → P2P broadcast\" (false: broadcast is plaintext), and \"Messages encrypted with AES-256-GCM, per-room keys\" (false at runtime). The mission-critical data-flow documentation actively misleads anyone working on the code."
+        }
+      ],
+      "opportunities": [
+        "Delete the Rust/WASM layer entirely. The live surface — ordered message list with dedup, edit/delete/reactions, localStorage persistence, UUID generation — is ~200-300 lines of TypeScript, half of which already exists in the Svelte stores (the app dual-writes today). This removes ~4,400 lines of Rust, the 360-line proxy (src/lib/wasm/index.ts), the wasm-pack build pipeline, and 293-410 KB of compressed payload from the mobile critical path, with zero security loss because all actual cryptography already executes in WebCrypto via the JS bridge (src/lib/wasm/crypto.ts).",
+        "Implement real key exchange to make the E2E claim true. Cheapest robust option for this product: put the room key in the URL fragment (#k=...) at room creation — fragments never reach the signaling server — and encrypt all chat/sync payloads with it via WebCrypto AES-GCM (the primitives and 12-byte-random-IV pattern already exist and are correct). Alternative: extend the existing per-peer ECDH relay handshake (connection.ts:111-250) to cover DataChannel payloads, adding key fingerprint verification (short emoji/word fingerprint in UI) to close the MITM hole. This also gives the planned P2P file/photo/audio/video sharing a real encryption story for free.",
+        "Encrypt-at-rest or stop persisting plaintext: derive a storage key from the room key and encrypt chatHistory_* blobs, or at minimum remove the README e2e/security claims until true.",
+        "Collapse message state to one owner: a single TypeScript message store that the UI subscribes to and that persists itself, eliminating the triple-write (Svelte store + WASM MessageManager + localStorage) and the hand-rolled multi-tab merge.",
+        "If keeping any Rust: strip logger.rs, performance.rs, storage.rs, sanitizer.rs, legacy core.rs functions, state_api drafts/peers, and unused deps (regex, base64, Idb*/Rtc* web-sys features) — this alone should roughly halve the WASM binary; then fix the async decrypt proxy typing. But given the live remainder is a message list, deletion beats dieting.",
+        "Update CLAUDE.md/README to match reality (p2p.rs gone, no wire encryption today) so future agents and contributors don't build on false assumptions."
+      ],
+      "strengths": [
+        "messages.rs core logic is genuinely solid: chronological insertion (messages.rs:255-280), HashSet-based deduplication, multi-tab merge-on-save with in-memory precedence (messages.rs:524-580), and a 1000-message cache cap — backed by 19 passing unit tests (the only tested code in the crate; verified with cargo test).",
+        "The cryptographic primitives chosen are correct: AES-256-GCM with 128-bit tag, fresh 12-byte random IV per encryption from crypto.getRandomValues, PBKDF2-SHA256 at 600k iterations available in the bridge (src/lib/wasm/crypto.ts), and 32-byte CSPRNG room keys. Nothing home-rolled — when/if invoked, the crypto itself is sound.",
+        "The safe WASM proxy pattern (src/lib/wasm/index.ts createSafeCall) with parameter validation, NaN guards, and descriptive errors is well-engineered defensive FFI.",
+        "Live API functions consistently avoid unwrap/panic in favor of Result<_, JsValue> with descriptive messages; the no-unwrap-in-production convention is actually followed in the runtime paths.",
+        "The codebase is honest in comments where it matters: handlers.ts:203-204 admits key sharing is unimplemented, storage.rs:42-43 admits the IndexedDB manager is fake — the dead code is at least labeled, which made this audit tractable."
+      ],
+      "summary": "The Rust/WASM core (src-rust/, ~4,400 lines, compiled to a 1.05 MB / 293 KB-brotli cdylib) presents itself as the security and state engine of Mindline: AES-256-GCM encryption (crypto.rs), message management (messages.rs), input sanitization (sanitizer.rs), logging (logger.rs), performance monitoring (performance.rs), and IndexedDB storage (storage.rs), exposed through six *_api.rs binding modules and consumed via a typed proxy in src/lib/wasm/index.ts. There is no p2p.rs — P2P moved entirely to TypeScript (lib.rs:18), though CLAUDE.md still documents it.\n\nAt runtime the picture is very different. Tracing every wasm.* call site in the app shows only ~15 exports are ever invoked, almost all from messages.rs: send_message_enhanced, receive_message_from_peer, get_room_messages, edit/delete/reactions, and plaintext save/load to localStorage. The logging system (921 lines), performance monitor (343 lines, with a hardcoded 60.0 FPS and fabricated CPU metric), the fake \\\"IndexedDBManager\\\" (an in-memory HashMap that admits in comments it isn't IndexedDB), the sanitizer/validation API, the legacy core.rs functions, and the draft/peer state tracking all have zero JavaScript call sites — they exist only to inflate the binary, much of whose size comes from the regex crate that only the dead sanitizer uses.\n\nThe encryption story is the critical finding. Room keys are real 32-byte CSPRNG keys, generated per-browser on room join (initialize_room_encryption, crypto_api.rs:43) and stored as plaintext JSON in localStorage — but there is no key exchange of any kind, so no two peers ever share a key. Consequently the app never encrypts anything: encrypt_message_content has zero call sites, broadcastChat (manager.ts:239-265) sends raw plaintext over the DataChannel, sync responses are deliberately unencrypted (handlers.ts:203-204, \\\"key sharing not yet implemented\\\"), and chat history is persisted as plaintext JSON. The decrypt path that does exist is dead (the encrypted flag is never set) and contains a latent bug — a Promise-returning async export consumed synchronously (handlers.ts:100), which would render \\\"[object Promise]\\\" as message content if ever triggered. Even the Rust \\\"crypto\\\" is a pass-through: actual AES-GCM runs in JavaScript via a window.webcrypto* bridge (src/lib/wasm/crypto.ts), with Rust adding only serialization overhead and an unkeyed SHA-256 \\\"integrity hash\\\" that provides no security. The only genuine end-to-end encryption in the product is the WebSocket relay fallback — unauthenticated ECDH P-256 + AES-GCM implemented entirely in TypeScript (connection.ts:111-250), with WASM uninvolved. Message security on the direct path rests solely on WebRTC's built-in DTLS. Thread-safety code is ceremony: thread_local!{Arc<Mutex<>>} globals in a single-threaded WASM environment, unreachable lock-poisoning error paths (panic=abort), no-op catch_unwind guards, plus a window().unwrap() abort risk and a block_on footgun in dead code paths.",
+      "verdict": "Rewrite by deletion. The Rust/WASM layer is not pulling its weight: its cryptography is performed by JavaScript WebCrypto anyway (Rust just ferries bytes across the FFI boundary), roughly two-thirds of its code is dead at runtime, and its one live contribution — an ordered, deduplicated message store with localStorage persistence — is a few hundred lines of TypeScript that the Svelte stores already half-duplicate. Removing it cuts 293-410 KB of compressed payload from the mobile critical path, eliminates the wasm-pack toolchain and the fragile triple-state synchronization, and loses nothing security-wise because there is currently no message encryption to lose: no key exchange exists, messages broadcast and persist in plaintext, and the README's E2E claims are false. The engineering effort should go where the product gap actually is — a real key-exchange design (URL-fragment room key or authenticated per-peer ECDH, for which the TypeScript relay code is already a working template) implemented directly on WebCrypto, which will also serve the planned P2P file/photo/audio/video features. WASM would only earn its place back if the roadmap later demands heavy client-side compute (e.g., media transcoding or chunked file crypto at throughput), and even then as a small purpose-built module, not this one."
+    },
+    {
+      "key": "p2p-webrtc",
+      "summary": "The P2P layer is a hand-rolled WebRTC mesh in three pieces: `connection.ts` (1511 lines) owns the signaling WebSocket, RTCPeerConnection lifecycle, a single 'chat' DataChannel per peer, an encrypted WebSocket relay fallback (ECDH P-256 → AES-GCM), and mesh-repair timers; `manager.ts` is a module-singleton orchestrator wiring callbacks into Svelte stores plus reconnection backoff and mobile lifecycle (visibility/network/pagehide) handlers; `handlers.ts` routes 9 message types (chat/typing/sync/edit/delete/reaction/ack/user-connected/ready) into stores and WASM persistence. Discovery flows through `signaling-server.js` (a solid, rate-limited ws server that assigns server-side client IDs and relays offer/answer/ICE/relay-key/relay to targeted peers). Initiator selection is deterministic (higher server ID offers), with offer-collision rollback, queued-offer retry, ICE candidate queueing, and a ready-handshake before `onPeerConnected` fires.\n\nThe realtime typing feature is full-snapshot based: every input event is trailing-debounced 100ms (`+page.svelte:182-193`), then `broadcastTyping` sends the entire draft text as a JSON 'typing' message to all peers; receivers store it in a drafts map keyed by peerId with a 3s fade-out. Because each update is a complete snapshot over an ordered channel, packet loss/reorder self-heals on the next keystroke — the protocol itself is sound. The problem is underneath it: the shared DataChannel is created with `{ ordered: true, maxRetransmits: 3 }` (connection.ts:627-630), which makes it *partially reliable* — chat messages, edits, acks and sync responses share a channel that silently drops messages after 3 retransmits on lossy networks, and high-frequency typing traffic head-of-line-blocks chat on that same ordered channel.\n\nSync-on-reconnect is naive: the requester broadcasts a `sync-request` carrying `lastSync` and `messageCount` (manager.ts:366-393), but responders ignore both and ship the *entire* room history as one JSON DataChannel message (handlers.ts:192-220). Since `requestSync` is broadcast and every peer answers, an N-peer room produces N full-history responses per join (O(N²) data), and a long history will exceed cross-browser SCTP message limits (~64-256KB) and silently fail. Conflict handling is dedupe-by-id, deletion-wins, and a shallow reaction merge that resurrects removed reactions; edits are never reconciled. Notably, chat broadcast and sync both travel as plaintext JSON — `encrypted: true` is never set anywhere in the codebase — so the WASM AES-GCM room key only encrypts localStorage; on-the-wire confidentiality rests entirely on DTLS plus an unauthenticated ECDH for the relay path (the signaling server could MITM relay-key exchange since it assigns `fromId`).\n\nFailure recovery, the part that matters most for \"ultra-reliable\", is the weakest area. Several recovery paths are provably dead code: `restartIce()` is called (connection.ts:754, 1392) but no `onnegotiationneeded` handler or manual re-offer exists, so ICE restart never actually renegotiates; the relay-fallback-after-ICE-exhaustion path adds the peer to `relayPeers` *after* `removePeer()` already wiped it from `allKnownPeers` (761-772 vs 1304), and the relay loop requires `allKnownPeers.has(peerId)` (1168), so it never fires; and any `connectionState === 'failed'` instantly calls `removePeer` (696-699), which deletes the peer from `allKnownPeers`, removing it from mesh monitoring forever — a single post-handshake failure permanently partitions two peers until someone refreshes the page. A signaling WebSocket blip also tears down every healthy DataChannel (380-392) even though they don't depend on signaling.",
+      "strengths": [
+        "Deterministic initiator rule using server-assigned IDs (connection.ts:428-434, 468-478) plus offer-collision rollback with retry queue (956-1019) — the hardest WebRTC race is genuinely handled",
+        "ICE candidates queued until remote description is set, then flushed (connection.ts:1093-1132) — correct and common source of bugs elsewhere",
+        "Ready-handshake over the DataChannel before firing onPeerConnected (786-898) prevents sending into half-open channels, including the already-open-on-ondatachannel edge case (846-850)",
+        "Encrypted WebSocket relay fallback (ECDH P-256 + AES-GCM, connection.ts:111-274) so the signaling server cannot passively read fallback traffic, with pending-message queueing until key exchange completes",
+        "signaling-server.js is genuinely production-shaped: server-assigned client IDs prevent fromId spoofing (line 196, 340), per-client/IP/room rate limits, keepalive with mobile-tolerant missed-pong allowance (447-471), room/connection caps, targeted (not broadcast) signaling relay",
+        "Mobile lifecycle awareness exists and is mostly sensible: pagehide/beforeunload cleanup, visibility handler that checks actual WS state before reconnecting (manager.ts:531-568), 'disconnected' treated as transient rather than terminal (connection.ts:704-710)",
+        "Reconnection with exponential backoff surfaces state to the UI (manager.ts:418-475) and is guarded against firing during intentional disconnects",
+        "removePeer nulls handlers before close and dedupes via disconnectingPeers (1261-1323) — listener cleanup on the happy path is thorough"
+      ],
+      "issues": [
+        {
+          "title": "Any post-handshake connection failure permanently severs the peer",
+          "severity": "critical",
+          "file": "src/lib/p2p/connection.ts:1304",
+          "detail": "removePeer() deletes the peer from allKnownPeers. It is called on connectionState 'failed' (connection.ts:696-699), data-channel death, and ICE exhaustion — i.e. on transient failures, not just peer-left. Once removed, the mesh monitor (1419-1469 iterates allKnownPeers), ensureFullMesh, and both relay loops (1167-1184) all forget the peer exists. There is no signaling re-announcement for peers that never left the room, so two peers whose connection drops (WiFi blip, NAT rebind) stay partitioned until one refreshes the page. The design conflates 'peer left the room' with 'connection to peer failed'."
+        },
+        {
+          "title": "Relay fallback after ICE exhaustion is dead code (ordering bug)",
+          "severity": "critical",
+          "file": "src/lib/p2p/connection.ts:761-772",
+          "detail": "On ICE restart exhaustion: this.removePeer(peerId) runs at line 766 (wiping allKnownPeers at 1304 and relayPeers at 1300), then this.relayPeers.add(peerId) at 770. broadcast()'s relay path requires `this.allKnownPeers.has(peerId)` (line 1168), which is now false, and the second relay loop (1175-1184) also iterates allKnownPeers. The advertised 'encrypted WebSocket relay when direct P2P fails' never activates via this path — verified by tracing both relay loops."
+        },
+        {
+          "title": "restartIce() recovery is a no-op — no renegotiation ever happens",
+          "severity": "critical",
+          "file": "src/lib/p2p/connection.ts:751-760",
+          "detail": "pc.restartIce() only flags the next createOffer() to generate fresh ICE credentials; without an onnegotiationneeded handler or a manual offer/answer round, nothing is sent. grep confirms no 'onnegotiationneeded' anywhere in src/lib/p2p/. Both call sites (connection.ts:754 and 1392) therefore do nothing. Worse, the exponential-backoff ICE retry races against onconnectionstatechange 'failed' (696-699) which calls removePeer immediately, so the backoff timers usually fire against an already-removed peer. The entire ICE-restart subsystem (iceRestartAttempts, MAX_ICE_RESTARTS, handleConnectionFailure) is effectively inert."
+        },
+        {
+          "title": "DataChannel is partially reliable: chat messages can be silently dropped",
+          "severity": "critical",
+          "file": "src/lib/p2p/connection.ts:627-630",
+          "detail": "createDataChannel('chat', { ordered: true, maxRetransmits: 3 }) creates a partially-reliable channel: any message (chat, edit, delete, sync-response, delivery-ack) is abandoned after 3 retransmission attempts. On lossy mobile networks this silently loses chat messages with no error and no retry — the delivery-ack system will show non-delivery but nothing re-sends. A chat app's primary channel must be fully reliable (omit maxRetransmits). This also disqualifies the channel for file chunking as-is."
+        },
+        {
+          "title": "Signaling WebSocket close tears down all healthy P2P connections",
+          "severity": "critical",
+          "file": "src/lib/p2p/connection.ts:380-392",
+          "detail": "ws.onclose iterates this.peers and removePeer()s every one, even though established DataChannels do not depend on the signaling server. A signaling blip (server redeploy, fly.dev restart, mobile radio handoff) kills every healthy peer connection and forces full re-mesh through the staggered-delay join flow. Peers should survive signaling loss; signaling is only needed for new negotiations."
+        },
+        {
+          "title": "No teardown guard: timers resurrect connections after disconnect()",
+          "severity": "high",
+          "file": "src/lib/p2p/connection.ts:439-453",
+          "detail": "P2PConnection has no 'destroyed' flag. After disconnect(), already-scheduled timers still fire: the staggered room-joined connects (439-453, up to peers*2s out), the offer-timeout retry which unconditionally calls createPeerConnection(peerId, true) (673-680), ICE backoff timers (751-760), and queued-offer retries (1012, 1077). Each creates a fresh RTCPeerConnection in the orphaned instance's peers map that nothing ever closes — a real leak when switching rooms or during manager-driven reconnects, where manager.ts nulls its reference (manager.ts:168) but the instance keeps working in the background."
+        },
+        {
+          "title": "Sync sends full history as one giant JSON message, ignores lastSync, and floods O(N²)",
+          "severity": "high",
+          "file": "src/lib/p2p/handlers.ts:192-220",
+          "detail": "handleSyncRequest ignores message.lastSync and message.messageCount and sends messages.getRoomMessages(roomId) — the whole room, unpaginated — as a single JSON string via sendToPeer. Cross-browser SCTP message limits (~64KB safe, ~256KB Chrome-Chrome) mean long histories throw on send and sync silently fails (sendToPeer just logs, connection.ts:1238-1240). And because requestSync is *broadcast* (manager.ts:388) on every onPeerConnected (manager.ts:97), every peer in an N-room answers with full history: N joins produce N² full-history transfers."
+        },
+        {
+          "title": "Double onPeerDisconnected on connection failure corrupts delivery stats and double-toasts",
+          "severity": "high",
+          "file": "src/lib/p2p/connection.ts:699-703",
+          "detail": "In onconnectionstatechange 'failed': removePeer(peerId) fires onPeerDisconnectedCallback once (1314), then lines 701-703 fire it again explicitly. The disconnectingPeers dedup only guards removePeer itself. Manager's handler then runs twice: two '<name> left the room' toasts, and delivery.handlePeerDisconnect double-decrements totalPeers for every undelivered message (delivery.ts:68-79 — deliveredTo still lacks the peer on the second call), skewing read-receipt UI."
+        },
+        {
+          "title": "TURN strategy: discontinued free openrelay + forceRelay funnels all cellular traffic through it",
+          "severity": "high",
+          "file": "src/lib/p2p/config.ts:11-22",
+          "detail": "The only TURN servers are openrelay.metered.ca free-tier with public static credentials — a best-effort shared service with no SLA (and widely reported as overloaded/retired). getP2PConfig sets forceRelay: mobileNetwork (config.ts:154), which becomes iceTransportPolicy: 'relay' (connection.ts:313): on cellular, *no* candidates except TURN are even tried, so if openrelay is down or throttled, mobile users get zero connectivity — strictly worse than letting ICE try srflx first. Cross-NAT reliability for a production app requires self-hosted coturn (or paid TURN) with ephemeral HMAC credentials. STUN config (4 Google servers) is fine; iceCandidatePoolSize 10/20 is wasteful but harmless."
+        },
+        {
+          "title": "No backpressure, chunking, or binary path — not ready for file/media transfer",
+          "severity": "high",
+          "file": "src/lib/p2p/connection.ts:1142-1156",
+          "detail": "broadcast() and sendToPeer() (1230-1246) call channel.send() blind: no bufferedAmount check, no bufferedAmountLowThreshold/onbufferedamountlow anywhere (grep confirms), no chunk protocol, JSON-string-only framing (binary would need base64, +33% size). binaryType='arraybuffer' is set (879) but nothing ever sends or receives binary. Combined with maxRetransmits:3 dropping frames under congestion, sending a photo today would both stall the typing/chat channel and lose chunks. File/media support needs: a dedicated reliable channel per transfer, 16KB binary chunks, backpressure via bufferedAmountLowThreshold, and a transfer manifest/resume protocol — none of which exists to build on."
+        },
+        {
+          "title": "Plaintext chat on the wire: E2E room encryption never applied to P2P transport",
+          "severity": "high",
+          "file": "src/lib/p2p/manager.ts:255-263",
+          "detail": "broadcastChat builds ChatMessage with raw content and never sets encrypted: true (grep over src finds zero occurrences). handleSyncRequest explicitly sends encrypted: false with a comment admitting room-key sharing 'not yet implemented' (handlers.ts:203-211). So the AES-256-GCM room key only encrypts localStorage; wire confidentiality is DTLS (fine against outsiders) plus, for relay fallback, an *unauthenticated* ECDH (connection.ts:167-198) where the signaling server assigns fromId and forwards public keys — i.e. the server can MITM the relay key exchange. The 'P2P E2E-encrypted' claim is not what the transport implements; for the product this is a trust-model gap, not just a nit."
+        },
+        {
+          "title": "16KB signaling maxPayload vs unbounded chat content: one long message can kill the signaling connection",
+          "severity": "medium",
+          "file": "signaling-server.js:34",
+          "detail": "ws maxPayload is 16KB; exceeding it closes the WebSocket (1009). Chat content has no length cap (MessageInput.svelte has no maxlength; verified by grep), and a long message broadcast to a relay-fallback peer is AES-GCM-encrypted + base64'd (+33%) into a relay frame. Result: ~11KB of text nukes the signaling connection, which (per the critical issue above) tears down all peers. Also, the client's handleSignalingMessage switch (connection.ts:402-567) has no 'error' case, so server rate-limit and validation errors are silently swallowed."
+        },
+        {
+          "title": "Slow mesh formation: staggered 2s-per-peer connects",
+          "severity": "medium",
+          "file": "src/lib/p2p/connection.ts:437-453",
+          "detail": "On room-joined, connection attempts are staggered i*2000ms + (charCode % 1000). Joining a 5-peer room means the last peer connection doesn't even *start* for ~9 seconds, plus ensureFullMesh waits (peers+1)*1000ms (460-462). For a product whose pitch is instant presence, multi-second join latency is self-inflicted; the deterministic initiator rule already prevents glare, so the stagger mostly adds delay."
+        },
+        {
+          "title": "Sync conflict handling: edits never reconciled, reaction removals resurrected",
+          "severity": "medium",
+          "file": "src/lib/p2p/handlers.ts:294-319",
+          "detail": "For messages that already exist locally, sync only applies deletion-wins and a reaction merge. Edited content is ignored — if a peer edited a message while you were offline, sync will not deliver the edit (the edit broadcast was lost forever). The reaction merge `{...existing, ...synced}` is a per-emoji overwrite, not a union, and a peer whose state predates a reaction *removal* will re-add it on every sync. There are no version/lamport stamps to converge on; multi-device divergence is permanent."
+        },
+        {
+          "title": "Mesh retry accounting is incoherent: cap defeated or instant permanent abandonment",
+          "severity": "medium",
+          "file": "src/lib/p2p/connection.ts:1454-1467",
+          "detail": "meshConnectionAttempts caps retries at 3, but removePeer deletes the counter (1307) AND the allKnownPeers entry (1304). So either a failure goes through removePeer (peer vanishes from mesh iteration entirely — see critical issue) or it doesn't (stuck 'new' state) and after 3 attempts the peer is skipped forever since the counter only resets on success (1432). Also createPeerConnection at 1467 and 1492 is an unawaited floating promise — rejections become unhandled."
+        },
+        {
+          "title": "Network-change handler hard-reconnects on every navigator.connection 'change' event",
+          "severity": "medium",
+          "file": "src/lib/p2p/manager.ts:603-620",
+          "detail": "The handler does not check whether anything actually broke — it always tears down and rejoins. Chrome fires 'change' on effectiveType/downlink estimate fluctuations, which happen routinely on cellular, so mobile users get periodic full teardowns ('Network changed, reconnecting...' toast) of perfectly healthy connections. Should check isWebSocketConnected/getConnectedPeers first like the visibility handler does (541-547)."
+        },
+        {
+          "title": "Typing debounce is trailing-only and shares the lossy ordered channel",
+          "severity": "medium",
+          "file": "src/routes/[roomId]/+page.svelte:184-193",
+          "detail": "handleTyping clears and re-arms a 100ms timer per keystroke, so sustained typing faster than one key/100ms suppresses all intermediate broadcasts until a pause — the 'see each character' effect degrades exactly when typing is most lively (a throttle with trailing edge would fix it). Snapshots self-heal loss, which is the right design, but they ride the same ordered maxRetransmits:3 channel as chat: typing bursts can HOL-block chat, and dropped final snapshots leave stale drafts until the 3s timeout (drafts.ts:16). handleTypingMessage also ignores message.timestamp (handlers.ts:170-187), so a late relay-path snapshot can overwrite a newer one when delivery migrates between channel and relay."
+        },
+        {
+          "title": "broadcast() return count lies; delivery tracking disagrees with it",
+          "severity": "medium",
+          "file": "src/lib/p2p/connection.ts:1164-1184",
+          "detail": "Relay sends increment successCount even when sendRelay merely queues the message pending key exchange (1204-1210) or silently returns because the WS is closed (1202). Meanwhile delivery.trackMessage only counts open-DataChannel peers (manager.ts:250-253). So broadcastMessage()'s boolean and the delivery UI can both misreport. iceRestartAttempts is also never cleaned in removePeer (small per-peer map leak), and onicegatheringstatechange is not nulled there (1286-1296)."
+        },
+        {
+          "title": "Desktop gets no visibility/network recovery handlers; config knobs are dead",
+          "severity": "low",
+          "file": "src/routes/[roomId]/+page.svelte:87-90",
+          "detail": "setupVisibilityHandler/setupNetworkHandler are registered only when isMobileDevice() — desktop laptop sleep/wake relies solely on ws.onclose firing. Both setup functions also ignore their roomId/config params (manager.ts:523, 588). config.maxReconnectAttempts (mobile 10) is never read — manager hardcodes MAX_RECONNECT_ATTEMPTS=7 (manager.ts:19). connectionTimeout defaults to an aggressive 2000ms on desktop (types.ts:36, config.ts:152), enough to spuriously fall into 'local mode' on a cold cross-region WSS handshake."
+        }
+      ],
+      "opportunities": [
+        "Adopt the standard 'perfect negotiation' pattern (onnegotiationneeded + polite/impolite peer based on the existing server-ID rule). It replaces the negotiatingPeers set, pendingOffers queue, collision retry/backoff, offer timeouts, and manual rollback logic — roughly 400 lines of connection.ts — with ~50 lines that also make restartIce() actually work.",
+        "Split traffic across two DataChannels: one fully reliable ordered channel (no maxRetransmits) for chat/sync/edits/acks, and one unordered+maxRetransmits:0 channel for typing snapshots. This fixes silent chat loss, removes HOL blocking, and makes the typing feature smoother for free.",
+        "Separate 'peer left room' from 'connection failed': keep allKnownPeers authoritative from signaling events only, and let a single reconnection loop (mesh monitor) own all retry logic. This one change fixes the permanent-partition bug, the dead relay fallback, and the incoherent retry caps simultaneously.",
+        "Make sync delta-based: honor the lastSync field that is already sent, respond only to the requester (sendToPeer, not broadcast-and-everyone-answers), paginate responses into <16KB chunks. This is a prerequisite for rooms with real history and costs little.",
+        "For the planned file/photo/audio/video feature: build a new transfer module rather than extending broadcast() — dedicated reliable DataChannel per transfer, binary 16KB chunks with bufferedAmountLowThreshold backpressure, manifest + resume offsets. Nothing in the current send path is reusable for this.",
+        "Replace openrelay with self-hosted coturn (fly.io/Railway, ~$5/mo) using ephemeral HMAC credentials fetched from the signaling server; drop forceRelay/iceTransportPolicy:'relay' and let ICE pick the best path on cellular.",
+        "Decide what 'E2E encrypted' means and implement it once: either share the room key over the DataChannel after the ready handshake and set encrypted:true on chat/sync, or drop the WASM wire-crypto claim and lean on DTLS + authenticated relay ECDH (pin keys via room secret). Half-implemented crypto is the worst of both.",
+        "Add a destroyed flag (or one AbortController governing all timers/listeners) to P2PConnection; check it at the top of createPeerConnection and in every setTimeout callback. Cheap fix for the room-switch leak.",
+        "Keep DataChannels alive across signaling WS reconnects: reconnect the WebSocket independently and only re-negotiate peers whose connections actually died."
+      ],
+      "verdict": "Refactor connection.ts substantially (or rewrite it around perfect negotiation); keep the signaling server, manager shell, and handler/store wiring. The architecture — signaling for discovery only, full mesh, DataChannels, encrypted relay fallback — is right for this product, and the signaling server plus the offer-collision/ICE-queueing/ready-handshake work shows real competence. But the failure-recovery layer, which is the whole ballgame for 'ultra-reliable', is largely illusory: ICE restart never renegotiates, relay fallback after ICE failure can never fire, any post-handshake failure permanently partitions peers, a signaling blip kills healthy connections, and the one DataChannel silently drops chat messages by construction (maxRetransmits:3). These aren't independent bugs to patch one-by-one — they all stem from removePeer conflating room membership with connection state and from hand-rolled negotiation instead of onnegotiationneeded. A focused rewrite of the connection lifecycle (~1 week: perfect negotiation, two channels, membership/connection separation, destroyed flag, delta sync) would delete several hundred lines, fix five critical issues at once, and create the clean substrate the planned file/media transfer feature needs — the current send path offers nothing reusable for chunked binary transfer anyway. Self-hosting TURN is the one non-code prerequisite; shipping mobile reliability on openrelay free tier is not viable."
+    },
+    {
+      "key": "ui-ux",
+      "summary": "The UI layer is a SvelteKit app with three screens: a landing card (src/routes/+page.svelte) offering \"Create New Room\" (one click: generates UUID via WASM, navigates to /<roomId>) and a join field that accepts full URLs, partial URLs, or bare IDs (extractRoomId, +page.svelte:12-33); a room page (src/routes/[roomId]/+page.svelte) that on mount initializes the user (defaulting to \"Anonymous\"), creates/joins the room, initializes encryption, loads persisted messages from WASM-backed localStorage, and spins up WebRTC P2P; and a global shell (src/lib/components/layout/AppShell.svelte) that blocks the whole app behind a WASM-loading spinner. The room screen composes a status bar (copy-room-ID button, ConnectionStatus badge with reconnect/sync states, PeerList popover, Leave button with confirmation dialog), a MessageList of MessageBubbles (hover actions on desktop, 400ms long-press popover with haptics on touch), a DraftIndicator strip showing peers' in-progress typing, and a MessageInput textarea that broadcasts content on every keystroke with a 100ms debounce ([roomId]/+page.svelte:182-193).\n\nState is legacy Svelte writable stores (src/lib/stores/) wrapped in factory functions — user and currentRoomId persist to localStorage directly; messages live in a Map<roomId, Message[]> persisted only through WASM's saveRoomMessagesToStorage; drafts is an ephemeral Map with 3s fade-out timers; connection and delivery track P2P state. Components use Svelte 5 runes ($state/$derived/$effect/$props) on top of these stores — a hybrid that mostly works but produced one real reactivity bug (delivery checkmarks read the store via get() inside $derived.by, so they never update; MessageBubble.svelte:82-89).\n\nThe biggest structural finding: the PWA layer is entirely dead. manifest.json and the icons/ directory sit at the repo root, not in static/, are never linked from src/app.html, and no build step copies them (verified: zero references in app.html, Dockerfile, nginx.conf, cloud_build.sh, _headers). There is no service worker, no favicon in static/, no apple-touch-icon, no theme-color meta. The elaborate manifest (widgets, share_target, /?action=create shortcuts) references query params no route handles. Similarly, mobile keyboard/viewport handling is incomplete: AppShell uses h-screen (100vh, AppShell.svelte:38) with no dvh or visualViewport handling anywhere in src (verified by grep), and the env(safe-area-inset-*) paddings in MessageInput.svelte:51 and sonner.svelte are no-ops because app.html's viewport meta lacks viewport-fit=cover.\n\nThe product's signature twist — live character-by-character typing — is implemented (broadcastTyping → handlers.ts:170-187 → drafts store → DraftIndicator.svelte) but presented as a muted, italic, small-text strip pinned above the input (DraftIndicator.svelte:8-38) that fades to 30% opacity and vanishes after 3 seconds of pause (drafts.ts:16). It is functional but visually buried, and nothing in the room UI tells a first-time user that their own unsent text is being broadcast to peers.",
+      "strengths": [
+        "Frictionless core journey: landing to live room is one click with no signup, and the join field robustly accepts full URLs, scheme-less URLs, or bare IDs (src/routes/+page.svelte:12-33)",
+        "Genuine mobile-touch consideration: 44px (h-11) targets across chat chrome, hover actions correctly swapped for a 400ms long-press menu with haptic vibration on touch devices (MessageBubble.svelte:114,147; src/lib/hooks/useLongPress.ts:24-31), and autofocus suppressed on coarse pointers to avoid popping the keyboard (MessageInput.svelte:37-48)",
+        "Share flow has a proper fallback chain: Web Share API then clipboard API then execCommand textarea (Header.svelte:23-73)",
+        "Rich, honest connection-state communication: reconnect attempts with live countdown, sync progress with message counts, distinct local/offline/failed states, and a manual Reconnect button (ConnectionStatus.svelte:56-138)",
+        "Consistent accessibility baseline: sr-only labels on icon buttons, aria-labels on reactions and inputs, motion-reduce: variants on every animation, enterkeyhint=\"send\" on the composer",
+        "Clean, complete dark mode via mode-watcher with class-based oklch token pairs (src/app.css:6-62)",
+        "Stores are uniformly structured typed factories with immutable updates, and data-testid attributes map to a real Playwright e2e suite (package.json test:e2e:* scripts)"
+      ],
+      "issues": [
+        {
+          "title": "PWA setup is entirely dead code: manifest and icons never served or linked",
+          "severity": "critical",
+          "file": "/Users/jakob/Code/lawzava/mindline/manifest.json:1",
+          "detail": "manifest.json and icons/ live at the repo root, not static/, so SvelteKit (adapter-cloudflare) never serves them; src/app.html contains no <link rel=\"manifest\">, no favicon link, no apple-touch-icon, no theme-color meta (verified by grep across src, Dockerfile, nginx.conf, cloud_build.sh, _headers — zero references). There is no service worker. Result: app is not installable, has no offline shell, requests for /favicon.ico 404, and the manifest's shortcuts (/?action=create), share_target, and widgets reference query params no route handles (src/routes/+page.svelte has no URL param handling). For a mobile-first chat product this means no home-screen presence at all."
+        },
+        {
+          "title": "iOS keyboard/viewport handling missing: 100vh shell, no dvh, no visualViewport, dead safe-area insets",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/layout/AppShell.svelte:38",
+          "detail": "AppShell uses h-screen (100vh), which on iOS Safari exceeds the visible viewport when toolbars are shown, pushing the message input off-screen; grep confirms no dvh/svh units, no visualViewport listener, and no interactive-widget meta anywhere in src. Compounding it, app.html's viewport meta lacks viewport-fit=cover, so the env(safe-area-inset-bottom) padding in MessageInput.svelte:51 and the safe-area offset in sonner.svelte always evaluate to 0 — the safe-area code is a no-op. On notched iPhones the composer will sit under the home indicator and behind the open keyboard."
+        },
+        {
+          "title": "Delivery checkmarks are non-reactive — frozen at mount-time value",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/chat/MessageBubble.svelte:82",
+          "detail": "deliveryStatus is computed in $derived.by via delivery.getDeliveryStatus(message.id), which internally uses svelte/store get() (delivery.ts:55-63). get() does not register a dependency with the runes tracking system, and the only tracked deps are isMe and message.id, which never change. So when delivery-acks arrive (handlers.ts:506 recordDelivery), the bubble's check/double-check icons and the 'Delivered to X/Y peers' tooltip never update — a sent message shows a single gray check forever. The whole delivery-tracking feature is invisible to users."
+        },
+        {
+          "title": "Message list force-scrolls to bottom on every new message, even while reading history",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/chat/MessageList.svelte:17",
+          "detail": "The $effect scrolls to scrollHeight whenever messages.length changes with no isNearBottom check and no 'new messages' affordance. If a user scrolls up to re-read, any incoming message (or their peer's burst of messages) yanks them to the bottom. Standard chat UX requires sticky-bottom only when already at bottom."
+        },
+        {
+          "title": "Message text cannot be selected or copied",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/chat/MessageBubble.svelte:116",
+          "detail": "The bubble applies select-none unconditionally, so on desktop users cannot select/copy message text at all (there is also no Copy action in MessageActions.svelte — only Edit/Delete). On mobile, long-press opens the action menu instead, and that menu also lacks a Copy option (LongPressMenu.svelte:72-107). Copying received text — a basic chat operation — is impossible everywhere."
+        },
+        {
+          "title": "Stale currentRoomId: leaving via back button or revisiting later leaves Share pointing at an old room",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/stores/room.ts:26",
+          "detail": "currentRoomId persists to localStorage and is only cleared by the Leave button ([roomId]/+page.svelte:205-209); onDestroy (lines 106-120) does not clear it. Navigating back to '/' (or reopening the app days later on the landing page) leaves $currentRoomId set, so Header.svelte:97 still renders the Share button, which shares a room the user is no longer in. Also [roomId]/+page.svelte does all join logic in onMount keyed off page.params at mount time (line 25), so client-side navigation between two rooms would never re-join/re-init P2P."
+        },
+        {
+          "title": "Two inconsistent invite affordances; the prominent one copies a bare UUID, not a link",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/routes/[roomId]/+page.svelte:195",
+          "detail": "The room bar's copy button copies only the raw room ID ('a3f9c2d1...'), while the header's icon-only Share2 button copies the full URL (Header.svelte:27). A new user will naturally tap the visible room pill, send a bare UUID, and force the recipient through the paste-into-join-field flow instead of clicking a link. Inviting is the single most important action in a P2P chat and it is split across two controls with different outputs, neither labeled 'Invite'."
+        },
+        {
+          "title": "The realtime-typing twist is visually buried and undisclosed",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/chat/DraftIndicator.svelte:8",
+          "detail": "Peer drafts render as small italic muted-foreground text in a bg-muted/30 strip above the composer, fading to 30% opacity and deleted after 3s of typing pause (drafts.ts:16 DRAFT_TIMEOUT_MS=3000) — even though the peer still has that text in their input, which contradicts 'radical transparency'. The draft is not in the message stream as a live ghost bubble, gets no animation or color, and nothing in the room UI tells users their own keystrokes are broadcast (the only disclosure is one tagline on the landing card, +page.svelte:88). The product's headline feature reads as a generic typing indicator."
+        },
+        {
+          "title": "No name onboarding; header name input is detached from store state",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/layout/Header.svelte:9",
+          "detail": "Users are silently initialized as 'Anonymous' (+page.svelte:41, [roomId]/+page.svelte:34) and the only way to set a name is an unlabeled input in the header that's easy to miss. Header.svelte:9 captures $user.name into $state once at mount, so when initialization later sets 'Anonymous' the input still shows the stale empty value. Peers meanwhile see 'Anonymous' in drafts and messages. There is no prompt at room creation/join, the natural moment to ask."
+        },
+        {
+          "title": "Edit/delete handlers in the route duplicate the persistence layer, including raw localStorage JSON surgery",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/routes/[roomId]/+page.svelte:211",
+          "detail": "handleEdit and handleDelete (lines 211-325) each implement: optimistic store update, WASM reload-then-mutate-then-save, and a fallback that parses chatHistory_<roomId> from localStorage and mutates the JSON by hand — duplicating the WASM storage schema in the UI layer twice (lines 239-257 and 295-313). The same user-init block is also copy-pasted three times (+page.svelte:39-45, 60-66; [roomId]/+page.svelte:32-41). This belongs in a single persistence module; the route component is 450 lines of which most is storage plumbing."
+        },
+        {
+          "title": "Composer textarea does not auto-grow for multiline input",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/chat/MessageInput.svelte:52",
+          "detail": "textarea has rows=1, resize-none, min-h-11/max-h-32 but no auto-resize logic, so Shift+Enter multiline text scrolls inside a one-line-tall box. Also Enter always sends (handleKeydown line 27), and with enterkeyhint=\"send\" mobile users have no way to insert a newline at all — acceptable as a choice, but combined with no attach button the composer is single-purpose plain text."
+        },
+        {
+          "title": "Tooltips are the sole carrier of status meaning — invisible on touch devices",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/chat/ConnectionStatus.svelte:143",
+          "detail": "Connection-state explanations ('You're working offline. Messages are saved locally...'), sync details, error text (lines 165-178), and delivery counts (MessageBubble.svelte:195-216) all live exclusively in bits-ui hover tooltips. On mobile — the platform that most needs the explanation — these are effectively unreachable; tapping a Badge wrapped in Tooltip.Trigger gives nothing. Each bubble also instantiates its own Tooltip.Provider, which should be a single app-level provider."
+        },
+        {
+          "title": "Fonts loaded from Google at runtime in a privacy-positioned app",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/routes/+layout.svelte:10",
+          "detail": "Inter is fetched from fonts.googleapis.com/fonts.gstatic.com on every load, leaking user IPs to Google from an app marketed as private E2E-encrypted P2P, adding a render-blocking third-party dependency and FOUT. Self-hosting via fontsource is a drop-in fix."
+        },
+        {
+          "title": "Mistyped or dead room IDs silently create a new empty room",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/routes/[roomId]/+page.svelte:45",
+          "detail": "wasm.createRoom(roomId) is create-or-join, and any string is accepted as a room ID. A user pasting a truncated invite lands in a fresh empty room showing 'Waiting for peers...' with no way to distinguish a typo from a quiet room. No format validation or 'nobody has ever been here' hint exists."
+        },
+        {
+          "title": "Leave-room confirmation dialog adds friction with misleading copy",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/routes/[roomId]/+page.svelte:436",
+          "detail": "Leaving is fully recoverable (messages persist in localStorage; rejoining is pasting the same URL), yet it's gated behind an AlertDialog warning 'Any unsent messages will be lost', which at most means the composer text. Two-step confirm for a reversible action, while genuinely destructive delete already has its own confirm."
+        },
+        {
+          "title": "EmojiPicker roving tabindex never moves DOM focus",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/chat/EmojiPicker.svelte:22",
+          "detail": "Arrow keys update focusedIndex and the visual ring, but no element.focus() is called, so actual keyboard/screen-reader focus does not follow the highlighted option; role=\"listbox\" on a div with button options plus two suppressed a11y warnings (lines 60-61) confirm the pattern is improvised. LongPressMenu similarly uses a hidden Popover.Trigger (LongPressMenu.svelte:68) so focus restoration on close targets a hidden element."
+        },
+        {
+          "title": "No aria-live regions for incoming messages or peer drafts",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/chat/MessageList.svelte:30",
+          "detail": "Neither the message list nor DraftIndicator announces updates to assistive tech; a screen-reader user gets no notification of new messages. Timestamps are also 10px at 70%-opacity muted-foreground (MessageBubble.svelte:184), well below contrast guidelines for the only always-visible metadata."
+        },
+        {
+          "title": "Message content logged to console in production paths",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/routes/[roomId]/+page.svelte:62",
+          "detail": "On every room load, the first 30 chars of every stored (decrypted) message are JSON.stringified to console.log ('[Room] Loaded messages from storage'). For an E2E-encrypted app this leaks plaintext into devtools logs and any log-collection tooling; it is explicitly marked Debug but ships unconditionally."
+        },
+        {
+          "title": "Minor dead code and inconsistencies",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/chat/ConnectionStatus.svelte:8",
+          "detail": "peerCount is imported but unused; tailwind.config.ts is vestigial under Tailwind v4 (only darkMode/content, no theme); message bubbles get max-h-[400px] overflow-y-auto so very long messages scroll inside the bubble (MessageBubble.svelte:116) — an unusual pattern; manifest theme_color #5E81AC (blue) matches nothing in the all-monochrome oklch palette (app.css:11-62); brand SVG logos exist in icons/ but the header renders plain text 'MINDLINE' (Header.svelte:80)."
+        }
+      ],
+      "opportunities": [
+        "Make the twist first-class: render peer drafts as live ghost bubbles inside the message stream (shimmering border or caret animation), keep them visible while text exists in the peer's composer instead of the 3s fade, and add a one-time in-room hint ('Others can see you type') — this is the product's identity and currently costs ~0 extra architecture since drafts data already flows",
+        "Fix the mobile foundation as one small PR: h-dvh instead of h-screen, viewport-fit=cover in app.html, move manifest.json + icons into static/, link manifest + apple-touch-icon + theme-color, add a minimal service worker — together this turns the dead PWA work into a real installable app",
+        "Unify invites into a single 'Invite' button that always shares/copies the full URL (drop the bare-ID copy pill), and prompt for display name on first room create/join instead of defaulting to Anonymous",
+        "Extract a persistence module (one function each for edit/delete/send that owns the WASM-then-fallback logic) and a shared ensureUserInitialized() — this would cut [roomId]/+page.svelte roughly in half and remove triplicated init code",
+        "Migrate shared state from writable-store factories with manual Map cloning to Svelte 5 .svelte.ts rune classes (or at minimum fix get()-based reads inside $derived) — the delivery-checkmark bug is a direct symptom of the hybrid pattern",
+        "The planned file/photo/audio features have zero composer affordance today; the single-textarea composer will need an attach button, upload-progress bubble states, and a media bubble type — designing MessageBubble around a message_type switch now (it already has message_type) is cheap preparation",
+        "Drop the leave-confirmation dialog and the success toasts for edit/delete/reaction (inline state changes are self-evident); reserve toasts for failures",
+        "Self-host Inter via @fontsource and use the existing brand SVG logo in the header to start building a visual identity beyond stock monochrome shadcn"
+      ],
+      "verdict": "Keep and refactor — no rewrite. The component architecture (shadcn-svelte primitives, store factories, clean separation of chat components) is sound, conventional, and well-tested via Playwright; the issues are concentrated in fixable seams rather than structure. Three focused efforts would transform the product: (1) a mobile/PWA foundation pass (dvh, viewport-fit, serve the manifest/icons, service worker) since the current PWA story is 100% dead code despite an elaborate manifest; (2) promoting the typing-transparency twist from a muted footer strip to ghost bubbles in the message stream, because right now the app's reason to exist looks like a generic typing indicator; (3) consolidating the persistence plumbing out of the 450-line route component and fixing the runes/store hybrid bugs (frozen delivery checkmarks, forced auto-scroll, unselectable text). The visual design is clean but anonymous — stock monochrome shadcn with no brand color or identity — which is acceptable to ship but worth one deliberate design pass before adding media features."
+    },
+    {
+      "key": "signaling-deploy",
+      "issues": [
+        {
+          "title": "Relay fallback sends message/draft content through the server with MITM-able encryption — falsifies the core privacy claim",
+          "severity": "critical",
+          "file": "/Users/jakob/Code/lawzava/mindline/signaling-server.js:347",
+          "detail": "PRIVACY.md:7 claims \"we literally cannot access your messages because they never pass through our servers\" and CLAUDE.md says the server \"does NOT relay messages\". Both are false under the actual code. When direct P2P fails, broadcast() (src/lib/p2p/connection.ts:1164-1184) pushes ALL message types — chat content, char-by-char typing drafts, edits, reactions — through the server's 'relay' handler (signaling-server.js:347-384). The content is plaintext JSON (broadcastChat builds ChatMessage with raw content and never calls WASM encryption — src/lib/p2p/manager.ts:255-263) wrapped only in an AES-GCM envelope whose ECDH P-256 key exchange ('relay-key', connection.ts:128-155, 167-198) is itself relayed by the same server with zero authentication. A malicious or compromised signaling server can substitute public keys and read/modify every relayed message and draft. Worse, the client explicitly accepts UNENCRYPTED relay payloads \"for backward compatibility\" (connection.ts:560-561), so the server (which controls fromId) can inject arbitrary plaintext messages into any chat. Passive log-only operators can't read content; an active server can. Either drop the relay fallback (rely on TURN, which preserves DTLS E2E) or authenticate the key exchange with a secret the server never sees (e.g., URL-fragment room secret)."
+        },
+        {
+          "title": "Signaling WebSocket disconnect tears down all healthy WebRTC connections",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/p2p/connection.ts:380",
+          "detail": "ws.onclose calls this.peers.forEach((_, peerId) => this.removePeer(peerId)) — closing every RTCPeerConnection and data channel even though established WebRTC connections do not need the signaling server. A signaling blip (server restart, Fly machine migration, 90-135s keepalive reap during mobile backgrounding) kills active chats and forces full renegotiation through the 7-attempt reconnect loop (manager.ts:19, 415-476), after which the client gives up permanently (\"Max reconnection attempts reached\"). For a product whose pitch is \"ultra-reliable P2P\", the server is effectively a hard runtime dependency, contradicting the \"discovery only\" design. Keep data channels alive across signaling drops and reconnect signaling in the background indefinitely (capped backoff, not capped attempts)."
+        },
+        {
+          "title": "Runtime env injection writes to a directory that is never deployed — production signaling URL is silently hardcoded",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/scripts/inject-env.js:19",
+          "detail": "cloud_build.sh:12-15 builds with adapter-cloudflare (output: .svelte-kit/cloudflare/, verified by CI at ci.yml:51-54) and then runs inject-env.js, which writes window.MINDLINE_ENV to dist/js/env-config.js — a path outside the publish directory. The deployed env-config.js is the empty default from static/js/env-config.js (whose own comment still references the obsolete dist/ layout). Result: SIGNALING_SERVER, USE_SSL and TURN_SERVERS env vars do nothing in production; the app falls through to the hardcoded 'signal-mindline.fly.dev' default in src/lib/p2p/config.ts:126 (and to PUBLIC_TURN_SERVERS with shared openrelayproject credentials, config.ts:11-22). Compounding it, _headers:30-32 marks /*.js as Cache-Control immutable max-age=31536000, so even a fixed env-config.js would be cached by browsers for a year. Replace runtime injection with build-time VITE_ vars or fix the output path + cache headers."
+        },
+        {
+          "title": "No Origin check or auth on WebSocket upgrade; rate-limit IP is client-spoofable; global caps trivially exhaustible",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/signaling-server.js:185",
+          "detail": "The wss connection handler never inspects req.headers.origin — the CORS allowlist (signaling-server.js:510-516) applies only to the HTTP /health endpoint, not WS upgrades, so any website or script can connect. Rate limiting keys on cf-connecting-ip / x-forwarded-for (lines 199-201), headers an attacker controls when hitting the server directly (Docker deploy exposes it on 9210 with no proxy; the nginx.conf that would front it is orphaned — no nginx service exists in docker-compose.yml). Spoofing a fresh XFF per connection bypasses the 240-conn/min limit entirely, and maxConnections=1000 / maxRooms=500 (lines 23-27) can be exhausted by one host in seconds, denying service and new-room creation (lines 187-191, 272-278) to all users. Minor extras: relay messages are rate-limit-checked twice (lines 241 and 349), halving the effective relay budget to ~25 msg/s — tight for char-by-char typing relayed per-peer; and enforceMapLimit FIFO-evicts live rate-limit entries under churn, resetting counters (lines 63-73). Add an Origin allowlist on upgrade, trust forwarded IPs only behind a known proxy, and cap peers per room."
+        },
+        {
+          "title": "Second, protocol-incompatible signaling server is dead code",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/signaling-server/server.js:45",
+          "detail": "signaling-server/server.js is the original prototype (first commit 'chat history'): CommonJS, trusts client-supplied clientId (line 45), routes on data.to/from instead of targetId/fromId (lines 87-95), supports 'message'/'broadcast' types the current client never sends, has CORS '*', no rate limits, no keepalive, no room validation. The current client sends targetId and expects server-assigned IDs via 'client-id'/'yourId', so this server cannot interoperate with it. Nothing references the directory — not package.json scripts, Dockerfile, compose, or CI. It only creates confusion about which server is canonical. Delete the directory."
+        },
+        {
+          "title": "Deployment sprawl: four signaling deploy paths, three of them broken or vestigial, none documented",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/Dockerfile:12",
+          "detail": "(1) Docker: Dockerfile installs the ENTIRE frontend prod dependency tree (bits-ui, lucide-svelte, tailwind-merge…) for a server that needs only 'ws', and copies ecosystem.config.js into an image that has no PM2 and runs node directly (CMD line 29). docker-compose.yml mounts ./ssl:ro that the plain-HTTP server never reads. (2) nginx.conf is orphaned: placeholder server_name signal.yourdomain.com, upstream mindline-signaling:3000, but no nginx service in compose — nothing consumes it. (3) PM2 ecosystem.config.js is a third standalone path with duplicated rate-limit env. (4) The apparent real production target, Fly.io (signal-mindline.fly.dev default in config.ts:126), has NO fly.toml or deploy config in the repo; staging deploys run opaque repo-variable commands (STAGING_APP_DEPLOY_CMD / STAGING_SIGNALING_DEPLOY_CMD, staging-e2e.yml:29-30,57-71), and CONTRIBUTING.md:392's deploy step is literally 'Push to production hosting'. The actual production deployment is unreproducible from the repo. Pick one target, commit its config, delete the rest."
+        },
+        {
+          "title": "Static-site-era _redirects and _headers conflict with the worker-based SvelteKit deploy",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/_redirects:2",
+          "detail": "adapter-cloudflare copies root _headers/_redirects into .svelte-kit/cloudflare (verified in node_modules/@sveltejs/adapter-cloudflare/index.js:136-142 and present in the build output). The SPA catch-all '/* /index.html 200' predates the move to _worker.js routing — no index.html exists in the output (only 404.html), and Cloudflare evaluates _redirects before invoking the worker, so this rule is at best a no-op and at worst breaks deep links to /<roomId>. _headers' blanket '/*' Cache-Control: immutable 1-year and a CSP whitelisting cdn.tailwindcss.com and Google Fonts (neither used since Tailwind moved to the Vite plugin) are similar leftovers. The signaling server also emits a CSP on its JSON health responses (signaling-server.js:507) — harmless, meaningless. Trim these to what the worker deploy actually needs."
+        },
+        {
+          "title": "Room ID is an unauthenticated bearer secret that transits two servers; 'leave' doesn't sever room access",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/signaling-server.js:263",
+          "detail": "Rooms are any 4-100 char string (signaling-server.js:263); the client uses UUIDs (src/routes/+page.svelte:48) so brute-force enumeration is infeasible and there is no room-listing API — good. But the room UUID is the only access control: anyone who learns it joins silently-equal, and sync-response then hands them full plaintext history over the data channel (src/lib/p2p/handlers.ts:203-210). The UUID is sent in cleartext 'join' messages to the signaling server AND as the URL path /<roomId> to Cloudflare Pages — so two server operators hold every room's bearer token, and the signaling operator could join any room (peers would only see an anonymous 'peer-joined'). Also, the 'leave' handler (signaling-server.js:386-405) removes the socket from the room but never clears the server-side currentRoom binding, so a departed client can keep relaying messages and signaling into the room until it disconnects. Moving the secret to a URL fragment (never sent to servers) and keying rooms on its hash fixes the first; one-line fix for the second."
+        },
+        {
+          "title": "Stale CORS allowlist and config drift on the signaling server",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/signaling-server.js:510",
+          "detail": "The HTTP allowlist contains mindline.pages.dev plus localhost:8080/8088 — but dev runs on 5173 and preview on 4173, and the custom domain implied by src/routes/+page.svelte:16 (mindline.chat) is absent. Moot for WebSockets (CORS doesn't gate WS upgrades) but it documents that this list was never maintained, and it would block any future fetch-based endpoint from the real origins."
+        }
+      ],
+      "opportunities": [
+        "Delete the vestigial deployment surface in one sweep: signaling-server/ directory, nginx.conf, ecosystem.config.js (and its COPY in the Dockerfile), the ./ssl compose mount, and the _redirects SPA fallback. None are load-bearing; together they are most of the 'deployment story' confusion.",
+        "Drop the WebSocket relay fallback entirely and rely on TURN for NAT-blocked paths. TURN preserves true E2E (DTLS keys never touch the relay), it deletes ~250 lines of hand-rolled ECDH/AES relay crypto on the client plus the server relay path, removes the MITM hole and the plaintext backward-compat acceptance, and restores the headline privacy claim to literal truth. The 16KB maxPayload makes relay useless for the planned file/photo/audio/video features anyway — those must go over data channels with TURN.",
+        "Give the signaling server its own 5-line package.json (only 'ws') and build the Docker image from it — the current image installs the whole frontend UI dependency tree for a 600-line server.",
+        "Move the room secret to the URL fragment (#secret), derive the room encryption key from it client-side, and join the signaling room by its hash. Neither Cloudflare nor the signaling server ever sees the bearer token; the server-can-join-any-room and sync-hands-history-to-any-joiner problems disappear without any server change.",
+        "Keep WebRTC connections alive across signaling drops: remove the peers.forEach(removePeer) from ws.onclose and reconnect signaling in the background with uncapped, jittered backoff. This single change converts most signaling-server downtime into a non-event for active chats.",
+        "Consider consolidating onto Cloudflare end-to-end: the signaling server is a natural Durable Object (WebSocket hibernation makes it near-free at this scale), which collapses Fly+Docker+PM2+nginx into the same `wrangler deploy` that ships the app, gives a committed-to-repo deploy config, real client IPs, and automatic TLS.",
+        "Replace runtime env injection (inject-env.js + window.MINDLINE_ENV + static/js/env-config.js) with build-time VITE_SIGNALING_SERVER / VITE_TURN_SERVERS. The runtime path is currently broken anyway, and build-time vars remove the uncacheable-config problem and ~100 lines of plumbing.",
+        "Add the two cheap server hardenings that matter: Origin allowlist on the WS upgrade and a per-room peer cap (mesh topology degrades badly past ~6-8 peers regardless), plus only trust cf-connecting-ip/x-forwarded-for when behind the proxy that sets them."
+      ],
+      "strengths": [
+        "The canonical signaling-server.js is genuinely well-hardened for its size: server-assigned UUID client IDs make peer-ID spoofing impossible (lines 195-223, fromId always overwritten at 336-341, 365), 16KB payload cap, guarded JSON parsing, three-tier env-tunable rate limiting with bounded maps and periodic cleanup, empty-room GC, mobile-tolerant ping keepalive (45s interval, 2 missed pongs), graceful SIGTERM, and a deliberately information-minimal /health endpoint.",
+        "The testing rigor around signaling is far above average for a side project: a parameterized soak test with pass/fail thresholds (scripts/signaling-soak-test.mjs), a careful e2e wrapper that detects stale port-3000 processes and refuses localhost URLs in remote mode (scripts/test-e2e-with-signaling.sh), blocking required-E2E suites in CI (ci.yml:44-45), and a scheduled staging workflow that runs the soak test and a 3-browser matrix against deployed infrastructure (staging-e2e.yml).",
+        "Client-side connection management shows real-world mobile scar tissue done right: exponential-backoff reconnect with store-surfaced state (manager.ts:415-476), visibility-change reconnection only when the socket is actually dead (manager.ts:520+), deterministic higher-ID-initiates rule with collision rollback to prevent offer glare, and ICE restart with capped exponential backoff (connection.ts:736-780).",
+        "Relay payloads, when the fallback engages, are at least wrapped in per-peer AES-GCM (connection.ts:224-274) rather than sent bare — the intent and mechanism are right even though the key exchange is unauthenticated."
+      ],
+      "summary": "Mindline's signaling layer is one ~600-line Node/ws server, signaling-server.js, run via `pnpm run signaling` (package.json:17), the Dockerfile, ecosystem.config.js, and the e2e wrapper script. It is the canonical server: it speaks the exact protocol the client implements (server-assigned UUID client IDs delivered via 'client-id'/'yourId', targeted routing via targetId/fromId, 'relay-key' and 'relay' message types matching src/lib/p2p/connection.ts and types.ts). It does peer discovery (join/peer-joined/room-joined/peer-left), relays WebRTC offers/answers/ICE between specific peers, and — importantly — also relays application messages via a 'relay' fallback when direct P2P fails. The second server, signaling-server/server.js, is the original prototype from the first commit: CommonJS, client-supplied IDs, routes on data.to/from rather than targetId/fromId, no rate limiting, CORS '*'. It is referenced by nothing in the repo and is protocol-incompatible with the current client; it exists purely because nobody deleted it.\\n\\nOn the privacy claim: in the happy path (direct WebRTC) no content touches the server — only room IDs, IPs, and SDP/ICE metadata. But the relay fallback is on by default (allowRelayFallback, types.ts:34), and broadcast() pushes every message type — chat content, char-by-char typing drafts, edits, reactions — through the server whenever a peer lacks a data channel (connection.ts:1164-1184). That content is plaintext JSON (broadcastChat never invokes the WASM crypto; manager.ts:255-263) inside an AES-GCM envelope whose ECDH keys are exchanged through the very server being distrusted, unauthenticated (connection.ts:128-155), and the client still accepts plaintext relay payloads for 'backward compatibility' (connection.ts:560-561). So PRIVACY.md's 'messages never pass through our servers' is false whenever P2P fails, and the encryption that does apply is MITM-able by the server operator. Additionally the room UUID — the only access credential — is sent in cleartext to the signaling server and as the URL path to Cloudflare Pages.\\n\\nSecurity posture of the canonical server is otherwise decent (server-assigned IDs kill spoofing, 16KB payload cap, three-tier rate limiting, bounded maps, info-minimal /health) but has structural gaps: no Origin check on the WS upgrade (CORS at lines 510-516 covers only HTTP), rate-limit IPs read from spoofable cf-connecting-ip/x-forwarded-for headers (199-201) while the Docker deploy exposes the server directly, global caps (1000 conns/500 rooms) one attacker can exhaust, no per-room peer cap, and 'leave' that never clears the server-side room binding. Room enumeration is impractical (client uses UUIDs, no list API) but rooms are unauthenticated bearer-token spaces. Heartbeating is server-driven ping/pong (45s, 2 misses, mobile-tolerant); client reconnect is exponential backoff capped at 7 attempts then permanent give-up, with a visibility handler for mobile foregrounding — but a signaling WS drop tears down all healthy WebRTC connections (connection.ts:380-392), making the 'discovery-only' server a de facto runtime dependency.\\n\\nDeployment is the weakest area: the frontend genuinely ships to Cloudflare Pages via adapter-cloudflare (CI verifies .svelte-kit/cloudflare/_worker.js) with cloud_build.sh as the Pages build command; the signaling server apparently runs on Fly.io (hardcoded signal-mindline.fly.dev fallback in config.ts:126) yet no fly.toml exists in the repo. Around that real path orbit four vestigial or broken ones: a Docker/compose setup that installs the entire frontend dependency tree and mounts unused SSL certs, an orphaned nginx.conf with placeholder domains that no compose service consumes, a PM2 ecosystem.config.js copied into a Docker image that runs plain node, and a runtime env-injection script that writes to dist/ — a directory the Cloudflare build never publishes — so production signaling/TURN configuration silently falls back to hardcoded defaults. Staging deploys run opaque commands stored in GitHub repo variables; CONTRIBUTING.md's deploy instructions are 'Push to production hosting'.\"",
+      "verdict": "Keep the canonical signaling-server.js as the basis — it is small, the hardening work (server-assigned IDs, rate limits, keepalive, soak/CI coverage) is real and worth preserving — but refactor aggressively around it rather than rewriting from scratch. Three decisions matter far more than any code polish: (1) drop the WebSocket relay fallback (or authenticate its key exchange with a never-sent-to-server secret), because as built it makes the product's headline privacy guarantee untrue and its crypto MITM-able by the operator, and its 16KB cap is useless for the planned media features anyway — TURN already covers the NAT-blocked case while preserving E2E; (2) stop tearing down healthy WebRTC connections when the signaling socket drops and reconnect signaling in the background indefinitely, which converts most server downtime into a non-event; (3) collapse the deployment story to one committed-to-repo target (Fly with a fly.toml, or better, a Cloudflare Durable Object so app and signaling share a single wrangler deploy) and delete the prototype server, nginx.conf, PM2 config, the broken inject-env path, and the static-era _redirects. The minimal design this product needs is a ~150-line discovery-only WS service — join/offer/answer/ice/leave, server-assigned IDs, Origin allowlist, per-IP token bucket behind a trusted proxy, ~8-peer room cap, ping keepalive — plus TURN; everything beyond that in the current tree is either vestigial or actively undermining the privacy and reliability goals.\""
+    },
+    {
+      "key": "wasm-bridge",
+      "summary": "The JS↔WASM bridge is three files: src/lib/wasm/index.ts (363 lines: loader + \"safe proxy\"), src/lib/wasm/crypto.ts (WebCrypto functions attached to window for Rust to call back into), and src/lib/wasm/types.ts (a hand-written WasmModule interface). At app start, AppShell.svelte (mounted from +layout.svelte, so it wraps every route) awaits loadWasm(), which dynamically imports pkg/mindline.js and fetches the 1.05 MB mindline_bg.wasm. All UI is gated behind this load. Access then goes through the `wasm` proxy object, where each method calls createSafeCall(funcName, paramNames)(args): a per-invocation closure that checks arity, optionally coerces params, looks the function up by string on the module cast to Record<string, unknown>, and re-wraps errors.\n\nExport catalog vs. reality: pkg/mindline.d.ts declares 74 function exports. The proxy wraps 51 of them. Grep of all of src/ shows exactly 15 are ever called at runtime: initialize, set_message_manager_user, generate_uuid, create_room_with_id, initialize_room_encryption, load/save_room_messages_to_storage, get_room_messages, send_message_enhanced, receive_message_from_peer, edit_message, delete_message, add_reaction, remove_reaction, decrypt_message_content. Of those, create_room_with_id is a literal no-op in Rust (core.rs:245-253, it only console_logs) and decrypt_message_content sits on a dead path (the `encrypted` flag on P2P messages is never set to true anywhere in src/). The other 36 wrapped methods (drafts, peers, validation, sync, logging, key management, encrypt_message_content) plus ~23 unwrapped exports (performance monitoring, log search/export, initialize_storage — whose Rust backend, storage.rs:42-49, is an in-memory fake) have zero call sites. Whole Rust subsystems ship dead: logger.rs (701 lines), performance.rs (343), sanitizer.rs (283, reachable only via the never-called validate_* exports — so message input is never sanitized on the real path), plus deprecated legacy send_message/get_messages/join_room (core.rs:91-241).\n\nWhat the 13 genuinely load-bearing exports do: store {id, name} into two redundant Rust globals (core.rs:34-64), generate a UUID, maintain an in-memory message map mirroring the Svelte messages store, and JSON-serialize it to localStorage under chatHistory_{roomId} (messages.rs:524-580) — in plaintext. The headline feature the Rust layer exists for, AES-256-GCM encryption, is a façade: initialize_room_encryption generates and persists a per-room key ([roomId]/+page.svelte:50), but encrypt_message_content has zero call sites, broadcastChat sends plaintext with no encrypted flag (manager.ts:255-263), sync responses are explicitly sent encrypted:false (handlers.ts:203-211, comment admits \"key sharing not yet implemented\"), and storage is plaintext. Worse, when Rust does encrypt/decrypt it calls back into JS WebCrypto via window globals (crypto.ts:98-109, pkg/mindline.js:1566-1576) — the round-trip is JS→WASM→JS, the Rust layer adds nothing cryptographic itself. Every message mutation is performed twice (Svelte store + WASM mirror) with defensive loadRoomMessagesFromStorage-before-edit calls and duplicated hand-rolled localStorage fallback writers in the page ([roomId]/+page.svelte:227-258, 283-314) — clear evidence the authors don't trust their own bridge.\n\nFailure modes: loadWasm has no timeout, no retry, and no progress UI. On slow networks the user stares at a generic \"Loading...\" spinner while ~1.1 MB downloads and compiles before even the home page's name field renders. On any load failure the entire app bricks with \"Failed to load application\" plus the raw error.message and a manual reload link (AppShell.svelte:49-60) — even though chat transport, typing indicators, and all stores are pure TypeScript and could run degraded. Post-load, isWasmReady() guards make failures silent: home-page buttons no-op (+page.svelte:36,57) and handlers silently skip persistence (handlers.ts:137,285,330...), losing messages on refresh without telling the user. For old Safari specifically: build target is esnext (vite.config.ts:11) and the wasm-bindgen glue has a FinalizationRegistry fallback (pkg/mindline.js:110-112); WebAssembly support (Safari 11+) predates the WebRTC features the app needs anyway, so the binding constraint is payload size and the all-or-nothing gate, not API support.",
+      "strengths": [
+        "Single choke point: every WASM touch goes through src/lib/wasm/index.ts, so the layer is trivially replaceable — no scattered direct imports of pkg/mindline.js anywhere else in src/.",
+        "AppShell gating (+layout.svelte → AppShell.svelte:42-64) means pages only mount after the load settles, eliminating most wasm-not-ready races by construction; loadWasm is also correctly browser-only and idempotent (index.ts:28-37).",
+        "Error wrapping in createSafeCall (index.ts:123-128) at least prefixes failures with the function name, and every call site wraps proxy calls in try/catch with a UI-visible fallback (toasts, status='Failed'), so WASM exceptions never take down the page.",
+        "crypto.ts is clean, correct WebCrypto usage (AES-256-GCM with 128-bit tags, PBKDF2 600k iterations, getRandomValues) — directly reusable as the foundation of a real TS-side E2E implementation.",
+        "The dynamic import keeps the 1 MB binary out of the SSR path and out of the main bundle."
+      ],
+      "issues": [
+        {
+          "title": "E2E encryption is a façade across the bridge: keys are generated but no message is ever encrypted",
+          "severity": "critical",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/p2p/manager.ts:255",
+          "detail": "initialize_room_encryption is called on room join ([roomId]/+page.svelte:50) and persists an AES key to localStorage (crypto_api.rs:43-71), but encryptMessageContent (index.ts:294-298) has zero call sites. broadcastChat sends plaintext with no `encrypted` flag (manager.ts:255-263); sync responses are explicitly encrypted:false (handlers.ts:205-211); WASM persistence writes plaintext JSON to localStorage (messages.rs:524-580). Verified by grep: 'encrypted: true' appears nowhere in src/. The product's core security claim (CLAUDE.md: 'Messages encrypted with AES-256-GCM, per-room keys') is not true on the wire or at rest; only WebRTC's transport DTLS applies. The key also never leaves the device (no key exchange), so peer decryption could never work."
+        },
+        {
+          "title": "decryptMessageContent returns a Promise but is consumed synchronously — guaranteed corruption the day encryption is switched on",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/p2p/handlers.ts:100",
+          "detail": "Rust decrypt_message_content returns js_sys::Promise (crypto_api.rs:97-111; pkg/mindline.d.ts:11 'Promise<any>'). The proxy types it as string (index.ts:291-292) and handlers.ts:100-103 and :253-257 do `const result = wasm.decryptMessageContent(content); if (result) decryptedContent = result;` — a Promise is always truthy, so message content would become '[object Promise]'. Currently unreachable (see critical issue), but it is a landmine sitting directly on the path of the planned fix, and it proves the proxy's hand-written types actively mask bridge bugs instead of catching them."
+        },
+        {
+          "title": "The 'safe proxy' erases type safety instead of adding it; three drifting sources of truth for one API",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/wasm/index.ts:118",
+          "detail": "createSafeCall dispatches by string on the module cast to Record<string, unknown> (index.ts:118-124), so wasm-bindgen's generated types (pkg/mindline.d.ts) are completely bypassed. Verified drift: validate_* actually return string (pkg/mindline.d.ts:78-80) but the proxy declares boolean (index.ts:209-216); getRoomMessages declared string (index.ts:234-237) but returns a JS array — the consumer carries a workaround comment and Array.isArray check ([roomId]/+page.svelte:59-60); decryptMessageContent declared string vs actual Promise. types.ts' WasmModule interface is a third, also-stale copy: it lists never-wrapped functions (record_performance_metric, search_logs) and omits functions the proxy does wrap (edit_message, add_reaction, all key-management). The proxy's actual runtime value is two checks: 'module loaded' and 'function exists'."
+        },
+        {
+          "title": "WASM load is a hard gate that bricks the whole app: no timeout, no retry, ~1.1 MB before first paint of any page",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/components/layout/AppShell.svelte:42",
+          "detail": "AppShell (wrapping every route via +layout.svelte:21) shows a spinner until loadWasm resolves — fetching+compiling mindline_bg.wasm (1,080,091 bytes) plus 57 KB glue — and on failure renders 'Failed to load application' with the raw error.message (AppShell.svelte:49-60). loadWasm (index.ts:28-60) has no timeout, no retry, no progress reporting; recovery is a manual full-page reload. Yet the features users see — WebRTC chat, character-by-character typing, presence, toasts — are pure TypeScript and would work fine without WASM. On slow mobile networks this is tens of seconds of dead spinner for functionality (uuid + localStorage JSON) JS does natively."
+        },
+        {
+          "title": "~80% of the bridge is dead weight: 36 of 51 proxy methods and ~59 of 74 WASM exports have zero call sites",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/wasm/index.ts:135",
+          "detail": "Grep across src/ finds 15 proxy methods called; unused wrappers include the entire logging API (index.ts:322-354), validation (209-216), drafts/peers state mirrors (177-198), sync request/response (242-252), and all key management except initializeRoomEncryption (304-319). Unwrapped-and-unused exports back whole dead Rust subsystems shipped in the binary: logger.rs (701 lines), performance.rs (343), sanitizer.rs (283 — meaning message sanitization never actually runs), storage.rs's IndexedDBManager which is an in-memory fake per its own comment (storage.rs:42-43), and deprecated legacy send_message/get_messages/join_room (core.rs:91-241). create_room_with_id, called by the UI in two places (+page.svelte:49, [roomId]/+page.svelte:45), is a no-op that only logs (core.rs:245-253)."
+        },
+        {
+          "title": "Dual-state write-twice pattern: every mutation hits the Svelte store AND the WASM mirror, with hand-rolled fallbacks proving distrust",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/routes/[roomId]/+page.svelte:227",
+          "detail": "Every edit/delete/reaction/receive is applied to the messages store, then re-applied to WASM state, then saveRoomMessagesToStorage (9 call sites). Edits/deletes first call loadRoomMessagesFromStorage to resync WASM before mutating ([roomId]/+page.svelte:230, 287) — a band-aid for the two stores diverging — and both handlers contain duplicated ~20-line manual localStorage fallback writers for when the WASM path throws ([roomId]/+page.svelte:239-257, 295-313). Rust itself triplicates identity state (CHAT_MANAGER + APP_STATE in core.rs:34-64, plus MessageManager via set_message_manager_user). One owner for message state would delete all of this."
+        },
+        {
+          "title": "isWasmReady() guards fail silently, hiding data loss",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/p2p/handlers.ts:137",
+          "detail": "Incoming chat/edit/delete/reaction handlers skip WASM persistence when not ready (handlers.ts:137, 285, 305, 330, 391, 429, 483) — the message renders but vanishes on refresh, with no user-facing signal. Home page buttons silently no-op (+page.svelte:36, 57) and the room page silently renders a dead chat UI ([roomId]/+page.svelte:26-29). The AppShell gate makes these mostly unreachable today, but they are landmines for any refactor that relaxes the gate."
+        },
+        {
+          "title": "createSafeCall machinery is per-call overhead with near-zero payoff",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/wasm/index.ts:69",
+          "detail": "Every proxy method constructs a fresh closure per invocation (e.g. index.ts:137-141) rather than once. The arity check (76-80) can never fail because each wrapper has a fixed TypeScript signature. The 40-line param-transform system (83-111) is used for exactly one real transform (limit: Number, index.ts:236) and two identity functions (230-232, 250-252)."
+        },
+        {
+          "title": "Dead crypto bridge function and window-global pollution",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src/lib/wasm/crypto.ts:59",
+          "detail": "webcryptoDeriveKey is installed on window (crypto.ts:104-105) but the compiled WASM never imports it (grep of pkg/mindline.js: 0 hits; only webcryptoEncrypt/Decrypt/RandomBytes at pkg/mindline.js:1566-1576). The bridge also depends on mutable window globals being set before init — a fragile implicit contract (setupCryptoBridge must run before wasm.default(), index.ts:41-45)."
+        },
+        {
+          "title": "vite.config excludes a nonexistent package '@anthropic-ai/claude-wasm'",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/vite.config.ts:8",
+          "detail": "optimizeDeps.exclude lists '@anthropic-ai/claude-wasm', which is not in package.json dependencies — leftover generated cruft that should be removed to avoid confusing future readers about how the WASM is loaded."
+        },
+        {
+          "title": "get_room_messages contains a sentinel-value hack guarding against the bridge's own Option encoding",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/src-rust/message_api.rs:54",
+          "detail": "Rust treats any limit > 1,000,000 as None because 'the JS binding uses 0x100000001 as a sentinel' (message_api.rs:54-65). The JS proxy always passes a concrete limit ([roomId]/+page.svelte:58 passes 100), so this is defensive scar tissue from past bridge bugs — emblematic of the marshaling tax paid at every boundary crossing."
+        }
+      ],
+      "opportunities": [
+        "Delete the WASM layer entirely. The 13 load-bearing exports reduce to: crypto.randomUUID(), a Map<roomId, Message[]> with CRUD + reaction merging, and JSON.stringify to localStorage — ~150 lines of TypeScript. This removes the 1.05 MB download, the all-or-nothing boot gate, the dual-state write-twice pattern, the Rust toolchain from CI (verify:web currently rebuilds wasm on every run), and the marshaling boundary that the planned file/photo/audio features would otherwise have to shovel binary blobs across for zero benefit.",
+        "Implement real E2E encryption in TypeScript using the already-written, correct crypto.ts WebCrypto helpers — which is what the Rust 'crypto' does anyway via window callbacks. Encrypt in broadcastChat, await decryption in handlers (fixing the Promise bug by construction), and add key exchange (e.g. embed the key in the room URL fragment so it never hits the server) — without key sharing, per-room keys are unusable across peers.",
+        "If keeping WASM for future reasons: re-export the wasm-bindgen functions directly (pkg/mindline.d.ts already provides accurate types) instead of the string-dispatch proxy; delete types.ts' parallel interface; trim the Rust crate to the used exports (drop logger.rs, performance.rs, sanitizer.rs, storage.rs, legacy core.rs paths) to shrink the binary several-fold; and lazy-load after first paint instead of gating the home page.",
+        "Make WASM (or its TS replacement) failure-degradable: boot the UI immediately, load persistence/crypto in the background, queue writes until ready, and surface a non-blocking banner on failure instead of bricking the app with a raw error message.",
+        "Pick one owner for message state. Today three copies exist (Svelte store, WASM MessageManager, localStorage) reconciled by load-before-write calls and duplicated fallback writers; a single store with a persistence subscription eliminates the whole class of divergence bugs."
+      ],
+      "verdict": "Rewrite — specifically, remove. This bridge is ~90% ceremony by every measure: 59 of 74 WASM exports and 36 of 51 proxy wrappers are never called; one of the 15 live calls is a Rust no-op and another sits on a dead code path. What remains load-bearing is UUID generation and plaintext JSON persistence to localStorage — commodity JS — purchased at the cost of a 1.05 MB binary that hard-gates first paint of every page, a hand-written proxy that erases the generated types and has already accumulated three verified type lies (including a Promise-as-string bug that will corrupt messages the moment encryption is actually enabled), and a write-twice dual-state pattern the authors themselves hedge against with duplicated localStorage fallbacks. The one justification for Rust here — encryption — is both unused on every real message path and delegated back to JS WebCrypto via window globals when it does run. Porting the live surface to a ~150-line TypeScript module plus using crypto.ts directly for real E2E would make the app faster to load, more reliable on mobile, simpler to maintain, and structurally ready for the planned P2P file/media features; keeping the WASM layer preserves none of those properties and all of the risk."
+    },
+    {
+      "key": "tests-ci",
+      "summary": "Mindline's test infrastructure is a Playwright-only E2E suite (no TS unit tests anywhere — no vitest/jest in package.json; the only unit tests are 19 Rust tests, all in /Users/jakob/Code/lawzava/mindline/src-rust/messages.rs:643+, covering message struct logic). The E2E layer has 14 spec files in /Users/jakob/Code/lawzava/mindline/tests/e2e/ split into a blocking \"required\" suite (connection-status, landing-page, messaging, room-page, required-persistence, required-p2p, required-network — wired via E2E_STRICT_P2P=1 in package.json:20) and a non-blocking \"best-effort\" suite (typing-indicators, p2p-multiuser, peer-list, reactions, edit-delete, mobile-p2p) that runs with continue-on-error in CI (.github/workflows/ci.yml:47-49). Orchestration is via scripts/test-e2e-with-signaling.sh, which starts a real local signaling server, health-gates it, and supports a remote/staging mode (SKIP_SIGNALING_START=1) used by a daily staging workflow with a Desktop Chrome + Mobile Safari + Mobile Chrome matrix (.github/workflows/staging-e2e.yml:76-118). There is also a WebSocket soak test with pass/fail thresholds (scripts/signaling-soak-test.mjs).\n\nThe P2P tests are genuinely end-to-end: two or three real browser contexts connect through the real signaling server and establish real RTCPeerConnections on localhost — nothing in the data path is mocked. The one deliberate mock is excellent: required-network.spec.ts breaks RTCPeerConnection and shims WebSocket.prototype.send to capture relay frames, then asserts the relay carries AES-GCM ciphertext and never plaintext (tests/e2e/required-network.spec.ts:19-101) — the only place the E2E suite verifies encryption on the wire. However, every room join goes through joinRoom()/createRoom() which appends ?fastConnect=true (tests/e2e/helpers/test-utils.ts:90,120), activating a test-only timing config baked into production code (src/lib/p2p/config.ts:183-198, src/lib/p2p/connection.ts:436-438,677), so production connection timing/backoff is essentially never exercised.\n\nCoverage in the blocking path is narrow: 2-peer message exchange, rejoin history sync (required-p2p.spec.ts), relay fallback with encryption, offline/online survival (required-network.spec.ts), solo messaging UI, persistence of name/messages/keys, and landing/room navigation. The product's headline feature — character-by-character typing transparency — lives only in the best-effort suite, where every test self-skips if peers fail to connect (e.g. tests/e2e/typing-indicators.spec.ts:39-44), and even there no test verifies progressive updates: one test fills the input in a single event and checks final content (typing-indicators.spec.ts:47,57), the other types character-by-character but only asserts the indicator is visible (typing-indicators.spec.ts:80-87). Mobile coverage is largely cosmetic: the interaction specs force maxTouchPoints=0 to defeat the app's touch detection (reactions.spec.ts:11-18 and 4 other specs), so touch-native flows are never tested, and mobile-p2p.spec.ts mostly asserts console-log strings or tautologies (mobile-p2p.spec.ts:184-193, 214). PR CI runs Desktop Chrome only (package.json:26).",
+      "strengths": [
+        "Real P2P, not mocked: required-p2p and multiuser tests use multiple real browser contexts, a real signaling server, and real WebRTC DataChannels end to end (tests/e2e/required-p2p.spec.ts:17-44, tests/e2e/helpers/test-utils.ts:137-159).",
+        "The relay fallback test is the best test in the repo: it disables RTCPeerConnection, intercepts WebSocket.send, and asserts relay frames contain AES-GCM ciphertext and never the plaintext message — directly verifying the 'server never sees content' security property (tests/e2e/required-network.spec.ts:19-101). This interception harness is reusable for file-transfer tests.",
+        "Required vs best-effort architecture with E2E_STRICT_P2P is a sensible design: handleUnavailableP2P fails hard in strict mode and skips otherwise (tests/e2e/helpers/test-utils.ts:269-275), and the required suite genuinely blocks CI (.github/workflows/ci.yml:44-45).",
+        "Solid orchestration script: stale-port guard, health-check gating with timeout, remote-mode validation that refuses localhost URLs unless explicitly overridden, clean signal-trap teardown (scripts/test-e2e-with-signaling.sh:32-99).",
+        "Signaling soak test with quantitative pass/fail thresholds (join rate, received/sent ratio, error rates) runnable locally and against staging (scripts/signaling-soak-test.mjs:156-184, staging-e2e.yml:120-162).",
+        "Daily scheduled staging E2E with a 3-browser matrix (Desktop Chrome, Mobile Safari, Mobile Chrome) against the deployed environment — real network, real TLS/WSS (staging-e2e.yml:19-20,76-118).",
+        "Consistent data-testid locator discipline and a shared helper module rather than copy-pasted selectors (tests/e2e/helpers/test-utils.ts)."
+      ],
+      "issues": [
+        {
+          "title": "Headline feature (realtime typing sync) has zero blocking coverage and no progressive-update assertion",
+          "severity": "critical",
+          "file": "/Users/jakob/Code/lawzava/mindline/tests/e2e/typing-indicators.spec.ts:47",
+          "detail": "All typing-indicator tests are in the best-effort suite (package.json:21), which runs with continue-on-error in CI (ci.yml:47-49) and self-skips whenever peers fail to connect (typing-indicators.spec.ts:39-44). Worse, no test verifies the character-by-character behavior the product is named for: 'should show typing indicator when peer types' uses fill() — a single input event — then checks final content (line 47,57); 'should show typing content in real-time' uses pressSequentially but asserts only that the indicator is visible, never that intermediate content streamed (lines 80-87). A regression that batches the entire draft into one final update, or breaks typing sync entirely, would not fail any blocking test."
+        },
+        {
+          "title": "Best-effort suite can pass green while executing zero P2P assertions",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/tests/e2e/p2p-multiuser.spec.ts:40-45",
+          "detail": "Every best-effort P2P test follows the pattern 'if (!isConnected) { cleanup; test.skip(); return; }' (p2p-multiuser.spec.ts:40-45, 81-86, peer-list.spec.ts:90-95, typing-indicators.spec.ts:39-44, etc.). If the signaling server or WebRTC silently breaks in the test environment, the entire suite skips and reports success. Combined with continue-on-error in CI, edit/delete sync, reaction sync, 3-peer broadcast, peer list, and disconnect handling have effectively zero enforcement. The skip exists to paper over real flakiness: P2P connection establishment is unreliable enough that the authors couldn't make these tests required."
+        },
+        {
+          "title": "All P2P tests run with test-only ?fastConnect=true timing; production connection path untested",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/tests/e2e/helpers/test-utils.ts:90",
+          "detail": "joinRoom() and createRoom() always append ?fastConnect=true (test-utils.ts:90,120), which switches the app to test timing: 100ms vs 2000ms base offer delays (src/lib/p2p/connection.ts:436-438), 500ms vs 2000ms retry delay (connection.ts:677), shorter offerTimeout and meshCheckInterval (src/lib/p2p/config.ts:183-189). The real-user connection sequence — the timing under which races, glare, and retries actually occur — is never exercised by any test, including the 'required' suite. It also means a test-mode backdoor is reachable in production via URL param (config.ts:192-198)."
+        },
+        {
+          "title": "Mobile projects are neutered: tests force desktop touch detection, so no touch interaction is ever tested",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/tests/e2e/reactions.spec.ts:11-18",
+          "detail": "Five specs (reactions, edit-delete, persistence, typing-indicators, p2p-multiuser) inject Object.defineProperty(navigator, 'maxTouchPoints', {value: 0}) and delete ontouchstart in beforeEach, explicitly defeating the app's touch detection even when running under the Mobile Safari / Mobile Chrome projects (playwright.config.ts:25-31). Tests that still detect touch self-skip via isActionsAvailable() (edit-delete.spec.ts:22-35). Net result: how a phone user reacts to, edits, or deletes a message is completely untested — and PR CI only runs Desktop Chrome anyway (package.json:26, ci.yml:45). For a product that must 'work great on mobile', the only real mobile signal is the daily staging run of the required suite, which contains no reactions/edit/typing tests."
+        },
+        {
+          "title": "Encryption is only verified on the relay fallback path, never on the primary WebRTC path; crypto.rs has zero unit tests",
+          "severity": "high",
+          "file": "/Users/jakob/Code/lawzava/mindline/src-rust/crypto.rs:1",
+          "detail": "The AES-256-GCM implementation (src-rust/crypto.rs) has no #[test] functions — all 19 Rust tests are in messages.rs. E2E-side, ciphertext is asserted only for WebSocket relay frames (required-network.spec.ts:88-101); no test inspects DataChannel payloads, so a regression sending plaintext over the primary P2P path would pass everything. Encryption 'tests' in persistence.spec.ts only check that a localStorage key exists and messages re-render after reload (persistence.spec.ts:229-264) — they would pass identically if encryption were a no-op. TESTING.md section 13.3's 'Room A key doesn't decrypt B' cross-room isolation test is documented but not implemented (only key-difference is checked, persistence.spec.ts:286-308)."
+        },
+        {
+          "title": "Pervasive sleep-based synchronization and a 2.2s navigation throttle papering over a rate-limit conflict",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/tests/e2e/helpers/test-utils.ts:15-24",
+          "detail": "waitForP2PSync() is a bare setTimeout sleep (test-utils.ts:207-209) used ~30 times with magic values (500ms-5000ms) instead of condition polling — both slow and flaky under load. throttleRoomNavigation() inserts a mandatory 2.2s delay before every room join because the production signaling server's per-IP connection rate limit throttles the test suite itself (test-utils.ts:11-24) — the tests are fighting production anti-abuse config rather than the server exposing a test-friendly knob, adding ~2.2s × every join × 3 browser projects to wall-clock time. setupTwoUsers adds another fixed 3s sleep (test-utils.ts:156). Combined with workers:1, fullyParallel:false and retries:1 (playwright.config.ts:10-12), the suite is slow and one full retry hides residual flake."
+        },
+        {
+          "title": "mobile-p2p.spec.ts tests assert console-log strings and tautologies, not behavior",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/tests/e2e/mobile-p2p.spec.ts:184-193",
+          "detail": "'should cleanup on page navigation' passes if ANY of six log strings appears — including '[P2P Manager] Page lifecycle handlers registered', which logs at setup, not cleanup, so the test passes even if cleanup never runs (lines 184-193). 'mobile device detection returns correct config' asserts typeof isMobile === 'boolean' — it re-implements the regex in the test and can never fail (lines 196-215). The visibility-change test only asserts the status badge is still visible after synthetic events ('page didn't crash', lines 89-92). Real mobile lifecycle behavior (reconnect after backgrounding, draft preservation) is untested."
+        },
+        {
+          "title": "Several tests are structured so they cannot fail",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/tests/e2e/peer-list.spec.ts:204-210",
+          "detail": "'should show correct count with multiple peers' checks if text includes '2 peers' and otherwise just console.logs and passes (peer-list.spec.ts:204-210). required-network's offline-recovery test accepts Connected|Reconnecting|Connecting|Local as the final state (required-network.spec.ts:137-143) — a client stuck in 'Reconnecting' forever passes; no message is sent after recovery to prove the session actually works. mobile-p2p's offline test has the same accept-anything pattern (mobile-p2p.spec.ts:155-162). p2p-multiuser's 'should not duplicate messages on resync' (line 100) never triggers a resync — it just sends one more message and checks count+1."
+        },
+        {
+          "title": "TESTING.md materially overstates coverage",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/TESTING.md:24",
+          "detail": "Claims '~105 tests implemented' with every file marked ✅, but large documented areas have no corresponding spec code: reconnect button behavior (section 4.4), Disconnected/Failed badge states via killing the signaling server (4.1), error icon/tooltip (4.5), join/leave toasts (10.1), typing debounce network-traffic checks (16), cross-room key isolation (13.3), theme system-preference (2.3), Web Share API (2.2), mesh monitor retry limits (15.4), screen reader/keyboard nav (18.2-18.3). Anyone trusting this doc would believe reconnection UX is tested; no test ever stops the signaling server."
+        },
+        {
+          "title": "No Firefox or desktop WebKit coverage; PR CI is Chromium-only",
+          "severity": "medium",
+          "file": "/Users/jakob/Code/lawzava/mindline/playwright.config.ts:19-32",
+          "detail": "Projects are Desktop Chrome, iPhone 13 (WebKit mobile emulation), Pixel 5 (Chromium mobile emulation). Firefox — which has meaningfully different WebRTC/DataChannel behavior — is absent entirely. PR CI runs only Desktop Chrome (package.json:26); WebKit gets exercised only in the daily staging run. Both CDP-based offline tests skip on non-Chromium (required-network.spec.ts:111, mobile-p2p.spec.ts:101), so network-loss recovery has zero coverage on the browsers mobile users actually run."
+        },
+        {
+          "title": "Duplicated offline/online and connection-status helpers across specs",
+          "severity": "low",
+          "file": "/Users/jakob/Code/lawzava/mindline/tests/e2e/mobile-p2p.spec.ts:95-163",
+          "detail": "mobile-p2p.spec.ts:95-163 and required-network.spec.ts:106-144 are near-identical CDP offline/online tests; mobile-p2p also re-implements waitForConnectionStatus locally (lines 9-20) instead of importing the helper. The WebSocket-shim init script is duplicated verbatim for page and contextB in required-network.spec.ts:19-68. Minor, but signals the suite grew by copy-paste."
+        }
+      ],
+      "opportunities": [
+        "Promote a hardened typing-sync test to the required suite: use pressSequentially with delays and poll the peer's draft-indicator textContent, asserting at least N distinct intermediate values (e.g. 'H', 'Hel', 'Hello') — this is the only way to actually guard the product's core feature. The existing waitForPeersConnected + strict-mode plumbing already supports it.",
+        "Replace waitForP2PSync sleeps with expect.poll / locator-based waits, and add a test-mode env flag to signaling-server.js that disables the per-IP rate limit so throttleRoomNavigation (test-utils.ts:15-24) can be deleted — likely halves suite wall-clock time and removes the biggest flake source, which would let most best-effort tests graduate to required.",
+        "Delete or merge the can't-fail tests (peer-list.spec.ts:180-214, mobile-p2p.spec.ts:196-215, the duplicated offline tests) and regenerate TESTING.md from the actual spec list — the doc is currently a liability.",
+        "Add a required test that kills and restarts the signaling server mid-session (the orchestration script already owns the process) to cover Disconnected → Reconnecting → Connected and the reconnect button — the most common real-world reliability path, currently untested.",
+        "Add Rust unit tests for crypto.rs round-trip (encrypt/decrypt, wrong-key failure, IV uniqueness) — cargo test already runs in verify:rust so it's free CI.",
+        "For mobile: drop the maxTouchPoints=0 override on Mobile projects and instead implement+test the touch interaction path (tap/long-press for reactions/edit). Until the app has one, the Mobile Safari/Chrome projects mostly re-run desktop tests or skip.",
+        "File/media transfer test infrastructure (for the planned feature): (1) binary fixtures (a few KB image, ~5MB video) checked into tests/fixtures, sent via Playwright setInputFiles, verified by hashing received bytes in page.evaluate — hash-equality is the core assertion; (2) extend the WebSocket.send interception harness from required-network.spec.ts:19-42 to assert file bytes NEVER appear in relay frames (the 'no server relay for media' product requirement is exactly testable this way); (3) add an analogous RTCDataChannel.prototype.send shim to assert chunked + encrypted payloads on the P2P path — this also fixes the existing DataChannel-encryption blind spot for text; (4) CDP Network.emulateNetworkConditions throughput throttling (pattern already exists at required-network.spec.ts:119-125) to test chunking/backpressure/progress UI and transfer cancellation on slow links; (5) mid-transfer disconnect/resume test reusing the cleanup(contextB)/rejoin pattern from required-p2p.spec.ts:46-83; (6) for audio/video capture, Chromium launch args --use-fake-device-for-media-stream/--use-fake-ui-for-media-stream as a new Playwright project, since the current projects can't grant camera/mic; (7) persistence tests must move beyond localStorage assertions — media will need IndexedDB, so persistence.spec.ts's key-existence pattern won't transfer."
+      ],
+      "verdict": "Keep and refactor — do not rewrite. The bones are genuinely good: real multi-context WebRTC E2E, a blocking/non-blocking split with strict mode, a clever wire-level encryption assertion, solid orchestration scripting, and a staging matrix with soak testing. That's more test infrastructure than most P2P side projects ever build. But the suite currently protects the wrong things: the required suite guards solo-browser UI and two narrow P2P paths while the product's defining feature (live typing sync), all touch/mobile interactions, primary-path encryption, and reconnection UX sit in a skippable, non-blocking, sleep-riddled best-effort tier that can pass while executing nothing. The refactor priorities are mechanical, not architectural: remove the signaling rate-limit conflict so soft-skips can become hard requirements, promote typing-sync (with a real progressive-content assertion) into the required suite, stop forcing fastConnect and desktop touch detection everywhere, and delete the tautological tests. Doing that before building file/media transfer matters doubly, because the transfer features will need the same harness (DataChannel inspection, relay-frame assertions, disconnect/resume) that the current suite half-built for text."
+    },
+    {
+      "key": "security-e2e-claim",
+      "summary": "Mindline advertises \"E2E encrypted P2P chat with AES-256-GCM per-room keys.\" I traced the full key lifecycle and the actual message send/receive path. The advertised encryption is almost entirely dead code, and the live confidentiality story is very different from the marketing.\n\nKey birth and distribution: The \"room key\" is born in Rust as 32 random bytes per device (src-rust/crypto.rs:70-91, generate_room_key), generated lazily on room entry (initialize_room_encryption, crypto_api.rs:43-71). It is stored ONLY in localStorage (crypto.rs:243-265) and is NEVER transmitted to any peer — there is no key exchange, no URL fragment, no derivation from the room ID. I grepped the entire src/ + tests: there is no fragment/hash key sharing, and encrypt_message_content / encryptMessageContent (crypto_api.rs:76, wasm/index.ts:294) are never called by any code path. Each participant therefore holds a different, unshared random key that is also never used. The send path (routes/[roomId]/+page.svelte:122 handleSend → manager.ts:240-267 broadcastChat) builds a ChatMessage carrying raw plaintext content with no `encrypted` flag; the receive path only decrypts `if (encrypted ...)` (handlers.ts:98-108), which is never true. So chat messages cross the wire as plaintext JSON.\n\nWhat actually protects traffic: Direct P2P messages are protected solely by WebRTC's transport DTLS. The only live application-layer crypto is the relay-fallback path: when direct P2P fails, peers do an ephemeral ECDH (P-256) handshake (connection.ts:111-198) and AES-256-GCM-encrypt relay payloads with a fresh random 96-bit IV per message (connection.ts:224-274) before the signaling server forwards them. That construction is sound against a PASSIVE server, but the ECDH public keys are raw, unsigned and relayed by the server itself (connection.ts:139-150, signaling-server.js:330), and the WebRTC DTLS fingerprints travel in SDP through that same server (offer/answer relay, connection.ts:663-669, signaling-server.js:327). There is no out-of-band fingerprint or SAS verification anywhere, so a malicious/compromised signaling server can transparently MITM both the DTLS channel and the relay ECDH.\n\nWhat the server and a network observer see: The room ID is a UUIDv4 (utils.rs:10, ~122 bits from a CSPRNG) placed in the URL PATH and sent verbatim to the signaling server in the plaintext `join` message (connection.ts:351-357); the server uses it as the room map key and logs it (signaling-server.js:324). A passive network observer with TLS/WSS in production sees only ciphertext. The server operator sees every room ID, the full peer mesh, and — because there is no key/fingerprint authentication — can read or alter all content by MITM. Sync history is sent unencrypted to any peer that asks (handlers.ts:204-211, encrypted:false), so anyone who joins gets the full plaintext backlog.",
+      "strengths": [
+        "Relay-fallback subsystem is well-built: per-connection ephemeral ECDH (P-256) + AES-256-GCM with a fresh crypto.getRandomValues 96-bit IV per message (connection.ts:111-274). This genuinely hides relayed content from a PASSIVE signaling server and gives per-session forward secrecy for relay traffic.",
+        "All primitives use Web Crypto SubtleCrypto, not hand-rolled crypto (src/lib/wasm/crypto.ts); AES-GCM tagLength explicitly 128.",
+        "Room IDs are UUIDv4 sourced from a CSPRNG (getrandom 'js' feature + crypto.getRandomValues, Cargo.toml + utils.rs:10) — ~122 bits of entropy, not guessable.",
+        "Hardened signaling server assigns server-side client IDs to stop transport-level peer-ID spoofing, and adds rate limiting, 16KB payload caps, and a strict CORS allowlist (signaling-server.js:196-223, 30-35, 510-525).",
+        "Production uses WSS/TLS for signaling (config.ts useSSL), protecting the discovery channel and relay frames from passive network observers in transit."
+      ],
+      "issues": [
+        {
+          "title": "Advertised AES-256-GCM room-key encryption is never applied to messages — chat is broadcast in plaintext",
+          "severity": "critical",
+          "detail": "handleSend (routes/[roomId]/+page.svelte:122-180) calls broadcastChat (p2p/manager.ts:240-267), which constructs ChatMessage with raw `content` and no `encrypted` flag. handleChatMessage only decrypts when `encrypted` is truthy (p2p/handlers.ts:96-108), which never happens. encrypt_message_content (src-rust/crypto_api.rs:76) and its proxy encryptMessageContent (wasm/index.ts:294) have zero call sites in src/ or tests. Net effect: on the direct-P2P path, message confidentiality is provided ONLY by WebRTC DTLS; the entire src-rust/crypto.rs room-key module is dead code in the live path. The 'AES-256-GCM per-room key E2E' claim is false as shipped.",
+          "file": "src/lib/p2p/manager.ts:255-263"
+        },
+        {
+          "title": "Per-room key is generated independently per device and never shared — architecturally cannot decrypt peers",
+          "severity": "critical",
+          "detail": "generate_room_key (src-rust/crypto.rs:70-91) fills 32 random bytes via crypto.getRandomValues and stores the key only in localStorage (crypto.rs:243-265). No code transmits the key to peers: no key exchange message type, no URL fragment, no derivation from room ID (verified by grep across src/). Two participants in the same room therefore hold different keys. Even if encryption were wired into the send path, peer B could never decrypt peer A's ciphertext. The 'shared room key' does not exist as a shared secret.",
+          "file": "src-rust/crypto.rs:70-91"
+        },
+        {
+          "title": "No authentication of DTLS fingerprints or ECDH keys — malicious signaling server can MITM both transport and relay",
+          "severity": "critical",
+          "detail": "WebRTC SDP offers/answers (containing DTLS fingerprints) are relayed by the server (connection.ts:663-669; signaling-server.js:327-345). Relay ECDH public keys are raw, unsigned, and relayed by the same server (connection.ts:139-150 send; connection.ts:167-198 accept; signaling-server.js:330). There is no out-of-band fingerprint comparison, SAS, or binding of key material to the room secret anywhere. A compromised/hostile signaling server can substitute its own DTLS fingerprint and its own ECDH key in each direction, terminating both channels and reading/altering all content. This defeats E2E against the exact adversary E2E is meant to stop (the server operator).",
+          "file": "src/lib/p2p/connection.ts:139-198"
+        },
+        {
+          "title": "Room ID is the sole access control, is secret-equivalent, yet is sent to and logged by the server; anyone with it reads everything",
+          "severity": "critical",
+          "detail": "Room ID (UUIDv4) lives in the URL path (+page.svelte:48) and is sent in cleartext in the `join` frame (connection.ts:351-357). The signaling server uses it as the room key and logs it (signaling-server.js:324 `joined room ${currentRoom}`). There is no join authentication: any party holding the room ID can join, receive the peer list, establish data channels, and obtain all plaintext messages plus a full unencrypted history sync. The room secret is thus simultaneously the routing key the server sees AND the only capability gate — they should be separated.",
+          "file": "signaling-server.js:262-324"
+        },
+        {
+          "title": "Application-level sender identity is self-asserted and forgeable; edit/delete ownership checks are trivially bypassed",
+          "severity": "high",
+          "detail": "senderId/senderName are attacker-controlled fields set by the sender (manager.ts:255-263) and trusted on receipt (handlers.ts:111-114). The edit and delete 'ownership' checks compare the incoming senderId to the stored message's sender_id (handlers.ts:377, 417) — both supplied by the attacker — so a peer can impersonate any user and forge, edit, or delete messages as anyone in the room. No message signing exists.",
+          "file": "src/lib/p2p/handlers.ts:366-439"
+        },
+        {
+          "title": "Full room history is synced unencrypted to any peer on request",
+          "severity": "high",
+          "detail": "handleSyncRequest returns all room messages with encrypted:false (handlers.ts:204-211), comment explicitly notes 'peers may have different room keys (key sharing not yet implemented).' Any joiner — or a MITM server — obtains the complete plaintext backlog on connect.",
+          "file": "src/lib/p2p/handlers.ts:199-216"
+        },
+        {
+          "title": "integrity_hash is an unkeyed SHA-256 — security theater that implies integrity it does not provide",
+          "severity": "medium",
+          "detail": "EncryptedData carries integrity_hash = SHA256(hex(ciphertext)+hex(nonce)) (src-rust/crypto.rs:128-129, 216-222, 376-380). It is unkeyed, so any party (including a MITM) can recompute it after tampering; it adds nothing over GCM's auth tag and misleads reviewers into thinking extra integrity exists. Dead path, but should be removed to avoid false assurance.",
+          "file": "src-rust/crypto.rs:128-129"
+        },
+        {
+          "title": "No key rotation / forward secrecy for room key; message history stored at rest in plaintext",
+          "severity": "medium",
+          "detail": "The room key never rotates and persists indefinitely in localStorage (crypto.rs:243-265). save_room_to_storage writes message content verbatim into chatHistory_<room> (src-rust/messages.rs:524-577) with no encryption, despite StoredMessage carrying an `encrypted` bool (storage.rs:17). Anyone with device/localStorage access reads all history; the persisted `encrypted` flag is misleading.",
+          "file": "src-rust/messages.rs:524-577"
+        },
+        {
+          "title": "Duplicate insecure signaling server in repo trusts client-supplied IDs and uses wildcard CORS",
+          "severity": "low",
+          "detail": "signaling-server/server.js is a second, divergent implementation that takes clientId from the client (line 45), sets Access-Control-Allow-Origin '*' (line 18), and has no rate limiting or payload caps. If this variant is ever deployed instead of the hardened signaling-server.js, peer-ID spoofing and cross-origin abuse become trivial. Dead/duplicate code that should be deleted to prevent misdeployment.",
+          "file": "signaling-server/server.js:44-99"
+        }
+      ],
+      "opportunities": [
+        "Move the room secret into the URL FRAGMENT (after #) so it never reaches the server. Derive the signaling/routing room ID = SHA-256(secret) and the content key = HKDF(secret). This cleanly separates 'capability to join routing' from 'capability to decrypt', and keeps the key off the server entirely — the single highest-leverage change.",
+        "Actually wire the derived key into the send path: encrypt every chat/typing/edit/delete/reaction/sync payload before broadcast (reuse encrypt_message_content, currently dead), and decrypt symmetrically. Only then does a 'room key' mean anything.",
+        "Authenticate the channel to stop the malicious-server MITM: verify WebRTC DTLS fingerprints and ECDH public keys against the shared room secret (e.g., HMAC them with HKDF(secret)) or surface a Short Authentication String for out-of-band comparison. Without this, no amount of payload encryption yields true E2E.",
+        "Sign application messages (or derive an authenticated per-sender key from the shared secret) to eliminate in-room impersonation and forged edits/deletes.",
+        "Delete the dead room-key AES module and the unkeyed integrity_hash, and remove the duplicate insecure signaling-server/server.js, to shrink the crypto surface and stop the code from implying guarantees it does not deliver.",
+        "Encrypt localStorage history at rest under the room/content key, or document explicitly that local history is plaintext."
+      ],
+      "verdict": "Refactor the crypto design before making any E2E claim; the current 'E2E encrypted with per-room AES-256-GCM' marketing is not defensible. Concretely: (1) against a passive network observer the app is reasonably private today — direct messages ride WebRTC DTLS, signaling/relay ride WSS, and the relay path adds genuine ephemeral-ECDH + AES-GCM. (2) Against the signaling server / hosting operator — the threat model E2E exists to address — it provides essentially no protection: the advertised room-key encryption is dead code (chat is broadcast in plaintext), the room key is per-device and never shared so it could not work anyway, sender identity is forgeable, full history syncs in plaintext, and there is zero key/fingerprint authentication so the server can transparently MITM both DTLS and the relay. Keep and build on the relay ECDH subsystem (connection.ts:111-274) — it is the one correct piece. The minimum bar for a defensible E2E claim is: room secret in the URL fragment (off the server) → HKDF content key → encrypt all payloads → authenticate DTLS fingerprints / ECDH keys against that secret (or SAS) → sign or key-bind sender identity. Until those land, market it as 'private P2P chat (transport-encrypted)', not 'end-to-end encrypted'."
+    },
+    {
+      "key": "product-journey",
+      "summary": "Mindline is a no-account, link-first P2P chat web app: SvelteKit UI + a Rust/WASM core, WebRTC DataChannel mesh for transport, and a Node WebSocket signaling server for peer discovery with an encrypted relay fallback. The signature feature works as advertised mechanically: every keystroke is broadcast to peers (100ms debounce, /Users/jakob/Code/lawzava/mindline/src/routes/[roomId]/+page.svelte:182-193) and rendered as a live draft line (DraftIndicator.svelte) that fades after 3s of inactivity (src/lib/stores/drafts.ts:16). Rooms are UUIDs in the URL; identity is auto-generated (\"Anonymous\" + UUID in localStorage, src/lib/stores/user.ts); history persists per-room in localStorage via the WASM layer with multi-tab merge (src-rust/messages.rs:524-580) and syncs between peers on reconnect (src/lib/p2p/handlers.ts:192-343).\n\nFeature inventory today: create/join room via link or pasted ID (src/routes/+page.svelte:12-70); live character-by-character drafts; text messages (Enter to send) with per-peer delivery ACKs and check/double-check ticks (src/lib/stores/delivery.ts, MessageBubble.svelte:181-219); edit and soft-delete own messages with P2P broadcast and spoofable ownership check (handlers.ts:366-439); emoji reactions from a fixed set of 8 (EmojiPicker.svelte:16) with toggle and merge-on-sync; peer list popover with names; connection status badge with reconnect button, countdown, and sync progress (ConnectionStatus.svelte); message sync on peer connect (last-100 window); exponential-backoff reconnection plus mobile visibility/network-change handlers (src/lib/p2p/manager.ts:418-638); full-mesh WebRTC with deterministic initiator, offer-collision rollback, ICE restart and mesh monitoring (src/lib/p2p/connection.ts); STUN + free openrelay TURN + WebSocket relay fallback encrypted with per-peer ECDH/AES-GCM (connection.ts:111-274); strictDirect mode; Web Share/clipboard room sharing (Header.svelte:23-73); dark/light theme; leave-room confirm dialog; PWA manifest (no service worker); hardened signaling server with rate limits, 16KB payload cap, room caps, and keepalive (signaling-server.js).\n\nThe headline gap is encryption. The README/PRIVACY promise \"all messages encrypted with 256-bit keys,\" \"no key transmission,\" and \"encrypted message history\" (README.md:30, 225, 253; PRIVACY.md:78-81). In reality: each browser generates its own per-room AES key that is never shared and never used on the send path — wasm.encryptMessageContent is called nowhere (verified by grep); broadcastChat sends plaintext over the DataChannel (src/lib/p2p/manager.ts:255-266); sync responses are sent with `encrypted: false` and an explicit comment \"key sharing not yet implemented\" (handlers.ts:203-211); history is stored as plaintext JSON in localStorage with the unused key sitting beside it (messages.rs:531-576, crypto.rs:243-265). The receive-side decrypt path would not even work — decrypt_message_content returns a Promise (src-rust/crypto_api.rs:97) consumed synchronously (handlers.ts:98-107). Security today is WebRTC DTLS transport encryption plus an unauthenticated ECDH relay channel that the signaling server could MITM. Other promise/code gaps: manifest shortcuts (/?action=create|random), share_target, and the chat-status widget are dead (landing page handles no query params; widgets/chat-status is hardcoded mock JSON); no service worker so \"works offline\" and installable-PWA claims are unmet; README links to nonexistent SECURITY.md/CHANGELOG.md (README.md:291,295); PRIVACY.md cites a \"clear history feature\" that doesn't exist (PRIVACY.md:56, grep-verified) and wrong source paths (PRIVACY.md:131-132); room-ID rules (min 8 chars, README.md:246) are never enforced client-side (validateRoomId never called) and the server accepts ≥4 chars (signaling-server.js:273); CLAUDE.md says the server \"does NOT relay messages\" while signaling-server.js:347-384 does exactly that. Conversely the README roadmap still lists edit/delete and reactions as \"planned\" though they are shipped.\n\nOnboarding is genuinely strong: host opens URL (~1-2s WASM load gate, AppShell.svelte:16-35), taps \"Create New Room\" (1 tap), taps Share (1 tap) plus share-sheet taps; guest taps the link (1 tap) and is auto-joined with auto-identity — no name prompt, no account. The long pole is the deliberately staggered P2P handshake (500-1500ms waits per peer, connection.ts:437-501, plus ICE), giving ~5-10s desktop-to-desktop and ~15-30s phone-to-phone before \"Connected\"; sync fires 1s after connect (manager.ts:97). Friction points: both users default to \"Anonymous\" (name edit is a small header input nobody will find); the in-room copy button copies the bare UUID instead of the URL ([roomId]/+page.svelte:195-199) while Share copies the URL — inconsistent; on P2P failure the app silently drops into \"local mode\" with only a toast, and messages typed there never deliver; free openrelay TURN credentials (config.ts:11-22) are a known-unreliable dependency for the worst-case NAT path.",
+      "strengths": [
+        "Zero-friction onboarding is real: no account, no name prompt, auto-identity, 1 tap to create, 1 tap for a guest to join from a link (src/routes/+page.svelte:35-70, AppShell.svelte:16-35) — this is the product's best asset.",
+        "The live-draft feature actually works end-to-end and is well-executed: 100ms debounced keystroke broadcast, named draft rows, typing dots for empty drafts, fade-out animation ([roomId]/+page.svelte:182-193, DraftIndicator.svelte, drafts.ts).",
+        "Serious connection-reliability engineering: deterministic initiator election with server-assigned IDs, offer-collision rollback with retry queues, ICE restart with backoff, mesh monitoring, mobile visibility/network handlers, exponential-backoff reconnect with visible countdown (connection.ts, manager.ts:418-638, ConnectionStatus.svelte).",
+        "Layered transport fallback (direct P2P → TURN → encrypted WebSocket relay) means chat usually works even behind hostile NATs, and the relay path at least has real per-peer ECDH/AES-GCM encryption (connection.ts:111-274).",
+        "Mobile UX details are above average for a side project: 44px touch targets, safe-area insets, enterkeyhint=send, no keyboard-popping autofocus on touch, long-press action menu (MessageInput.svelte:37-62, MessageBubble.svelte:110-168).",
+        "Per-peer delivery acknowledgments with honest check/double-check semantics and tooltips ('Delivered to 1/2 peers') — rare honesty for a P2P app (delivery.ts, MessageBubble.svelte:194-216).",
+        "The signaling server is production-hardened: per-client rate limits, payload caps, room/connection caps, LRU cleanup, keepalive with missed-pong tolerance, spoofing prevention via server-assigned IDs (signaling-server.js:22-50, 347-384, 448-462).",
+        "Extensive E2E test surface (15 Playwright specs incl. strict-P2P, mobile, soak tests) aligned with the 'ultra-reliable' goal (package.json:19-30)."
+      ],
+      "issues": [
+        {
+          "title": "E2E encryption is advertised but not implemented on any message path",
+          "severity": "critical",
+          "file": "src/lib/p2p/manager.ts:255",
+          "detail": "broadcastChat sends plaintext content over the DataChannel; wasm.encryptMessageContent is never called anywhere in src/ (grep-verified). Sync responses are explicitly sent with encrypted:false and the comment 'peers may have different room keys (key sharing not yet implemented)' (src/lib/p2p/handlers.ts:203-211). The per-room AES-256 key generated in crypto_api.rs:43-71 encrypts nothing. README.md:30/225 and PRIVACY.md:78-81 ('All messages encrypted with AES-256', 'keys never leave your device') are false as user-meaningful claims — only DTLS transport encryption protects direct traffic. For a product whose entire privacy story is 'protected by mathematics, not promises' (PRIVACY.md:123), this is the gap to fix or the claim to retract."
+        },
+        {
+          "title": "Chat history stored as plaintext in localStorage, key stored beside it",
+          "severity": "high",
+          "file": "src-rust/messages.rs:531",
+          "detail": "save_room_to_storage serializes full message content as plaintext JSON under chatHistory_<roomId>; the (unused) room key is saved in the same localStorage under mindline_encryption_key_<roomId> (crypto.rs:252-261). README.md:253 claims 'Encrypted message history'. Any XSS, extension, or shared device reads everything."
+        },
+        {
+          "title": "Relay encryption key exchange is unauthenticated — signaling server can MITM",
+          "severity": "high",
+          "file": "src/lib/p2p/connection.ts:128",
+          "detail": "ECDH public keys are exchanged via the signaling server (sendRelayKey → 'relay-key' message) with no fingerprint verification or binding to room secret. A malicious/compromised server can substitute keys and read all relay-fallback traffic, contradicting PRIVACY.md:38 'It never sees plaintext message content'. Plaintext relay payloads from 'older clients' are also still accepted (connection.ts:560-561)."
+        },
+        {
+          "title": "No room access control: anyone with the room ID gets full history; edits/deletes are spoofable",
+          "severity": "high",
+          "file": "src/lib/p2p/handlers.ts:192",
+          "detail": "handleSyncRequest sends the entire local message history to any peer that joins the room — the room ID in the URL is the only secret, and the server accepts IDs as short as 4 chars (signaling-server.js:273) while client-side validateRoomId is never called. Edit/delete ownership checks compare against attacker-controlled senderId in the payload (handlers.ts:377, 417), so any peer can edit or delete anyone's messages by claiming the victim's sender_id. TERMS.md:38 acknowledges 'anyone with a room ID can join' but the README's security posture doesn't."
+        },
+        {
+          "title": "Receive-side decryption path is broken (latent bug proving E2EE was never exercised)",
+          "severity": "medium",
+          "file": "src/lib/p2p/handlers.ts:100",
+          "detail": "wasm.decryptMessageContent returns a js_sys::Promise (src-rust/crypto_api.rs:97-111) but handlers.ts consumes it synchronously (`const result = wasm.decryptMessageContent(content); if (result) decryptedContent = result;`). If any peer ever set encrypted:true, the UI would render '[object Promise]'. Dead code today; will bite the moment key sharing is implemented."
+        },
+        {
+          "title": "Dead PWA surface: manifest shortcuts, share_target, widgets, and no service worker",
+          "severity": "medium",
+          "file": "manifest.json:46",
+          "detail": "Shortcuts point to /?action=random and /?action=create, and share_target sends GET params to / — the landing page handles no query params at all (src/routes/+page.svelte:35-76). widgets/chat-status is hardcoded mock data ('general', 3 active users, 'Hello everyone!'). No service worker exists anywhere (grep-verified), so the app does not load offline despite README.md:231 'works offline with cached messages', and install prompts are degraded."
+        },
+        {
+          "title": "Triple state management (Svelte stores + WASM MessageManager + localStorage) with duplicated fallback writes",
+          "severity": "medium",
+          "file": "src/routes/[roomId]/+page.svelte:226",
+          "detail": "Every mutation is performed three times: optimistic Svelte store update, WASM state sync (preceded by a defensive loadRoomMessagesFromStorage), then saveRoomMessagesToStorage — and when WASM fails, hand-rolled localStorage JSON surgery is duplicated inline for both edit (236-258) and delete (293-313). The Rust side re-implements the same merge logic (messages.rs:524-580). This is the main source of complexity and race risk in the codebase and delivers no user value over a single TS store + IndexedDB."
+        },
+        {
+          "title": "~1,900 lines of effectively dead Rust shipped in the WASM bundle",
+          "severity": "medium",
+          "file": "src-rust/logger.rs:1",
+          "detail": "logger.rs (701 lines) + logging_api.rs (220) + performance.rs (343) + advanced_api.rs (150) + sanitizer.rs (283) + storage.rs (154, an 'IndexedDBManager' that is actually an in-memory HashMap with a comment 'In production, this would use IndexedDB', storage.rs:42-44) are unused or barely used from the app. core.rs also retains deprecated send_message/get_messages/join_room and a vestigial CHAT_MANAGER; create_room_with_id is a no-op that only logs (core.rs:244-253). All of this inflates the WASM payload users download on first visit."
+        },
+        {
+          "title": "Documentation/legal drift across README, PRIVACY, CLAUDE.md",
+          "severity": "medium",
+          "file": "README.md:291",
+          "detail": "README links to SECURITY.md and CHANGELOG.md which do not exist; PRIVACY.md:56 promises a 'clear history feature' that has no UI (grep-verified); PRIVACY.md:131-132 cites src/crypto.rs and js/webrtc.js (wrong/nonexistent paths); CLAUDE.md states the signaling server 'does NOT relay messages' while signaling-server.js:347-384 implements relay; README roadmap still lists edit/delete and reactions as planned though shipped. For a privacy product, auditors hitting broken claims is reputational damage."
+        },
+        {
+          "title": "P2P-failure 'local mode' silently loses messages",
+          "severity": "medium",
+          "file": "src/routes/[roomId]/+page.svelte:96",
+          "detail": "If initializeP2P throws, the app shows one toast and continues; messages composed afterward are persisted locally and broadcast to zero peers with no queue-and-retry on reconnect (broadcastChat just warns 'not ready', manager.ts:244-246). A user can chat into the void. There is no outbox/resend of undelivered messages when peers connect — sync-request only pulls, the delivery store records failure but nothing acts on it."
+        },
+        {
+          "title": "Draft auto-fade contradicts the 'radical transparency' premise and copy",
+          "severity": "low",
+          "file": "src/lib/stores/drafts.ts:16",
+          "detail": "Drafts vanish 3s after the peer pauses typing even though their composed text still sits in their input box — README.md:15 promises 'See exactly what others are typing... nothing is hidden'. Pausing hides the draft; deleting text and rewriting is invisible between debounce windows. Either hold the draft while the input is non-empty (truer to the pitch) or soften the marketing."
+        },
+        {
+          "title": "Copy-room-ID button copies a bare UUID, not the joinable URL",
+          "severity": "low",
+          "file": "src/routes/[roomId]/+page.svelte:195",
+          "detail": "copyRoomId writes only roomId to the clipboard while the header Share button copies the full URL (Header.svelte:27). A recipient pasting a bare UUID must find the join field; the most prominent in-room copy affordance produces the worse artifact. Both should copy the URL."
+        },
+        {
+          "title": "Hardcoded free openrelay TURN credentials undermine the reliability goal",
+          "severity": "low",
+          "file": "src/lib/p2p/config.ts:11",
+          "detail": "The worst-case NAT path depends on metered.ca's free 'openrelayproject' service, which is rate-limited and frequently down. The WS relay fallback masks it, but then all traffic flows through your signaling server — capacity and privacy implications. Self-hosted coturn or a paid TURN tier is needed before promising 'ultra-reliable'."
+        },
+        {
+          "title": "Every keystroke broadcasts the full draft content — O(len²) bandwidth per message",
+          "severity": "low",
+          "file": "src/lib/p2p/manager.ts:272",
+          "detail": "broadcastTyping sends the entire current draft on each (debounced) input event to every peer, including the relay path when DataChannels are down. Fine for 1:1 text, but it compounds with room size (full mesh) and will collide with the 16KB relay payload cap (signaling-server.js:33) for long drafts. Diffs or capped prefixes would fix it."
+        }
+      ],
+      "opportunities": [
+        "Sharpest framing: 'A live room, not a messenger.' Mindline's both-peers-online constraint is fatal for an async-chat framing but is a feature for a synchronous one: 'Instant private rooms where you watch each other think. One link. No accounts. No servers storing anything.' Compete with 'jumping on a call', not WhatsApp. Target users: pairs and tiny groups already coordinating in real time — couples/close friends, remote pair-programmers, tutoring/language practice, live interviews/support hand-holding, and privacy-conscious 'burner room' conversations. The live-typing twist is the wedge (it makes text feel like talking); the no-account/no-server story is the retention hook.",
+        "Make E2EE real with one design change: put the room key in the URL fragment (mindline.chat/<roomId>#<key>) — fragments never reach the server, the existing share flow distributes it automatically, and the WASM AES-GCM code that already exists finally gets used for wire + storage encryption. This single change makes most of README/PRIVACY true and is dramatically simpler than building key-exchange UI.",
+        "Cut the WASM layer or give it a real job. Its current used surface (UUIDs, a message map, localStorage writes, unused crypto) is ~300 lines of TypeScript. Either delete src-rust/ entirely (biggest simplification available — removes the triple-state problem, the load gate, and ~1.9k dead lines) or keep Rust only as the crypto/file-chunking engine once E2EE and file transfer exist. Unify persistence on IndexedDB (needed for media anyway; localStorage's ~5MB cap dies on the first photo).",
+        "Bloat-vs-core triage for the live-room framing — Core: create/share/join, live drafts, messages, presence/peer list, reconnect machinery, delivery ticks. Keep-but-cheap: reactions (8 emoji is fine), theme. Question: edit/delete (philosophically opposed to 'no time to craft perfect responses', and currently spoofable — consider removing or limiting to a short undo window); persistent history (for the burner-room audience, ephemeral-by-default with opt-in save is both simpler and more on-brand). Delete: manifest shortcuts/share_target/widgets/adaptive-card, deprecated Rust APIs, fake IndexedDBManager, logger/performance/sanitizer Rust modules.",
+        "File sharing (P2P-feasible UX): chunked DataChannel transfer (16-64KB chunks, bufferedAmountLow backpressure, per-chunk index + SHA-256 verification, resume-from-chunk on reconnect). Since both peers must be online, frame it as a 'live handoff': sender sees a real-time progress bar mirrored on the receiver's side, transfer pauses with an honest 'waiting for peer' state, and files transfer only while the bubble shows the peer green. Disable or hard-cap the WS relay path for files (16KB server cap, signaling-server.js:33).",
+        "Photo/audio/video messages: photos — input capture + canvas/WebCodecs compression to ~200-500KB, send inline via the same chunking, store blobs in IndexedDB, render with blurhash placeholder; voice notes — MediaRecorder opus/webm (~100KB per 10s) are the easiest big win and fit the 'talking' framing perfectly; video — short clips only (compressed, capped ~10-20MB) over chunked DataChannel; for anything longer, pivot to live streaming (add a media track to the already-established RTCPeerConnection — far easier than file transfer and on-brand for a synchronous product).",
+        "Multi-device: identity and history are trapped in one browser's localStorage today. Cheapest credible path: QR/link pairing that joins your second device into the room as a hidden peer and reuses the existing sync-request/response protocol to replicate history device-to-device — no servers, consistent with the privacy story. Pair it with simple export/import as the fallback.",
+        "Onboarding polish (the funnel is already ~3 taps): make the room page's primary CTA when alone a giant 'Invite' button (share sheet) instead of the small header icon; prompt for a display name inline in the first draft row ('Typing as Anonymous — tap to set name'); make copy-room-ID copy the full URL; replace the silent 'local mode' with a blocking, honest state ('Couldn't connect — your friend won't see messages. Retry / Diagnose'); and add an outbox that auto-resends undelivered messages when a peer connects.",
+        "Honest presence for the both-online constraint: show the invited peer's last-seen/online state prominently, and when alone display 'Your friend isn't here — they'll see nothing until they return while you're online.' Consider an optional, privacy-preserving 'knock' (re-send invite) instead of pretending async delivery exists."
+      ],
+      "verdict": "Keep the product, rewrite the core honesty layer, and shrink the stack. The UX shell (onboarding, live drafts, reconnect machinery, mobile polish, signaling server) is genuinely good and worth keeping nearly as-is — it delivers the 'seamless, easy' goal better than most P2P chat attempts. But the trust layer must be rebuilt before this can be marketed: E2EE is advertised everywhere and implemented nowhere (plaintext DataChannel broadcasts, plaintext sync, plaintext localStorage), and the fix — room key in the URL fragment plus actually calling the existing AES-GCM code — is small relative to the claim's importance. Simultaneously, the Rust/WASM layer in its current form is negative-value: it adds a load gate, a triple-state synchronization problem, and ~1.9k dead lines while doing work TypeScript does in 300 lines; either delete it or repurpose it as the crypto/file-transfer engine for the planned media features. Re-frame the product around its constraint ('a live room, not a messenger'), cut the dead PWA/widget surface and probably edit/delete, move persistence to IndexedDB, and the planned file/photo/audio features have a clean, P2P-feasible path."
+    }
+  ]
+}
