@@ -50,3 +50,8 @@ test-screenshot-*.png
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Local tooling artifacts
+.playwright-cli/
+.pnpm-store/
+/*.png
