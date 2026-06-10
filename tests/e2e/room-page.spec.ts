@@ -120,7 +120,7 @@ test.describe('Room Page', () => {
 
 		// Should navigate to home page
 		await page.waitForURL('/');
-		await expect(page.getByText('Welcome to Mindline')).toBeVisible();
+		await expect(page.getByText('Talk on a live wire.')).toBeVisible();
 	});
 
 	test('should show empty message state initially', async ({ page }) => {
