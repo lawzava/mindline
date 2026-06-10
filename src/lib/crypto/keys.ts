@@ -19,8 +19,11 @@ export interface RoomKeys {
 	storage: CryptoKey;
 	/** HMAC-SHA-256 for handshake/signaling authentication */
 	auth: CryptoKey;
-	/** HKDF master material, kept for per-transfer media subkeys */
-	material: CryptoKey;
+	/**
+	 * HMAC-SHA-256 base for per-transfer media subkeys. HMAC keys survive
+	 * structured clone into IndexedDB everywhere, unlike HKDF material.
+	 */
+	mediaBase: CryptoKey;
 }
 
 export function createRoomKey(): Uint8Array {
@@ -53,28 +56,39 @@ async function deriveAesKey(material: CryptoKey, info: string): Promise<CryptoKe
 	);
 }
 
+async function deriveHmacKey(material: CryptoKey, info: string): Promise<CryptoKey> {
+	return crypto.subtle.deriveKey(
+		{ name: 'HKDF', hash: 'SHA-256', salt: HKDF_SALT, info: new TextEncoder().encode(info) },
+		material,
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign', 'verify']
+	);
+}
+
 export async function deriveRoomKeys(material: CryptoKey): Promise<RoomKeys> {
-	const [msg, eph, storage, auth] = await Promise.all([
+	const [msg, eph, storage, auth, mediaBase] = await Promise.all([
 		deriveAesKey(material, 'mindline/v2/msg'),
 		deriveAesKey(material, 'mindline/v2/eph'),
 		deriveAesKey(material, 'mindline/v2/storage'),
-		crypto.subtle.deriveKey(
-			{
-				name: 'HKDF',
-				hash: 'SHA-256',
-				salt: HKDF_SALT,
-				info: new TextEncoder().encode('mindline/v2/auth')
-			},
-			material,
-			{ name: 'HMAC', hash: 'SHA-256' },
-			false,
-			['sign', 'verify']
-		)
+		deriveHmacKey(material, 'mindline/v2/auth'),
+		deriveHmacKey(material, 'mindline/v2/media-base')
 	]);
-	return { msg, eph, storage, auth, material };
+	return { msg, eph, storage, auth, mediaBase };
 }
 
-/** Per-transfer media subkey (PROTOCOL.md §5.2). */
-export async function deriveMediaKey(material: CryptoKey, transferId: string): Promise<CryptoKey> {
-	return deriveAesKey(material, `mindline/v2/media/${transferId}`);
+/**
+ * Per-transfer media subkey (PROTOCOL.md §5.2):
+ * AES-256-GCM key from HMAC(mediaBase, 'media|' + transferId).
+ */
+export async function deriveMediaKey(keys: RoomKeys, transferId: string): Promise<CryptoKey> {
+	const bytes = await crypto.subtle.sign(
+		'HMAC',
+		keys.mediaBase,
+		new TextEncoder().encode(`media|${transferId}`)
+	);
+	return crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM', length: 256 }, false, [
+		'encrypt',
+		'decrypt'
+	]);
 }
