@@ -112,13 +112,16 @@
 		</span>
 	{/if}
 
-	<!-- Message block with actions -->
-	<div class={cn('flex max-w-full items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
+	<!-- Message block with actions. The width cap lives on this row (its
+	     containing block is the full-width column) — a percentage max-width
+	     on the bubble itself resolves against this shrink-to-fit row and
+	     collapses to ~2ch on touch devices, where the row has no buttons. -->
+	<div class={cn('flex max-w-[min(85%,42rem)] items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
 		<!-- Message content: received is ink on paper, sent gets a faint wash -->
 		<div
 			use:longPress={{ duration: 400, onLongPress: handleLongPress }}
 			class={cn(
-				'max-w-[min(80%,42rem)] break-words',
+				'min-w-0 break-words',
 				isMe ? 'rounded-lg bg-wash-sent px-3 py-1.5' : 'py-0.5',
 				isDeleted && 'italic text-muted-foreground'
 			)}
