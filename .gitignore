@@ -55,3 +55,6 @@ vite.config.ts.timestamp-*
 .playwright-cli/
 .pnpm-store/
 /*.png
+
+test-results/
+playwright-report/
