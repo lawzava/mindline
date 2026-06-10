@@ -1,7 +1,8 @@
 <script lang="ts">
 	import MessageBubble from './MessageBubble.svelte';
-	import { userId } from '$lib/stores';
-	import type { Message } from '$lib/wasm/types';
+	import LiveDraft from './LiveDraft.svelte';
+	import { userId, draftsList } from '$lib/stores';
+	import type { Message } from '$lib/types/message';
 
 	interface Props {
 		messages: Message[];
@@ -12,16 +13,23 @@
 
 	let { messages, onEdit, onDelete, onReaction }: Props = $props();
 	let scrollRef = $state<HTMLDivElement | null>(null);
+	let atBottom = $state(true);
 
-	// Auto-scroll to bottom when new messages arrive
+	function handleScroll() {
+		const el = scrollRef;
+		if (!el) return;
+		atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+	}
+
+	// Follow the stream only when the reader is already at the bottom
+	// (audit fix: no more force-scroll while reading history). Drafts
+	// growing also keep the view pinned.
 	$effect(() => {
-		if (messages.length && scrollRef) {
-			// Use a small delay to ensure the DOM has updated
+		void messages.length;
+		void $draftsList;
+		if (scrollRef && atBottom) {
 			requestAnimationFrame(() => {
-				scrollRef?.scrollTo({
-					top: scrollRef.scrollHeight,
-					behavior: 'smooth'
-				});
+				scrollRef?.scrollTo({ top: scrollRef.scrollHeight, behavior: 'smooth' });
 			});
 		}
 	});
@@ -30,28 +38,31 @@
 <div class="min-h-0 flex-1 overflow-hidden" data-testid="message-list">
 	<div
 		bind:this={scrollRef}
-		class="h-full overflow-y-auto px-3 py-4 sm:px-5 sm:py-5"
+		onscroll={handleScroll}
+		class="mx-auto h-full max-w-2xl overflow-y-auto px-4 py-4 sm:px-6"
+		aria-live="polite"
+		aria-label="Messages"
 	>
-		{#if messages.length === 0}
+		{#if messages.length === 0 && $draftsList.length === 0}
 			<div class="flex h-full items-center justify-center">
-				<div class="max-w-sm rounded-3xl border border-live/20 bg-surface-warm px-6 py-5 text-center shadow-sm shadow-live/10">
-					<p class="text-base font-bold text-foreground">This room is quiet.</p>
-					<p class="mt-2 text-sm leading-6 text-muted-foreground">
-						Type when you are ready. Your draft is visible to connected peers before you send.
-					</p>
-				</div>
+				<p class="text-center text-sm text-muted-foreground">
+					No messages yet. Start the conversation!
+				</p>
 			</div>
 		{:else}
-			<div class="flex flex-col gap-4">
-				{#each messages as message (message.id)}
+			<div class="flex flex-col">
+				{#each messages as message, i (message.id)}
 					<MessageBubble
 						{message}
 						isMe={message.sender_id === $userId}
+						grouped={i > 0 && messages[i - 1].sender_id === message.sender_id}
 						{onEdit}
 						{onDelete}
 						{onReaction}
 					/>
 				{/each}
+				<!-- Live drafts land where the sent message will appear -->
+				<LiveDraft />
 			</div>
 		{/if}
 	</div>

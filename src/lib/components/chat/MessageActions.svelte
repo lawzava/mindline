@@ -15,10 +15,17 @@
 
 <DropdownMenu.Root>
 	<DropdownMenu.Trigger>
-		<Button variant="ghost" size="icon" class="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
-			<MoreHorizontal class="h-4 w-4" />
-			<span class="sr-only">Message options</span>
-		</Button>
+		{#snippet child({ props })}
+			<Button
+				{...props}
+				variant="ghost"
+				size="icon"
+				class="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+			>
+				<MoreHorizontal class="h-4 w-4" />
+				<span class="sr-only">Message options</span>
+			</Button>
+		{/snippet}
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content align="end" class="w-40">
 		<DropdownMenu.Item onclick={onEdit} class="gap-2 cursor-pointer">

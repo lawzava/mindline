@@ -1,95 +1,87 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/newsreader";
+@import "@fontsource-variable/newsreader/wght-italic.css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	--font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-	--radius: 0.875rem;
+	/*
+	 * Iron Gall: dried ink on warm paper. Light is the authored theme;
+	 * dark ("Inkwell") is the same room with the lamp dimmed.
+	 * Paper neutrals carry hue 84, ink neutrals hue 272 — never #000/#fff.
+	 */
+	--font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+	--font-serif: "Newsreader Variable", "Iowan Old Style", Georgia, serif;
+	--radius: 0.5rem;
 
-	--background: oklch(0.972 0.008 72);
-	--foreground: oklch(0.205 0.018 62);
-	--card: oklch(0.992 0.006 72);
-	--card-foreground: oklch(0.205 0.018 62);
-	--popover: oklch(0.992 0.006 72);
-	--popover-foreground: oklch(0.205 0.018 62);
-	--primary: oklch(0.47 0.105 58);
-	--primary-foreground: oklch(0.985 0.007 78);
-	--secondary: oklch(0.925 0.018 70);
-	--secondary-foreground: oklch(0.245 0.02 62);
-	--muted: oklch(0.936 0.014 72);
-	--muted-foreground: oklch(0.47 0.023 62);
-	--accent: oklch(0.89 0.055 76);
-	--accent-foreground: oklch(0.265 0.03 58);
-	--destructive: oklch(0.56 0.18 29);
-	--destructive-foreground: oklch(0.985 0.007 78);
-	--border: oklch(0.86 0.018 70);
-	--input: oklch(0.82 0.02 70);
-	--ring: oklch(0.62 0.09 66);
-	--success: oklch(0.48 0.095 145);
-	--success-foreground: oklch(0.985 0.007 78);
-	--warning: oklch(0.68 0.13 75);
-	--warning-foreground: oklch(0.23 0.026 58);
-	--info: oklch(0.52 0.08 220);
-	--info-foreground: oklch(0.985 0.007 78);
-	--surface-warm: oklch(0.952 0.018 76);
-	--surface-quiet: oklch(0.982 0.009 74);
-	--surface-warm-foreground: var(--foreground);
-	--surface-quiet-foreground: var(--foreground);
-	--live: oklch(0.6 0.13 64);
-	--live-foreground: oklch(0.985 0.007 78);
-	--local: oklch(0.64 0.11 82);
-	--local-foreground: oklch(0.235 0.025 58);
-	--chart-1: oklch(0.58 0.12 64);
-	--chart-2: oklch(0.56 0.09 150);
-	--chart-3: oklch(0.54 0.08 220);
-	--chart-4: oklch(0.66 0.12 88);
-	--chart-5: oklch(0.58 0.12 30);
+	--background: oklch(0.962 0.007 84);
+	--foreground: oklch(0.225 0.018 272);
+	--card: oklch(0.978 0.005 84);
+	--card-foreground: oklch(0.225 0.018 272);
+	--popover: oklch(0.978 0.005 84);
+	--popover-foreground: oklch(0.225 0.018 272);
+	--primary: oklch(0.45 0.105 272);
+	--primary-foreground: oklch(0.972 0.005 84);
+	--secondary: oklch(0.93 0.009 84);
+	--secondary-foreground: oklch(0.3 0.018 272);
+	--muted: oklch(0.93 0.009 84);
+	--muted-foreground: oklch(0.48 0.014 272);
+	--accent: oklch(0.915 0.012 84);
+	--accent-foreground: oklch(0.3 0.018 272);
+	--destructive: oklch(0.52 0.16 25);
+	--destructive-foreground: oklch(0.972 0.005 84);
+	--success: oklch(0.56 0.09 150);
+	--warning: oklch(0.65 0.12 75);
+	--border: oklch(0.885 0.008 84);
+	--input: oklch(0.885 0.008 84);
+	--ring: oklch(0.45 0.105 272);
+
+	/* The live layer: wet ink. The one Committed surface in the system. */
+	--draft: oklch(0.45 0.105 272);
+	--draft-idle: oklch(0.45 0.105 272 / 0.55);
+	--wash-draft: oklch(0.45 0.105 272 / 0.07);
+	--wash-sent: oklch(0.925 0.014 272);
+
+	/* Motion: state-conveying only */
+	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+	--dur-fast: 150ms;
+	--dur-slow: 250ms;
 }
 
 .dark {
-	--background: oklch(0.18 0.014 58);
-	--foreground: oklch(0.93 0.012 76);
-	--card: oklch(0.225 0.014 58);
-	--card-foreground: oklch(0.93 0.012 76);
-	--popover: oklch(0.225 0.014 58);
-	--popover-foreground: oklch(0.93 0.012 76);
-	--primary: oklch(0.74 0.105 70);
-	--primary-foreground: oklch(0.19 0.016 58);
-	--secondary: oklch(0.285 0.016 58);
-	--secondary-foreground: oklch(0.91 0.012 76);
-	--muted: oklch(0.285 0.016 58);
-	--muted-foreground: oklch(0.69 0.018 72);
-	--accent: oklch(0.34 0.035 66);
-	--accent-foreground: oklch(0.94 0.013 76);
-	--destructive: oklch(0.68 0.16 28);
-	--destructive-foreground: oklch(0.98 0.008 76);
-	--border: oklch(0.33 0.018 58);
-	--input: oklch(0.38 0.02 58);
-	--ring: oklch(0.72 0.09 70);
-	--success: oklch(0.7 0.11 145);
-	--success-foreground: oklch(0.16 0.014 58);
-	--warning: oklch(0.78 0.13 76);
-	--warning-foreground: oklch(0.17 0.014 58);
-	--info: oklch(0.72 0.08 220);
-	--info-foreground: oklch(0.16 0.014 58);
-	--surface-warm: oklch(0.245 0.016 58);
-	--surface-quiet: oklch(0.205 0.014 58);
-	--surface-warm-foreground: var(--foreground);
-	--surface-quiet-foreground: var(--foreground);
-	--live: oklch(0.74 0.12 70);
-	--live-foreground: oklch(0.18 0.014 58);
-	--local: oklch(0.76 0.12 82);
-	--local-foreground: oklch(0.17 0.014 58);
-	--chart-1: oklch(0.74 0.12 70);
-	--chart-2: oklch(0.7 0.1 150);
-	--chart-3: oklch(0.72 0.08 220);
-	--chart-4: oklch(0.78 0.12 88);
-	--chart-5: oklch(0.72 0.12 30);
+	--background: oklch(0.185 0.014 272);
+	--foreground: oklch(0.92 0.008 84);
+	--card: oklch(0.215 0.015 272);
+	--card-foreground: oklch(0.92 0.008 84);
+	--popover: oklch(0.215 0.015 272);
+	--popover-foreground: oklch(0.92 0.008 84);
+	--primary: oklch(0.74 0.085 268);
+	--primary-foreground: oklch(0.185 0.014 272);
+	--secondary: oklch(0.245 0.016 272);
+	--secondary-foreground: oklch(0.92 0.008 84);
+	--muted: oklch(0.245 0.016 272);
+	--muted-foreground: oklch(0.68 0.012 84);
+	--accent: oklch(0.27 0.018 272);
+	--accent-foreground: oklch(0.92 0.008 84);
+	--destructive: oklch(0.68 0.14 25);
+	--destructive-foreground: oklch(0.185 0.014 272);
+	--success: oklch(0.72 0.1 150);
+	--warning: oklch(0.78 0.11 80);
+	--border: oklch(0.275 0.015 272);
+	--input: oklch(0.275 0.015 272);
+	--ring: oklch(0.74 0.085 268);
+
+	--draft: oklch(0.78 0.075 268);
+	--draft-idle: oklch(0.78 0.075 268 / 0.55);
+	--wash-draft: oklch(0.74 0.085 268 / 0.09);
+	--wash-sent: oklch(0.265 0.022 272);
 }
 
 @theme inline {
 	--font-sans: var(--font-sans);
+	--font-serif: var(--font-serif);
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
@@ -110,28 +102,15 @@
 	--color-accent-foreground: var(--accent-foreground);
 	--color-destructive: var(--destructive);
 	--color-destructive-foreground: var(--destructive-foreground);
+	--color-success: var(--success);
+	--color-warning: var(--warning);
 	--color-border: var(--border);
 	--color-input: var(--input);
 	--color-ring: var(--ring);
-	--color-success: var(--success);
-	--color-success-foreground: var(--success-foreground);
-	--color-warning: var(--warning);
-	--color-warning-foreground: var(--warning-foreground);
-	--color-info: var(--info);
-	--color-info-foreground: var(--info-foreground);
-	--color-surface-warm: var(--surface-warm);
-	--color-surface-quiet: var(--surface-quiet);
-	--color-surface-warm-foreground: var(--surface-warm-foreground);
-	--color-surface-quiet-foreground: var(--surface-quiet-foreground);
-	--color-live: var(--live);
-	--color-live-foreground: var(--live-foreground);
-	--color-local: var(--local);
-	--color-local-foreground: var(--local-foreground);
-	--color-chart-1: var(--chart-1);
-	--color-chart-2: var(--chart-2);
-	--color-chart-3: var(--chart-3);
-	--color-chart-4: var(--chart-4);
-	--color-chart-5: var(--chart-5);
+	--color-draft: var(--draft);
+	--color-draft-idle: var(--draft-idle);
+	--color-wash-draft: var(--wash-draft);
+	--color-wash-sent: var(--wash-sent);
 }
 
 @layer base {
@@ -140,7 +119,6 @@
 	}
 	body {
 		@apply bg-background text-foreground font-sans antialiased;
-		font-feature-settings: "rlig" 1, "calt" 1;
 	}
 	h1,
 	h2,
@@ -148,10 +126,67 @@
 	h4,
 	h5,
 	h6 {
-		@apply font-bold tracking-tight;
+		@apply font-semibold tracking-tight;
 	}
-	::selection {
-		background: color-mix(in oklch, var(--live) 28%, transparent);
-		color: var(--foreground);
+}
+
+@layer utilities {
+	/* Human words are set in ink (serif); chrome stays sans. */
+	.prose-ink {
+		font-family: var(--font-serif);
+		font-size: 1.0625rem;
+		line-height: 1.5;
+		font-weight: 400;
+	}
+
+	/* The breathing presence dot: a 2400ms calm cycle, not a blink. */
+	.breathe {
+		animation: breathe 2400ms ease-in-out infinite;
+	}
+	@keyframes breathe {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.45;
+		}
+	}
+
+	/* New draft characters soak in like ink. */
+	.ink-in {
+		animation: ink-in var(--dur-fast) var(--ease-out-expo);
+	}
+	@keyframes ink-in {
+		from {
+			opacity: 0;
+			filter: blur(0.3px);
+		}
+		to {
+			opacity: 1;
+			filter: blur(0);
+		}
+	}
+
+	/* Draft block settles into a sent message: italic wet ink dries to roman. */
+	.ink-dry {
+		animation: ink-dry var(--dur-slow) var(--ease-out-expo);
+	}
+	@keyframes ink-dry {
+		from {
+			color: var(--draft);
+			background-color: var(--wash-draft);
+		}
+		to {
+			background-color: transparent;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.breathe,
+		.ink-in,
+		.ink-dry {
+			animation: none;
+		}
 	}
 }

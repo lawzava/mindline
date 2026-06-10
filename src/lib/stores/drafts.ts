@@ -13,7 +13,10 @@ export interface Draft {
 	isFading?: boolean;
 }
 
-const DRAFT_TIMEOUT_MS = 3000; // Auto-clear drafts after 3 seconds of inactivity
+// Radical transparency: a draft never vanishes while the peer's composer
+// holds text. After this stillness it settles to 55% opacity (isFading),
+// breath held, not gone. It clears only on send, explicit empty, or leave.
+const DRAFT_SETTLE_MS = 6000;
 
 function createDraftsStore() {
 	const { subscribe, set, update } = writable<Map<string, Draft>>(new Map());
@@ -48,10 +51,10 @@ function createDraftsStore() {
 				return new Map(drafts);
 			});
 
-			// Set timeout to fade, then auto-clear after inactivity
+			// Settle (never auto-clear) after stillness: the draft holds at
+			// reduced presence until send, explicit empty, or peer leave.
 			if (content.trim() !== '' && browser) {
-				const fadeTimeout = setTimeout(() => {
-					// First, mark as fading
+				const settleTimeout = setTimeout(() => {
 					update((drafts) => {
 						const draft = drafts.get(peerId);
 						if (draft) {
@@ -59,21 +62,10 @@ function createDraftsStore() {
 						}
 						return new Map(drafts);
 					});
+					timeouts.delete(peerId);
+				}, DRAFT_SETTLE_MS);
 
-					// Then remove after fade animation
-					const removeTimeout = setTimeout(() => {
-						update((drafts) => {
-							drafts.delete(peerId);
-							return new Map(drafts);
-						});
-						timeouts.delete(peerId);
-					}, 500); // 500ms fade animation
-
-					// Store the remove timeout so it can be cancelled
-					timeouts.set(peerId, removeTimeout);
-				}, DRAFT_TIMEOUT_MS);
-
-				timeouts.set(peerId, fadeTimeout);
+				timeouts.set(peerId, settleTimeout);
 			}
 		},
 

@@ -2,11 +2,11 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
-	import { MessageList, MessageInput, DraftIndicator, ConnectionStatus } from '$lib/components/chat';
-	import { currentRoomId, currentRoomMessages, messages, user, drafts } from '$lib/stores';
-	import { wasm, isWasmReady } from '$lib/wasm';
-	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers } from '$lib/p2p';
-	import type { Message } from '$lib/wasm/types';
+	import { MessageList, MessageInput, ConnectionStatus } from '$lib/components/chat';
+	import { currentRoomId, currentRoomMessages, messages, user, drafts, mediaConsent } from '$lib/stores';
+	import { loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
+	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError, sendMediaMessage, acceptMediaTransfer, declineMediaTransfer } from '$lib/p2p';
+	import type { Message } from '$lib/types/message';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -17,56 +17,31 @@
 	let isLoading = $state(true);
 	let isSending = $state(false);
 	let showLeaveDialog = $state(false);
+	let isKnocking = $state(false);
 
 	// Debounced typing broadcast to reduce network traffic
 	let typingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	const TYPING_DEBOUNCE_MS = 100; // Debounce typing broadcasts
 
 	onMount(async () => {
-		if (!roomId || !isWasmReady()) {
+		if (!roomId) {
 			isLoading = false;
 			return;
 		}
 
 		// Ensure user is initialized
 		if (!$user.initialized) {
-			const userId = wasm.generateUuid();
-			const name = $user.name || 'Anonymous';
-			wasm.initialize(name, userId);
-			wasm.setMessageManagerUser(userId);
-			user.initialize(name, userId);
-		} else {
-			// User already initialized, but ensure MessageManager has the user ID too
-			wasm.setMessageManagerUser($user.id);
+			user.initialize($user.name || 'Anonymous', crypto.randomUUID());
 		}
 
 		// Join the room
 		try {
-			wasm.createRoom(roomId); // Create or join
 			currentRoomId.set(roomId);
 
-			// Initialize encryption - loads existing key from storage or generates new one
-			try {
-				const keyLoaded = wasm.initializeRoomEncryption(roomId);
-				console.log(`[Room] Encryption initialized for room ${roomId}, key loaded from storage: ${keyLoaded}`);
-			} catch (error) {
-				console.warn('[Room] Failed to initialize encryption, messages may not be decryptable:', error);
-			}
-
 			// Load existing messages from storage
-			wasm.loadRoomMessagesFromStorage(roomId);
-			const messagesData = wasm.getRoomMessages(roomId, 100);
-			// WASM returns a JS array directly via serde_wasm_bindgen, not a JSON string
-			if (messagesData && Array.isArray(messagesData) && messagesData.length > 0) {
-				// Debug: Check if reactions are present in loaded data
-				const debugData = messagesData.map((m: Message) => ({
-					id: m.id,
-					content: m.content?.substring(0, 30),
-					reactions: m.reactions,
-					hasReactions: m.reactions && Object.keys(m.reactions).length > 0
-				}));
-				console.log('[Room] Loaded messages from storage:', JSON.stringify(debugData, null, 2));
-				messages.setRoomMessages(roomId, messagesData as Message[]);
+			const stored = loadRoomMessages(roomId);
+			if (stored.length > 0) {
+				messages.setRoomMessages(roomId, stored);
 			}
 
 			// Initialize P2P connection with environment-aware config
@@ -91,6 +66,12 @@
 				// Setup page lifecycle handlers for all devices (graceful cleanup)
 				setupPageLifecycleHandlers();
 			} catch (error) {
+				if (error instanceof NoRoomKeyError) {
+					// No key in the URL and none stored: this device can't read
+					// the room. Honest state, no silent empty-room creation.
+					isKnocking = true;
+					return;
+				}
 				// P2P failed but app still works in local mode
 				console.warn('P2P initialization failed (running in local mode):', error);
 				toast.warning("P2P connection failed. Running in local mode - messages won't sync with others.");
@@ -120,14 +101,13 @@
 	});
 
 	async function handleSend(content: string) {
-		if (!isWasmReady() || !roomId || isSending) return;
+		if (!roomId || isSending) return;
 
 		isSending = true;
 
 		try {
-			const messageId = wasm.generateUuid();
+			const messageId = crypto.randomUUID();
 
-			// Create message object
 			const message: Message = {
 				id: messageId,
 				sender_id: $user.id,
@@ -136,7 +116,7 @@
 				content,
 				timestamp: Date.now(),
 				room_id: roomId,
-				status: 'Sending',
+				status: 'Sent',
 				edited: false,
 				edit_timestamp: null,
 				original_content: null,
@@ -145,38 +125,28 @@
 				mentions: [],
 				local_timestamp: Date.now(),
 				delivery_attempts: 0,
-				size_bytes: new TextEncoder().encode(content).length
+				size_bytes: new TextEncoder().encode(content).length,
+				sender_device: getSessionDeviceId() ?? undefined
 			};
 
-			// Send via WASM first for persistence (before UI update to prevent data loss)
-			try {
-				wasm.sendMessageEnhanced(roomId, content, messageId);
-				wasm.saveRoomMessagesToStorage(roomId);
-				// Mark as sent after successful persistence
-				message.status = 'Sent';
-			} catch (error) {
-				console.error('Failed to persist message:', error);
-				message.status = 'Failed';
-			}
-
-			// Add to local messages (after persistence attempt)
 			messages.addMessage(roomId, message);
+			saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 
-			// Show error toast if persistence failed
-			if (message.status === 'Failed') {
-				toast.error('Failed to send message');
-			}
-
-			// Broadcast via P2P (even if persistence failed, try to send to peers)
-			if (message.status !== 'Failed') {
-				broadcastChat(content, messageId);
-			}
+			// Broadcast via P2P
+			broadcastChat(content, messageId);
 
 			// Clear typing indicator
 			broadcastTyping('');
 		} finally {
 			isSending = false;
 		}
+	}
+
+	async function handleSendMedia(
+		data: Uint8Array,
+		meta: Parameters<typeof sendMediaMessage>[1]
+	) {
+		await sendMediaMessage(data, meta);
 	}
 
 	function handleTyping(content: string) {
@@ -194,8 +164,9 @@
 
 	async function copyRoomId() {
 		if (!roomId) return;
-		await navigator.clipboard.writeText(roomId);
-		toast.success('Room ID copied!');
+		// The invite is the full URL: room id in the path, key in the fragment.
+		await navigator.clipboard.writeText(window.location.href);
+		toast.success('Invite link copied! Anyone with this link can read the room.');
 	}
 
 	function confirmLeave() {
@@ -221,52 +192,12 @@
 			original_content: originalContent
 		});
 
-		let persistedToStorage = false;
+		saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 
-		// Sync to WASM state then save to storage
-		if (isWasmReady()) {
-			try {
-				// Ensure WASM has latest state from storage before editing
-				wasm.loadRoomMessagesFromStorage(roomId);
-				// Now sync the edit to WASM's MessageManager
-				wasm.editMessage(roomId, messageId, newContent);
-				// Save - this will persist the updated WASM state
-				wasm.saveRoomMessagesToStorage(roomId);
-				persistedToStorage = true;
-			} catch (error) {
-				console.warn('[Edit] WASM edit failed:', error);
-				// Fallback: Try direct localStorage update for persistence
-				try {
-					const storageKey = `chatHistory_${roomId}`;
-					const stored = localStorage.getItem(storageKey);
-					if (stored) {
-						const roomState = JSON.parse(stored);
-						const msgIndex = roomState.messages?.findIndex((m: Message) => m.id === messageId);
-						if (msgIndex !== undefined && msgIndex !== -1 && roomState.messages) {
-							roomState.messages[msgIndex].content = newContent;
-							roomState.messages[msgIndex].edited = true;
-							roomState.messages[msgIndex].edit_timestamp = Date.now();
-							roomState.messages[msgIndex].original_content = originalContent;
-							localStorage.setItem(storageKey, JSON.stringify(roomState));
-							persistedToStorage = true;
-							console.log('[Edit] Fallback localStorage update succeeded');
-						}
-					}
-				} catch (fallbackError) {
-					console.error('[Edit] Fallback localStorage update also failed:', fallbackError);
-				}
-			}
-		}
-
-		// Broadcast to peers (do this even if persistence failed - peers get the update)
+		// Broadcast to peers
 		broadcastEdit(messageId, newContent);
 
-		// Show appropriate feedback
-		if (persistedToStorage) {
-			toast.success('Message edited');
-		} else {
-			toast.warning('Message edited locally (may not persist after refresh)');
-		}
+		toast.success('Message edited');
 	}
 
 	function handleDelete(messageId: string) {
@@ -278,50 +209,12 @@
 			message_type: 'Deleted'
 		});
 
-		let persistedToStorage = false;
+		saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 
-		// Sync to WASM state then save to storage
-		if (isWasmReady()) {
-			try {
-				// Ensure WASM has latest state from storage before deleting
-				wasm.loadRoomMessagesFromStorage(roomId);
-				// Sync the delete to WASM's MessageManager
-				wasm.deleteMessage(roomId, messageId);
-				// Save - this will persist the updated WASM state
-				wasm.saveRoomMessagesToStorage(roomId);
-				persistedToStorage = true;
-			} catch (error) {
-				console.warn('[Delete] WASM delete failed:', error);
-				// Fallback: Try direct localStorage update for persistence
-				try {
-					const storageKey = `chatHistory_${roomId}`;
-					const stored = localStorage.getItem(storageKey);
-					if (stored) {
-						const roomState = JSON.parse(stored);
-						const msgIndex = roomState.messages?.findIndex((m: Message) => m.id === messageId);
-						if (msgIndex !== undefined && msgIndex !== -1 && roomState.messages) {
-							roomState.messages[msgIndex].content = '[Message deleted]';
-							roomState.messages[msgIndex].message_type = 'Deleted';
-							localStorage.setItem(storageKey, JSON.stringify(roomState));
-							persistedToStorage = true;
-							console.log('[Delete] Fallback localStorage update succeeded');
-						}
-					}
-				} catch (fallbackError) {
-					console.error('[Delete] Fallback localStorage update also failed:', fallbackError);
-				}
-			}
-		}
-
-		// Broadcast to peers (do this even if persistence failed - peers get the update)
+		// Broadcast to peers
 		broadcastDelete(messageId);
 
-		// Show appropriate feedback
-		if (persistedToStorage) {
-			toast.success('Message deleted');
-		} else {
-			toast.warning('Message deleted locally (may not persist after refresh)');
-		}
+		toast.success('Message deleted');
 	}
 
 	function handleReaction(messageId: string, emoji: string) {
@@ -358,22 +251,7 @@
 
 		// Update local message
 		messages.updateMessage(roomId, messageId, { reactions });
-
-		// Sync to WASM state then save to storage
-		if (isWasmReady()) {
-			try {
-				// First sync the reaction to WASM's MessageManager
-				if (action === 'add') {
-					wasm.addReaction(roomId, messageId, emoji, userId);
-				} else {
-					wasm.removeReaction(roomId, messageId, emoji, userId);
-				}
-				// Now save - this will persist the updated WASM state
-				wasm.saveRoomMessagesToStorage(roomId);
-			} catch (error) {
-				console.error('Failed to save reaction:', error);
-			}
-		}
+		saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 
 		// Broadcast to peers
 		broadcastReaction(messageId, emoji, action);
@@ -385,69 +263,78 @@
 </svelte:head>
 
 {#if isLoading}
-	<div class="flex flex-1 items-center justify-center px-4">
-		<div class="flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border bg-card p-8 text-center shadow-sm">
+	<div class="flex flex-1 items-center justify-center">
+		<div class="flex flex-col items-center gap-4 text-muted-foreground">
 			<Loader2 class="h-8 w-8 animate-spin motion-reduce:animate-none" />
-			<div class="space-y-1">
-				<p class="text-base font-medium text-foreground">Joining room</p>
-				<p class="text-sm text-muted-foreground">Preparing local history and peer sync.</p>
-			</div>
+			<p class="text-sm">Joining room...</p>
+		</div>
+	</div>
+{:else if isKnocking}
+	<div class="flex flex-1 items-center justify-center p-4" data-testid="knocking-state">
+		<div class="flex max-w-sm flex-col items-center gap-3 text-center">
+			<p class="text-lg font-medium">This room is locked</p>
+			<p class="text-sm text-muted-foreground">
+				Your link is missing the room key. Ask the person who invited you for the full
+				invite link; it ends with <code>#k=...</code> and never reaches our servers.
+			</p>
+			<Button variant="outline" onclick={() => goto('/')}>Back to start</Button>
 		</div>
 	</div>
 {:else}
-	<div class="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-4 overflow-hidden px-3 py-4 sm:px-4 lg:px-6">
-		<div class="rounded-3xl border bg-card p-4 shadow-sm sm:p-5">
-			<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-				<div class="min-w-0 space-y-3">
-					<div class="flex flex-wrap items-center gap-2">
-						<span class="text-sm font-medium text-muted-foreground">Room</span>
-						<code class="rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-foreground">
-							{roomId?.slice(0, 8)}...
-						</code>
-					</div>
-					<span class="inline-flex w-fit rounded-full bg-live/12 px-3 py-1.5 text-xs font-bold text-primary">
-						Drafts are live in this room while you type.
-					</span>
-				</div>
-
-				<div class="flex flex-col gap-3 sm:flex-row sm:items-center lg:justify-end">
-					<button
-						onclick={copyRoomId}
-						aria-label="Copy room ID to clipboard"
-						class="group inline-flex h-11 items-center justify-center gap-2 rounded-full border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted motion-reduce:transition-none"
-						title="Tap to copy room ID"
-						data-testid="copy-room-btn"
-					>
-						<span>Copy room</span>
-						<code class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
-							{roomId?.slice(0, 8)}...
-						</code>
-						<Copy class="h-4 w-4 opacity-70 transition-opacity group-hover:opacity-100 motion-reduce:transition-none" />
-					</button>
-					<ConnectionStatus />
-					<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-11 gap-2 px-3 text-muted-foreground hover:text-foreground" data-testid="leave-room-btn">
-						<LogOut class="h-4 w-4" />
-						<span>Leave</span>
-					</Button>
-				</div>
+	<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden min-h-0">
+		<!-- Connection Status Bar -->
+		<div class="flex flex-col gap-2 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+			<div class="flex items-center gap-2">
+				<span class="text-sm text-muted-foreground">Room:</span>
+				<button
+					onclick={copyRoomId}
+					aria-label="Copy room ID to clipboard"
+					class="group inline-flex h-11 items-center gap-2 rounded-full bg-muted px-3 text-xs hover:bg-muted/80 transition-colors"
+					title="Tap to copy room ID"
+					data-testid="copy-room-btn"
+				>
+					<code>{roomId?.slice(0, 8)}...</code>
+					<Copy class="h-4 w-4 opacity-70 transition-opacity group-hover:opacity-100 motion-reduce:transition-none" />
+				</button>
+			</div>
+			<div class="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+				<ConnectionStatus />
+				<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-11 px-3 gap-2 text-muted-foreground hover:text-foreground" data-testid="leave-room-btn">
+					<LogOut class="h-4 w-4" />
+					<span class="hidden sm:inline">Leave</span>
+				</Button>
 			</div>
 		</div>
 
-		<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border bg-background shadow-sm">
-			<!-- Messages area -->
-			<MessageList
-				messages={$currentRoomMessages}
-				onEdit={handleEdit}
-				onDelete={handleDelete}
-				onReaction={handleReaction}
-			/>
+		<!-- Messages area -->
+		<MessageList
+			messages={$currentRoomMessages}
+			onEdit={handleEdit}
+			onDelete={handleDelete}
+			onReaction={handleReaction}
+		/>
 
-			<!-- Draft indicators (what others are typing) -->
-			<DraftIndicator />
+		<!-- Large-transfer consent prompts -->
+		{#each $mediaConsent as request (request.offer.transferId)}
+			<div class="flex items-center gap-2 border-t border-border bg-muted/40 px-4 py-2 text-sm" data-testid="media-consent">
+				<span class="min-w-0 flex-1 truncate">
+					{request.offer.senderName} wants to send
+					<strong>{request.offer.name}</strong>
+					({request.offer.size < 1024 * 1024
+						? `${Math.max(1, Math.round(request.offer.size / 1024))} KB`
+						: `${Math.round(request.offer.size / 1024 / 1024)} MB`})
+				</span>
+				<Button size="sm" onclick={() => acceptMediaTransfer(request.offer, request.peerDeviceId)}>
+					Accept
+				</Button>
+				<Button size="sm" variant="ghost" onclick={() => declineMediaTransfer(request.offer.transferId)}>
+					Decline
+				</Button>
+			</div>
+		{/each}
 
-			<!-- Message input -->
-			<MessageInput onSend={handleSend} onTyping={handleTyping} {isSending} />
-		</div>
+		<!-- Message input -->
+		<MessageInput onSend={handleSend} onSendMedia={handleSendMedia} onTyping={handleTyping} {isSending} />
 	</div>
 
 	<!-- Leave confirmation dialog -->
