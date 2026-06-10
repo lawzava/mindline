@@ -241,6 +241,9 @@ export class MediaTransferEngine {
 		if (!pending) return;
 		this.pendingConsent.delete(transferId);
 		this.abort(transferId, pending.peerDeviceId, 'declined');
+		// Resolve the local placeholder bubble too; without this the
+		// receiver's message sits at 0% forever.
+		this.deps.events.onAborted(transferId, 'declined', pending.peerDeviceId);
 	}
 
 	abort(transferId: string, peerDeviceId: string, reason: string): void {

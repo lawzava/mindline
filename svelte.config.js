@@ -24,7 +24,11 @@ const config = {
 						mode: 'hash',
 						directives: {
 							'default-src': ['self'],
-							'script-src': ['self'],
+							// the pinned hash is mode-watcher's SSR'd setInitialMode
+							// anti-flash script (kit only hashes its own inlines).
+							// If a mode-watcher upgrade changes it, the browser
+							// console reports the new hash to pin.
+							'script-src': ['self', 'sha256-uQ+6xeJ5jfvD5SmN5W7ZFR4dF9DbDwscZWrWOLfV+RM='],
 							'style-src': ['self', 'unsafe-inline'],
 							'font-src': ['self'],
 							'img-src': ['self', 'data:', 'blob:'],

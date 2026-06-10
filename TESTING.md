@@ -52,6 +52,10 @@ without asserting.
 
 ## Known gaps (deliberate, tracked)
 
+- Media blobs transfer only through live offers: late joiners and fresh
+  devices see the message with a thumbnail and an honest "stored copy
+  unavailable" note (no re-offer protocol in v1).
+
 - Media transfer E2E (two-browser file hash equality, EXIF strip) is
   verified manually and via unit tests; a CI spec needs fake-device flags.
 - Mobile projects emulate viewports, not real devices or touch firmware.
