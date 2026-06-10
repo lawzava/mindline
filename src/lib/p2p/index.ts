@@ -54,6 +54,10 @@ export {
 	broadcastReaction,
 	getP2PConnection,
 	getSessionDeviceId,
+	getRoomKeys,
+	sendMediaMessage,
+	acceptMediaTransfer,
+	declineMediaTransfer,
 	isP2PConnected,
 	getConnectedPeerCount,
 	// Lifecycle handlers for mobile
