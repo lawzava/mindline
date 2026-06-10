@@ -66,6 +66,8 @@ export class P2PConnection {
 	private deviceToClient = new Map<string, string>();
 	private relayPeers = new Map<string, { deviceId: string; verified: boolean }>();
 	private disposed = false;
+	private wsQueue: string[] = [];
+	private wsDrainTimer: ReturnType<typeof setTimeout> | null = null;
 
 	private onMessageCallback: MessageCallback | null = null;
 	private onPeerConnectedCallback: PeerCallback | null = null;
@@ -269,10 +271,32 @@ export class P2PConnection {
 
 	// ============ signaling ============
 
+	/**
+	 * Outbound signaling is rate-queued (~40 msg/s): trickle ICE across a
+	 * mesh can burst past the server's per-connection limit (50/s) and get
+	 * the socket killed. Ported from the heavy-group-chat stability fix.
+	 */
 	private sendSignaling(message: SignalingMessage): void {
-		if (this.ws?.readyState === WebSocket.OPEN) {
-			this.ws.send(JSON.stringify(message));
-		}
+		this.wsQueue.push(JSON.stringify(message));
+		this.drainSignalingQueue();
+	}
+
+	private drainSignalingQueue(): void {
+		if (this.wsDrainTimer) return;
+		const sendNext = () => {
+			this.wsDrainTimer = null;
+			if (this.ws?.readyState !== WebSocket.OPEN) {
+				if (this.disposed) this.wsQueue.length = 0;
+				return; // drained again on the next sendSignaling after reconnect
+			}
+			const next = this.wsQueue.shift();
+			if (next === undefined) return;
+			this.ws.send(next);
+			if (this.wsQueue.length > 0) {
+				this.wsDrainTimer = setTimeout(sendNext, 25);
+			}
+		};
+		sendNext();
 	}
 
 	private async authedData(extra: Omit<AuthedPayload, 'auth'>): Promise<AuthedPayload> {
