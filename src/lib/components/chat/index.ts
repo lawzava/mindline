@@ -1,8 +1,7 @@
 export { default as MessageBubble } from './MessageBubble.svelte';
 export { default as MessageList } from './MessageList.svelte';
 export { default as MessageInput } from './MessageInput.svelte';
-export { default as DraftIndicator } from './DraftIndicator.svelte';
-export { default as TypingIndicator } from './TypingIndicator.svelte';
+export { default as LiveDraft } from './LiveDraft.svelte';
 export { default as ConnectionStatus } from './ConnectionStatus.svelte';
 export { default as PeerList } from './PeerList.svelte';
 export { default as ReactionPills } from './ReactionPills.svelte';

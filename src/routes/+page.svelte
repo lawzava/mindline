@@ -2,8 +2,8 @@
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { user } from '$lib/stores';
+	import { onMount } from 'svelte';
 	import { createRoomKey, toKeyFragment } from '$lib/crypto/keys';
 	import { Plus, ArrowRight } from 'lucide-svelte';
 
@@ -67,46 +67,79 @@
 			joinRoom();
 		}
 	}
+
+	// The promise, demonstrated instead of described: a sentence writes
+	// itself in wet ink and dries to roman. Decoration only; it never
+	// delays time-to-talking.
+	const SPECIMEN = 'They see your words as you write them.';
+	let typed = $state('');
+	let dried = $state(false);
+
+	onMount(() => {
+		if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+			typed = SPECIMEN;
+			dried = true;
+			return;
+		}
+		let i = 0;
+		const tick = () => {
+			i++;
+			typed = SPECIMEN.slice(0, i);
+			if (i < SPECIMEN.length) {
+				timer = setTimeout(tick, 28 + Math.random() * 60);
+			} else {
+				timer = setTimeout(() => (dried = true), 700);
+			}
+		};
+		let timer = setTimeout(tick, 600);
+		return () => clearTimeout(timer);
+	});
 </script>
 
 <svelte:head>
 	<title>Mindline</title>
 </svelte:head>
 
-<div class="flex flex-1 items-center justify-center p-4">
-	<Card class="w-full max-w-md">
-		<CardHeader class="text-center">
-			<CardTitle class="text-3xl font-bold">Welcome to Mindline</CardTitle>
-			<CardDescription>
-				Real-time P2P chat with radical transparency.<br />
-				See messages as they're typed.
-			</CardDescription>
-		</CardHeader>
-		<CardContent class="space-y-6">
-			<!-- Create Room -->
-			<Button onclick={createRoom} class="w-full h-11" size="lg" data-testid="create-room-btn">
+<div class="flex flex-1 items-start justify-center overflow-y-auto p-6 pt-[18vh] sm:items-center sm:pt-6">
+	<div class="w-full max-w-md space-y-10">
+		<!-- The promise as a live specimen -->
+		<div class="space-y-3">
+			<h2 class="text-3xl font-semibold tracking-tight sm:text-4xl">Talk on a live wire.</h2>
+			<p class="prose-ink min-h-[1.6em] text-lg" aria-label="See messages as they are typed">
+				{#if dried}
+					<span class="ink-dry">{SPECIMEN}</span>
+				{:else}
+					<span class="italic text-draft">{typed}</span><span
+						class="ml-0.5 inline-block h-[1.1em] w-px translate-y-[0.2em] bg-draft breathe"
+					></span>
+				{/if}
+			</p>
+			<p class="text-sm text-muted-foreground">
+				Private rooms, end-to-end encrypted, nothing stored on servers. The invite link is the
+				key.
+			</p>
+		</div>
+
+		<!-- One action -->
+		<div class="space-y-5">
+			<Button onclick={createRoom} class="h-12 w-full text-base" size="lg" data-testid="create-room-btn">
 				<Plus class="mr-2 h-5 w-5" />
-				Create New Room
+				Start a room
 			</Button>
 
-			<!-- Divider -->
-			<div class="relative">
-				<div class="absolute inset-0 flex items-center">
-					<span class="w-full border-t border-border"></span>
-				</div>
-				<div class="relative flex justify-center text-xs uppercase">
-					<span class="bg-card px-2 text-muted-foreground">or join existing</span>
-				</div>
+			<div class="flex items-center gap-3 text-xs uppercase tracking-[0.06em] text-muted-foreground">
+				<span class="h-px flex-1 bg-border"></span>
+				or join existing
+				<span class="h-px flex-1 bg-border"></span>
 			</div>
 
-			<!-- Join Room -->
 			<div class="flex gap-2">
 				<Input
 					type="text"
-					placeholder="Paste invite link or room ID..."
+					placeholder="Paste an invite link..."
 					bind:value={joinRoomId}
 					onkeydown={handleKeydown}
-					class="flex-1"
+					class="h-11 flex-1"
 					data-testid="join-room-input"
 				/>
 				<Button
@@ -120,6 +153,6 @@
 					<span class="sr-only">Join room</span>
 				</Button>
 			</div>
-		</CardContent>
-	</Card>
+		</div>
+	</div>
 </div>
