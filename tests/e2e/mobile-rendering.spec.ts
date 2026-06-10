@@ -37,6 +37,22 @@ test.describe('Mobile message rendering', () => {
 		}
 	});
 
+	test('document never scrolls past the chat box', async ({ page }) => {
+		const roomId = generateTestRoomId();
+		await joinRoom(page, roomId);
+
+		// Simulate what browser extensions / portals do: append content below
+		// the app shell. The document itself must stay unscrollable.
+		const scrolled = await page.evaluate(() => {
+			const tall = document.createElement('div');
+			tall.style.height = '2000px';
+			document.body.appendChild(tall);
+			window.scrollTo(0, 500);
+			return window.scrollY;
+		});
+		expect(scrolled).toBe(0);
+	});
+
 	test('long messages use most of the available width before wrapping', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);

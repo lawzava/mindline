@@ -117,6 +117,18 @@
 	* {
 		@apply border-border outline-ring/50;
 	}
+	/*
+	 * The app shell owns all scrolling. Locking the document prevents
+	 * rubber-band/overscroll past the chat box on mobile and stops
+	 * portal- or extension-injected nodes below the shell from making
+	 * the body scrollable (user report: "can scroll beyond chat box").
+	 */
+	html,
+	body {
+		height: 100%;
+		overflow: hidden;
+		overscroll-behavior: none;
+	}
 	body {
 		@apply bg-background text-foreground font-sans antialiased;
 	}
