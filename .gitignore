@@ -3,7 +3,6 @@
 
 # Node
 /node_modules
-/.worktrees
 
 # Build outputs
 /dist
@@ -51,6 +50,12 @@ test-screenshot-*.png
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Local tooling artifacts
+.playwright-cli/
+.pnpm-store/
+/*.png
+
 test-results/
 playwright-report/
-pkg/
+dist/

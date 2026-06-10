@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -24,22 +21,17 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Install wasm-pack
-        run: cargo install wasm-pack
-
       - name: Install Node dependencies
         run: pnpm install
 
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Verify Rust and web build
-        run: pnpm run verify:rust && pnpm run verify:web
+      - name: Unit tests
+        run: pnpm run test:unit
+
+      - name: Verify web build
+        run: pnpm run verify:web
 
       - name: Run required E2E suite (blocking)
         run: pnpm run test:e2e:ci

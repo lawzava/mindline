@@ -61,7 +61,7 @@
 				variant: 'secondary' as const,
 				icon: Loader2,
 				iconClass: 'animate-spin motion-reduce:animate-none',
-				tooltip: `Restoring peer sync for messages and live drafts. ${countdownSeconds > 0 ? `Next retry in ${countdownSeconds}s.` : 'Connecting now.'}`
+				tooltip: `Attempting to reconnect... ${countdownSeconds > 0 ? `Next retry in ${countdownSeconds}s` : 'Connecting...'}`
 			};
 		}
 
@@ -72,7 +72,7 @@
 					variant: 'default' as const,
 					icon: Wifi,
 					iconClass: 'text-green-500',
-					tooltip: 'Messages and live drafts are syncing with connected peers in this room.'
+					tooltip: "Connected. You're ready to chat."
 				};
 			case 'connecting':
 				return {
@@ -80,7 +80,7 @@
 					variant: 'secondary' as const,
 					icon: Loader2,
 					iconClass: 'animate-spin motion-reduce:animate-none',
-					tooltip: 'Looking for peers so messages and live drafts can start syncing.'
+					tooltip: 'Connecting...'
 				};
 			case 'disconnected':
 				return {
@@ -88,7 +88,7 @@
 					variant: 'outline' as const,
 					icon: WifiOff,
 					iconClass: 'text-muted-foreground',
-					tooltip: 'Peer sync is offline. Messages and drafts are only saved here until you reconnect.'
+					tooltip: 'Not connected. Tap Reconnect to try again.'
 				};
 			case 'failed':
 				return {
@@ -96,7 +96,7 @@
 					variant: 'destructive' as const,
 					icon: WifiOff,
 					iconClass: '',
-					tooltip: 'Peer sync could not start. Try reconnecting to share messages and drafts.'
+					tooltip: 'Connection failed. Tap Reconnect to try again.'
 				};
 			case 'local':
 				return {
@@ -104,7 +104,7 @@
 					variant: 'outline' as const,
 					icon: Wifi,
 					iconClass: 'text-yellow-500',
-					tooltip: 'Local mode is saving messages here without sharing drafts or messages with peers.'
+					tooltip: "You're working offline. Messages are saved locally but won't sync with other users until you reconnect."
 				};
 			default:
 				return {
@@ -112,7 +112,7 @@
 					variant: 'outline' as const,
 					icon: WifiOff,
 					iconClass: '',
-					tooltip: 'Connection state is unknown. Messages and drafts may only be saved here.'
+					tooltip: 'Unknown connection status'
 				};
 		}
 	});
@@ -138,10 +138,7 @@
 	}
 </script>
 
-<div class="flex flex-wrap items-center gap-2">
-	<p class="sr-only">
-		Connection status explains whether messages and live drafts are syncing with peers or only saved here.
-	</p>
+<div class="flex items-center gap-2">
 	<!-- Connection Status Badge with Tooltip -->
 	<Tooltip.Provider>
 		<Tooltip.Root>
@@ -168,7 +165,7 @@
 	{#if $connectionError}
 		<Tooltip.Provider>
 			<Tooltip.Root>
-				<Tooltip.Trigger aria-label="Connection error details">
+				<Tooltip.Trigger>
 					<span class="flex items-center text-destructive">
 						<AlertCircle class="h-4 w-4" />
 					</span>
@@ -187,7 +184,7 @@
 				<Tooltip.Trigger>
 					<Badge variant="secondary" class="flex h-11 items-center gap-1.5 px-3 animate-pulse motion-reduce:animate-none">
 						<Loader2 class="h-4 w-4 animate-spin motion-reduce:animate-none" />
-						<span>Syncing</span>
+						<span>Syncing...</span>
 						{#if $syncState.messagesReceived > 0}
 							<span class="text-xs opacity-70">
 								({$syncState.messagesReceived}{$syncState.totalMessages
@@ -198,7 +195,7 @@
 					</Badge>
 				</Tooltip.Trigger>
 				<Tooltip.Content>
-					<p>Synchronizing message history with a peer.</p>
+					<p>Synchronizing messages with peer</p>
 					{#if $syncState.syncingWithPeer}
 						<p class="text-xs opacity-70">From: {$syncState.syncingWithPeer.slice(0, 8)}...</p>
 					{/if}

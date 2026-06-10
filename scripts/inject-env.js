@@ -16,7 +16,9 @@ const USE_SSL = process.env.USE_SSL || 'true';
 const TURN_SERVERS = process.env.TURN_SERVERS || '';
 
 // Path to the env-config.js file
-const envConfigPath = path.join(__dirname, '..', 'dist', 'js', 'env-config.js');
+// The Cloudflare adapter publishes .svelte-kit/cloudflare (audit fix:
+// this previously wrote to dist/, which was never deployed).
+const envConfigPath = path.join(__dirname, '..', '.svelte-kit', 'cloudflare', 'js', 'env-config.js');
 
 // Ensure the directory exists
 const dir = path.dirname(envConfigPath);
