@@ -74,8 +74,12 @@
 	const SPECIMEN = 'They see your words as you write them.';
 	let typed = $state('');
 	let dried = $state(false);
+	// Buttons do nothing before hydration; rendering them disabled until
+	// mount keeps tests and assistive tech honest about it.
+	let ready = $state(false);
 
 	onMount(() => {
+		ready = true;
 		if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
 			typed = SPECIMEN;
 			dried = true;
@@ -122,7 +126,13 @@
 
 		<!-- One action -->
 		<div class="space-y-5">
-			<Button onclick={createRoom} class="h-12 w-full text-base" size="lg" data-testid="create-room-btn">
+			<Button
+				onclick={createRoom}
+				disabled={!ready}
+				class="h-12 w-full text-base"
+				size="lg"
+				data-testid="create-room-btn"
+			>
 				<Plus class="mr-2 h-5 w-5" />
 				Start a room
 			</Button>
@@ -144,7 +154,7 @@
 				/>
 				<Button
 					onclick={joinRoom}
-					disabled={!extractRoomId(joinRoomId)}
+					disabled={!ready || !extractRoomId(joinRoomId)}
 					size="icon"
 					class="h-11 w-11"
 					data-testid="join-room-btn"
