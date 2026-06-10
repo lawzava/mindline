@@ -28,13 +28,17 @@ info strings below):
 | `k_eph`     | `mindline/v2/eph`     | AES-256-GCM for drafts/presence      |
 | `k_storage` | `mindline/v2/storage` | AES-256-GCM at-rest (history, blobs) |
 | `k_auth`    | `mindline/v2/auth`    | HMAC-SHA-256 for handshake/signaling |
-| `k_media`   | `mindline/v2/media/{transferId}` | per-transfer chunk key    |
+| `k_mediaBase` | `mindline/v2/media-base` | HMAC-SHA-256 base for media keys |
 
-All AES subkeys are imported non-extractable. `k_msg`/`k_eph`/`k_storage`/
-`k_auth` are persisted as non-extractable CryptoKeys in IndexedDB
-(`mindline-keys` store, keyed by roomId) so revisiting `/{roomId}` without
-the fragment still opens local history on the same device. The raw fragment
-key is never persisted.
+Per-transfer media keys are `importKey(HMAC(k_mediaBase, 'media|' +
+transferId))` as AES-256-GCM — an HMAC-based KDF rather than direct HKDF so
+that every persisted key survives IndexedDB structured clone in all engines
+(HKDF material does not, reliably).
+
+All subkeys are derived non-extractable and persisted as CryptoKeys in
+IndexedDB (`mindline-keys` store, keyed by roomId) so revisiting
+`/{roomId}` without the fragment still opens local history on the same
+device. The raw fragment key is never persisted.
 
 ### 1.3 Device identity
 
