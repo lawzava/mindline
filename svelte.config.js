@@ -13,26 +13,30 @@ const config = {
 				exclude: ['<all>']
 			}
 		}),
-		// Strict CSP with hashed inline hydration scripts. The room key lives
-		// in the URL fragment, so no third-party script may ever run
-		// (PROTOCOL.md §6). Fonts/styles are self-hosted; style attributes
-		// (progress widths) need unsafe-inline for styles only.
-		csp: {
-			mode: 'hash',
-			directives: {
-				'default-src': ['self'],
-				'script-src': ['self'],
-				'style-src': ['self', 'unsafe-inline'],
-				'font-src': ['self'],
-				'img-src': ['self', 'data:', 'blob:'],
-				'media-src': ['self', 'blob:'],
-				'connect-src': ['self', 'wss:', 'ws:'],
-				'object-src': ['none'],
-				'base-uri': ['self'],
-				'form-action': ['self'],
-				'frame-ancestors': ['none']
-			}
-		}
+		// Strict CSP with hashed inline hydration scripts, production builds
+		// only: in dev, Vite injects inline scripts kit cannot hash, which
+		// intermittently kills hydration. The room key lives in the URL
+		// fragment, so no third-party script may ever run (PROTOCOL.md §6).
+		// Style attributes (progress widths) need unsafe-inline for styles.
+		csp:
+			process.env.NODE_ENV === 'production'
+				? {
+						mode: 'hash',
+						directives: {
+							'default-src': ['self'],
+							'script-src': ['self'],
+							'style-src': ['self', 'unsafe-inline'],
+							'font-src': ['self'],
+							'img-src': ['self', 'data:', 'blob:'],
+							'media-src': ['self', 'blob:'],
+							'connect-src': ['self', 'wss:', 'ws:'],
+							'object-src': ['none'],
+							'base-uri': ['self'],
+							'form-action': ['self'],
+							'frame-ancestors': ['none']
+						}
+					}
+				: undefined
 	}
 };
 
