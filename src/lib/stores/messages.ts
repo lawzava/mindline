@@ -4,7 +4,7 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { currentRoomId } from './room';
-import type { Message } from '$lib/wasm/types';
+import type { Message } from '$lib/types/message';
 
 function createMessagesStore() {
 	const { subscribe, set, update } = writable<Map<string, Message[]>>(new Map());
