@@ -22,7 +22,6 @@ test.describe('Room Page', () => {
 		await expect(page.locator('[data-testid="leave-room-btn"]')).toBeVisible();
 		await expect(page.locator('[data-testid="message-input"]')).toBeVisible();
 		await expect(page.locator('[data-testid="message-list"]')).toBeVisible();
-		await expect(page.getByText('Drafts are live in this room while you type.')).toBeVisible();
 	});
 
 	test('should display truncated room ID', async ({ page }) => {
@@ -37,73 +36,41 @@ test.describe('Room Page', () => {
 		expect(buttonText).toContain(roomId.slice(0, 8));
 	});
 
-	test('should copy room ID to clipboard', async ({ page, context }, testInfo) => {
-		const projectName = testInfo.project.name.toLowerCase();
-		const isWebKit = projectName.includes('safari') || projectName.includes('webkit');
+		test('should copy room ID to clipboard', async ({ page, context }, testInfo) => {
+			const projectName = testInfo.project.name.toLowerCase();
+			const isWebKit = projectName.includes('safari') || projectName.includes('webkit');
 
-		// WebKit/Safari often rejects clipboard permission grants; copy via user gesture
-		// should still work, and we validate via toast.
-		if (!isWebKit) {
-			await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-		} else {
-			try {
+			// WebKit/Safari often rejects clipboard permission grants; copy via user gesture
+			// should still work, and we validate via toast.
+			if (!isWebKit) {
 				await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-			} catch {
-				// ignore
+			} else {
+				try {
+					await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+				} catch {
+					// ignore
+				}
 			}
-		}
 
-		const roomId = generateTestRoomId();
-		await joinRoom(page, roomId);
+			const roomId = generateTestRoomId();
+			await joinRoom(page, roomId);
 
-		// Click copy button
-		await page.locator('[data-testid="copy-room-btn"]').click();
+			// Click copy button
+			await page.locator('[data-testid="copy-room-btn"]').click();
 
-		// Toast should appear
-		await expect(page.getByText('Room ID copied!')).toBeVisible({ timeout: 3000 });
-
-		// Safari/WebKit does not reliably allow programmatic clipboard reads.
-		if (!isWebKit) {
-			const clipboardContent = await page.evaluate(() => navigator.clipboard.readText());
-			expect(clipboardContent).toBe(roomId);
-		}
-	});
-
-	test('should copy room invite link with access warning', async ({ page, context }, testInfo) => {
-		const projectName = testInfo.project.name.toLowerCase();
-		const isWebKit = projectName.includes('safari') || projectName.includes('webkit');
-
-		if (!isWebKit) {
-			await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-		} else {
-			try {
-				await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-			} catch {
-				// ignore
-			}
-		}
-
-		await page.addInitScript(() => {
-			Object.defineProperty(navigator, 'share', {
-				configurable: true,
-				value: undefined
+			// Toast should appear
+			await expect(page.getByText('Invite link copied', { exact: false })).toBeVisible({
+				timeout: 3000
 			});
+
+			// Safari/WebKit does not reliably allow programmatic clipboard reads.
+			if (!isWebKit) {
+				const clipboardContent = await page.evaluate(() => navigator.clipboard.readText());
+				// The invite is the full URL: room id in the path, key fragment intact.
+				expect(clipboardContent).toContain(`/${roomId}`);
+				expect(clipboardContent).toContain('#k=');
+			}
 		});
-
-		const roomId = generateTestRoomId();
-		await joinRoom(page, roomId);
-
-		await page.locator('[data-testid="share-room-btn"]').click();
-
-		await expect(
-			page.getByText('Invite link copied. Anyone with this link can join the room.')
-		).toBeVisible({ timeout: 3000 });
-
-		if (!isWebKit) {
-			const clipboardContent = await page.evaluate(() => navigator.clipboard.readText());
-			expect(clipboardContent).toBe(`${new URL(page.url()).origin}/${roomId}`);
-		}
-	});
 
 	test('should show leave room confirmation dialog', async ({ page }) => {
 		const roomId = generateTestRoomId();
@@ -153,15 +120,15 @@ test.describe('Room Page', () => {
 
 		// Should navigate to home page
 		await page.waitForURL('/');
-		await expect(page.getByText('Private rooms for live thoughts.')).toBeVisible();
+		await expect(page.getByText('Talk on a live wire.')).toBeVisible();
 	});
 
 	test('should show empty message state initially', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);
 
-		await expect(page.getByText('This room is quiet.')).toBeVisible();
-		await expect(page.getByText('Type when you are ready. Your draft is visible to connected peers before you send.')).toBeVisible();
+		// Empty state message should be visible
+		await expect(page.getByText('No messages yet. Start the conversation!')).toBeVisible();
 	});
 
 	test('should focus message input on load', async ({ page }) => {

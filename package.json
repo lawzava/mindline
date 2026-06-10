@@ -13,24 +13,23 @@
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "build-wasm": "wasm-pack build --target web",
     "signaling": "node signaling-server.js",
     "start:production": "concurrently \"pnpm run preview\" \"pnpm run signaling\"",
     "test:e2e": "playwright test",
-    "test:e2e:required": "E2E_STRICT_P2P=1 playwright test tests/e2e/connection-status.spec.ts tests/e2e/landing-page.spec.ts tests/e2e/messaging.spec.ts tests/e2e/required-persistence.spec.ts tests/e2e/room-page.spec.ts tests/e2e/required-p2p.spec.ts tests/e2e/required-network.spec.ts",
+    "test:e2e:required": "E2E_STRICT_P2P=1 playwright test tests/e2e/connection-status.spec.ts tests/e2e/landing-page.spec.ts tests/e2e/messaging.spec.ts tests/e2e/required-persistence.spec.ts tests/e2e/room-page.spec.ts tests/e2e/required-p2p.spec.ts tests/e2e/required-typing.spec.ts tests/e2e/required-network.spec.ts",
     "test:e2e:best-effort": "playwright test tests/e2e/edit-delete.spec.ts tests/e2e/mobile-p2p.spec.ts tests/e2e/p2p-multiuser.spec.ts tests/e2e/peer-list.spec.ts tests/e2e/reactions.spec.ts tests/e2e/typing-indicators.spec.ts",
-    "test:e2e:remote:required": "E2E_STRICT_P2P=1 SKIP_SIGNALING_START=1 bash scripts/test-e2e-with-signaling.sh -- tests/e2e/connection-status.spec.ts tests/e2e/landing-page.spec.ts tests/e2e/messaging.spec.ts tests/e2e/required-persistence.spec.ts tests/e2e/room-page.spec.ts tests/e2e/required-p2p.spec.ts tests/e2e/required-network.spec.ts",
+    "test:e2e:remote:required": "E2E_STRICT_P2P=1 SKIP_SIGNALING_START=1 bash scripts/test-e2e-with-signaling.sh -- tests/e2e/connection-status.spec.ts tests/e2e/landing-page.spec.ts tests/e2e/messaging.spec.ts tests/e2e/required-persistence.spec.ts tests/e2e/room-page.spec.ts tests/e2e/required-p2p.spec.ts tests/e2e/required-typing.spec.ts tests/e2e/required-network.spec.ts",
     "test:e2e:with-signaling": "bash scripts/test-e2e-with-signaling.sh",
-    "test:e2e:with-signaling:required": "E2E_STRICT_P2P=1 bash scripts/test-e2e-with-signaling.sh tests/e2e/connection-status.spec.ts tests/e2e/landing-page.spec.ts tests/e2e/messaging.spec.ts tests/e2e/required-persistence.spec.ts tests/e2e/room-page.spec.ts tests/e2e/required-p2p.spec.ts tests/e2e/required-network.spec.ts",
+    "test:e2e:with-signaling:required": "E2E_STRICT_P2P=1 bash scripts/test-e2e-with-signaling.sh tests/e2e/connection-status.spec.ts tests/e2e/landing-page.spec.ts tests/e2e/messaging.spec.ts tests/e2e/required-persistence.spec.ts tests/e2e/room-page.spec.ts tests/e2e/required-p2p.spec.ts tests/e2e/required-typing.spec.ts tests/e2e/required-network.spec.ts",
     "test:e2e:with-signaling:best-effort": "bash scripts/test-e2e-with-signaling.sh tests/e2e/edit-delete.spec.ts tests/e2e/mobile-p2p.spec.ts tests/e2e/p2p-multiuser.spec.ts tests/e2e/peer-list.spec.ts tests/e2e/reactions.spec.ts tests/e2e/typing-indicators.spec.ts",
-    "test:e2e:ci": "E2E_STRICT_P2P=1 bash scripts/test-e2e-with-signaling.sh --project='Desktop Chrome' tests/e2e/connection-status.spec.ts tests/e2e/landing-page.spec.ts tests/e2e/messaging.spec.ts tests/e2e/required-persistence.spec.ts tests/e2e/room-page.spec.ts tests/e2e/required-p2p.spec.ts tests/e2e/required-network.spec.ts",
+    "test:e2e:ci": "E2E_STRICT_P2P=1 bash scripts/test-e2e-with-signaling.sh --project='Desktop Chrome' tests/e2e/connection-status.spec.ts tests/e2e/landing-page.spec.ts tests/e2e/messaging.spec.ts tests/e2e/required-persistence.spec.ts tests/e2e/room-page.spec.ts tests/e2e/required-p2p.spec.ts tests/e2e/required-typing.spec.ts tests/e2e/required-network.spec.ts",
     "test:e2e:ci:full": "pnpm run test:e2e:ci && bash scripts/test-e2e-with-signaling.sh --project='Desktop Chrome' tests/e2e/edit-delete.spec.ts tests/e2e/mobile-p2p.spec.ts tests/e2e/p2p-multiuser.spec.ts tests/e2e/peer-list.spec.ts tests/e2e/reactions.spec.ts tests/e2e/typing-indicators.spec.ts",
     "test:e2e:mobile": "playwright test --project='Mobile Safari' --project='Mobile Chrome'",
     "test:e2e:headed": "playwright test --headed",
     "test:signaling:soak": "node scripts/signaling-soak-test.mjs",
-    "verify:rust": "cargo fmt --check && cargo clippy -- -D warnings && cargo test",
-    "verify:web": "pnpm run build-wasm && pnpm run check && pnpm run build:production",
-    "verify:ai": "pnpm run verify:rust && pnpm run verify:web && pnpm run test:e2e:ci"
+    "verify:web": "pnpm run check && pnpm run build:production",
+    "verify:ai": "pnpm run test:unit && pnpm run verify:web && pnpm run test:e2e:ci",
+    "test:unit": "vitest run"
   },
   "keywords": [
     "chat",
@@ -43,6 +42,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/newsreader": "^5.2.10",
     "bits-ui": "^2.14.4",
     "clsx": "^2.1.1",
     "lucide-svelte": "^0.562.0",
@@ -53,15 +54,16 @@
   "devDependencies": {
     "@internationalized/date": "^3.10.1",
     "@lucide/svelte": "^0.561.0",
+    "@playwright/test": "^1.55.0",
     "@sveltejs/adapter-auto": "^7.0.0",
     "@sveltejs/adapter-cloudflare": "^7.2.4",
     "@sveltejs/kit": "^2.49.1",
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@tailwindcss/vite": "^4.1.18",
     "concurrently": "^7.6.0",
+    "fake-indexeddb": "^6.2.5",
     "http-server": "^14.1.1",
     "mode-watcher": "^1.1.0",
-    "@playwright/test": "^1.55.0",
     "playwright": "^1.55.0",
     "sharp": "^0.34.3",
     "svelte": "^5.45.6",
@@ -71,7 +73,7 @@
     "tw-animate-css": "^1.4.0",
     "typescript": "^5.9.3",
     "vite": "^7.2.6",
-    "wasm-pack": "^0.13.1"
+    "vitest": "^4.1.8"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

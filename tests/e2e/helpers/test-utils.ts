@@ -31,6 +31,33 @@ export function generateTestRoomId(prefix = 'test-room'): string {
 }
 
 /**
+ * Room keys (URL fragment capability). Every navigation to a room must
+ * carry '#k=...' or the page lands in the knocking state. Keys are minted
+ * per roomId so all participants in a test share one.
+ */
+const roomKeyFragments = new Map<string, string>();
+
+export function keyFragmentFor(roomId: string): string {
+	let fragment = roomKeyFragments.get(roomId);
+	if (!fragment) {
+		const bytes = new Uint8Array(32);
+		globalThis.crypto.getRandomValues(bytes);
+		const b64 = Buffer.from(bytes).toString('base64url');
+		fragment = `#k=${b64}`;
+		roomKeyFragments.set(roomId, fragment);
+	}
+	return fragment;
+}
+
+/** Register a fragment observed in a real URL (e.g. after createRoom). */
+export function registerRoomKey(roomId: string, urlOrFragment: string): void {
+	const hashIndex = urlOrFragment.indexOf('#');
+	if (hashIndex !== -1) {
+		roomKeyFragments.set(roomId, urlOrFragment.slice(hashIndex));
+	}
+}
+
+/**
  * Wait for any valid connection status to appear
  */
 export async function waitForConnectionStatus(
@@ -87,7 +114,7 @@ export async function typeMessage(page: Page, text: string): Promise<void> {
  */
 export async function joinRoom(page: Page, roomId: string): Promise<void> {
 	await throttleRoomNavigation();
-	await page.goto(`/${roomId}?fastConnect=true`);
+	await page.goto(`/${roomId}?fastConnect=true${keyFragmentFor(roomId)}`);
 	await waitForConnectionStatus(page);
 }
 
@@ -108,16 +135,17 @@ export async function createRoom(page: Page): Promise<string> {
 	await goToLandingPage(page);
 	await page.locator('[data-testid="create-room-btn"]').click();
 
-	// Wait for navigation to room page
-	await page.waitForURL(/\/[a-f0-9-]+$/);
+	// Wait for navigation to room page (URL carries the key fragment)
+	await page.waitForURL(/\/[a-f0-9-]+(#k=.*)?$/);
 
-	// Extract room ID from URL before adding fastConnect param
+	// Extract room ID and register its key so other contexts can join
 	const url = page.url();
-	const roomId = url.split('/').pop()?.split('?')[0] || '';
+	const roomId = url.split('/').pop()?.split(/[?#]/)[0] || '';
+	registerRoomKey(roomId, url);
 
 	// Navigate with fastConnect param for faster P2P connection
 	await throttleRoomNavigation();
-	await page.goto(`/${roomId}?fastConnect=true`);
+	await page.goto(`/${roomId}?fastConnect=true${keyFragmentFor(roomId)}`);
 	await waitForConnectionStatus(page);
 
 	return roomId;
@@ -298,7 +326,9 @@ export async function isPeersActuallyConnected(page: Page): Promise<boolean> {
 export async function copyRoomId(page: Page): Promise<void> {
 	await page.locator('[data-testid="copy-room-btn"]').click();
 	// Toast should appear
-	await expect(page.getByText('Room ID copied!')).toBeVisible({ timeout: 3000 });
+	await expect(page.getByText('Invite link copied!', { exact: false })).toBeVisible({
+		timeout: 3000
+	});
 }
 
 /**

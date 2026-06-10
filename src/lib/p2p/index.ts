@@ -53,6 +53,11 @@ export {
 	broadcastDelete,
 	broadcastReaction,
 	getP2PConnection,
+	getSessionDeviceId,
+	getRoomKeys,
+	sendMediaMessage,
+	acceptMediaTransfer,
+	declineMediaTransfer,
 	isP2PConnected,
 	getConnectedPeerCount,
 	// Lifecycle handlers for mobile
@@ -61,8 +66,12 @@ export {
 	setupNetworkHandler,
 	cleanupNetworkHandler,
 	setupPageLifecycleHandlers,
-	cleanupPageLifecycleHandlers
+	cleanupPageLifecycleHandlers,
+	NoRoomKeyError
 } from './manager';
+
+// Crypto session
+export { CryptoSession } from './crypto-session';
 
 // Handler utilities
 export { emitToast } from './handlers';

@@ -7,14 +7,8 @@
 </script>
 
 <svelte:head>
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-	<link
-		href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-		rel="stylesheet"
-	/>
 	<title>Mindline</title>
-	<meta name="description" content="Real-time P2P chat with radical transparency" />
+	<meta name="description" content="Private P2P chat where you see each other type" />
 </svelte:head>
 
 <ModeWatcher />
