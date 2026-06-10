@@ -320,7 +320,9 @@
 				<span class="min-w-0 flex-1 truncate">
 					{request.offer.senderName} wants to send
 					<strong>{request.offer.name}</strong>
-					({Math.round(request.offer.size / 1024 / 1024)} MB)
+					({request.offer.size < 1024 * 1024
+						? `${Math.max(1, Math.round(request.offer.size / 1024))} KB`
+						: `${Math.round(request.offer.size / 1024 / 1024)} MB`})
 				</span>
 				<Button size="sm" onclick={() => acceptMediaTransfer(request.offer, request.peerDeviceId)}>
 					Accept
