@@ -53,6 +53,7 @@ export {
 	broadcastDelete,
 	broadcastReaction,
 	getP2PConnection,
+	getSessionDeviceId,
 	isP2PConnected,
 	getConnectedPeerCount,
 	// Lifecycle handlers for mobile

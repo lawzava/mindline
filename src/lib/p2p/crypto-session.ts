@@ -14,7 +14,7 @@ import {
 	importPeerPublicKey,
 	type DeviceIdentity
 } from '$lib/crypto/identity';
-import { deriveRoomKeys, importRoomKeyMaterial, type RoomKeys } from '$lib/crypto/keys';
+import { deriveMediaKey, deriveRoomKeys, importRoomKeyMaterial, type RoomKeys } from '$lib/crypto/keys';
 import {
 	loadIdentity,
 	loadReplayState,
@@ -129,6 +129,11 @@ export class CryptoSession {
 
 	get roomKeys(): RoomKeys {
 		return this.keys;
+	}
+
+	/** Per-transfer media subkey (PROTOCOL.md §5.2). */
+	async mediaKey(transferId: string): Promise<CryptoKey> {
+		return deriveMediaKey(this.keys, transferId);
 	}
 
 	isVerified(deviceId: string): boolean {
