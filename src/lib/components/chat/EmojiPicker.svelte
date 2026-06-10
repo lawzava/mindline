@@ -51,10 +51,17 @@
 
 <Popover.Root bind:open>
 	<Popover.Trigger>
-		<Button variant="ghost" size="icon" class="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
-			<Smile class="h-4 w-4" />
-			<span class="sr-only">Add reaction</span>
-		</Button>
+		{#snippet child({ props })}
+			<Button
+				{...props}
+				variant="ghost"
+				size="icon"
+				class="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+			>
+				<Smile class="h-4 w-4" />
+				<span class="sr-only">Add reaction</span>
+			</Button>
+		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-auto p-2">
 		<!-- svelte-ignore a11y_no_static_element_interactions -->

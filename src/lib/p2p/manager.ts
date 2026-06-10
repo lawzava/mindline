@@ -4,14 +4,28 @@
  */
 
 import { P2PConnection } from './connection';
-import { routeP2PMessage, setSendToPeerFn, emitToast } from './handlers';
-import { connection, user, drafts, currentRoomId, messages, delivery } from '$lib/stores';
-import { wasm, isWasmReady } from '$lib/wasm';
+import { CryptoSession } from './crypto-session';
+import { parseKeyFragment } from '$lib/crypto/keys';
+import { routeP2PMessage, setMediaControlFn, setSendToPeerFn, emitToast } from './handlers';
+import { MediaTransferEngine, type MediaKind, type MediaOffer } from '$lib/media/transfer';
+import { saveRoomMessages } from '$lib/storage/messages';
+import type { Message } from '$lib/types/message';
+import { connection, user, drafts, currentRoomId, messages, delivery, transfers, mediaConsent } from '$lib/stores';
 import type { P2PConfig, TypedP2PMessage, ChatMessage, TypingMessage, EditMessage, DeleteMessage, ReactionMessage, UserConnectedMessage, SyncRequestMessage } from './types';
 import { get } from 'svelte/store';
 
+/** Thrown when the URL has no key fragment and no stored keys exist. */
+export class NoRoomKeyError extends Error {
+	constructor() {
+		super('no room key: ask for the full invite link');
+		this.name = 'NoRoomKeyError';
+	}
+}
+
 // Module-level state
 let p2pConnection: P2PConnection | null = null;
+let cryptoSession: CryptoSession | null = null;
+let mediaEngine: MediaTransferEngine | null = null;
 let reconnectAttempts = 0;
 let reconnectInterval: ReturnType<typeof setInterval> | null = null;
 let lastP2PConfig: Partial<P2PConfig> | undefined = undefined;
@@ -70,8 +84,21 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 
 	connection.setStatus('connecting');
 
+	// Room crypto: fragment key from the URL, or previously stored keys.
+	if (!cryptoSession || cryptoSession.roomId !== roomId) {
+		const fragmentKey =
+			typeof window !== 'undefined' ? parseKeyFragment(window.location.hash) : null;
+		cryptoSession = await CryptoSession.create(roomId, fragmentKey);
+		if (!cryptoSession) {
+			isInitializing = false;
+			currentInitRoomId = null;
+			connection.setStatus('disconnected');
+			throw new NoRoomKeyError();
+		}
+	}
+
 	// Create connection
-	p2pConnection = new P2PConnection(userState.id, roomId, config);
+	p2pConnection = new P2PConnection(cryptoSession, config, () => get(user).name);
 
 	// Set up the sendToPeer function for handlers
 	setSendToPeerFn((peerId: string, message: TypedP2PMessage) => {
@@ -89,15 +116,15 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		console.log('[P2P Manager] Peer connected:', peerId);
 		connection.addPeer(peerId);
 
-		// Announce our connection IMMEDIATELY so peer learns our name right away
-		// This fixes race condition where peer is added but name is unknown
-		sendUserConnected();
+		// Target only the new peer: broadcasting here caused O(N^2)
+		// hello/sync storms in heavy rooms (ported stability fix).
+		sendUserConnectedTo(peerId);
 
-		// Request sync after connection stabilizes
-		setTimeout(() => requestSync(roomId), 1000);
+		// Request sync from the new peer after the channel stabilizes
+		setTimeout(() => requestSyncFrom(peerId, roomId), 1000);
 
-		// Re-announce after stabilization in case first one was missed
-		setTimeout(() => sendUserConnected(), 500);
+		// Re-announce in case the first one raced the channel opening
+		setTimeout(() => sendUserConnectedTo(peerId), 500);
 	});
 
 	p2pConnection.onPeerDisconnected((peerId) => {
@@ -117,6 +144,60 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		emitToast('peer-left', `${displayName} left the room`);
 	});
 
+	p2pConnection.onKnocking((clientId) => {
+		console.warn('[P2P Manager] Peer without the room key knocked:', clientId);
+	});
+
+	// Media transfers (PROTOCOL.md §5)
+	const conn = p2pConnection;
+	const session = cryptoSession;
+	mediaEngine = new MediaTransferEngine({
+		session,
+		roomId,
+		sendControl: (peerDeviceId, message) => conn.sendToPeer(peerDeviceId, message),
+		openChannel: (peerDeviceId, label) => conn.openMediaChannel(peerDeviceId, label),
+		events: {
+			onProgress: (progress) => {
+				transfers.setProgress(progress);
+				if (progress.status === 'offered') {
+					const pending = mediaEngine?.pendingConsent.get(progress.transferId);
+					if (pending) mediaConsent.add(pending);
+				}
+				if (progress.status === 'done') {
+					setTimeout(() => transfers.remove(progress.transferId), 1500);
+				}
+			},
+			onReceived: (offer) => {
+				const targetRoomId = offer.roomId || roomId;
+				const existing = messages.getMessage(targetRoomId, offer.messageId);
+				if (existing?.attachment) {
+					messages.updateMessage(targetRoomId, offer.messageId, {
+						attachment: { ...existing.attachment, state: 'ready' }
+					});
+					saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+				}
+			},
+			onAborted: (transferId, reason) => {
+				transfers.remove(transferId);
+				mediaConsent.remove(transferId);
+				const roomMessages = messages.getRoomMessages(roomId);
+				const target = roomMessages.find((m) => m.attachment?.transferId === transferId);
+				if (target?.attachment) {
+					messages.updateMessage(roomId, target.id, {
+						attachment: { ...target.attachment, state: 'failed' }
+					});
+				}
+				if (reason !== 'declined') emitToast('error', `Transfer failed: ${reason}`);
+			}
+		}
+	});
+	conn.onMediaChannel((peerDeviceId, transferId, channel) => {
+		mediaEngine?.attachIncomingChannel(peerDeviceId, transferId, channel);
+	});
+	setMediaControlFn((message, peerId) => {
+		void mediaEngine?.handleControl(message, peerId);
+	});
+
 	p2pConnection.onConnectionLost((reason) => {
 		console.warn('[P2P Manager] Connection lost:', reason);
 
@@ -127,7 +208,12 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 			return;
 		}
 
-		connection.setStatus('disconnected');
+		// Healthy DataChannels keep chatting; only signaling needs repair.
+		if (p2pConnection?.hasLivePeers()) {
+			connection.setStatus('connected');
+		} else {
+			connection.setStatus('disconnected');
+		}
 		startReconnection(roomId, config);
 	});
 
@@ -167,6 +253,11 @@ export function disconnectP2P(): void {
 		p2pConnection.disconnect();
 		p2pConnection = null;
 	}
+	cryptoSession = null;
+	mediaEngine = null;
+	setMediaControlFn(null);
+	transfers.clear();
+	mediaConsent.clear();
 
 	connection.reset();
 	drafts.clearAll();
@@ -361,10 +452,10 @@ export function broadcastReaction(messageId: string, reaction: string, action: '
 }
 
 /**
- * Request message synchronization from a specific peer or all peers
+ * Request message synchronization from peers
  */
-function requestSync(roomId: string, targetPeerId?: string): void {
-	if (!p2pConnection || !isWasmReady()) {
+function requestSyncFrom(peerDeviceId: string, roomId: string): void {
+	if (!p2pConnection) {
 		return;
 	}
 
@@ -385,22 +476,17 @@ function requestSync(roomId: string, targetPeerId?: string): void {
 			requesterId: userState.id
 		};
 
-		if (targetPeerId) {
-			p2pConnection.sendToPeer(targetPeerId, syncRequest);
-			console.log(`[P2P Manager] Sync request sent to peer ${targetPeerId} for room:`, roomId);
-		} else {
-			p2pConnection.broadcast(syncRequest);
-			console.log('[P2P Manager] Sync request broadcasted for room:', roomId);
-		}
+		p2pConnection.sendToPeer(peerDeviceId, syncRequest);
+		console.log('[P2P Manager] Sync requested from peer:', peerDeviceId);
 	} catch (error) {
 		console.error('[P2P Manager] Failed to request sync:', error);
 	}
 }
 
 /**
- * Send user connected notification to a specific peer or all peers
+ * Announce ourselves to one newly connected peer
  */
-function sendUserConnected(targetPeerId?: string): void {
+function sendUserConnectedTo(peerDeviceId: string): void {
 	const userState = get(user);
 
 	if (!p2pConnection || !userState.initialized) {
@@ -414,11 +500,7 @@ function sendUserConnected(targetPeerId?: string): void {
 		timestamp: Date.now()
 	};
 
-	if (targetPeerId) {
-		p2pConnection.sendToPeer(targetPeerId, message);
-	} else {
-		p2pConnection.broadcast(message);
-	}
+	p2pConnection.sendToPeer(peerDeviceId, message);
 }
 
 /**
@@ -460,11 +542,17 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 		await new Promise((r) => setTimeout(r, delay));
 
 		try {
-			await initializeP2P(roomId, config);
+			// Signaling-only repair first: existing DataChannels stay up.
+			if (p2pConnection) {
+				await p2pConnection.reconnectSignaling();
+			} else {
+				await initializeP2P(roomId, config);
+			}
 			if (reconnectInterval) {
 				clearTimeout(reconnectInterval);
 				reconnectInterval = null;
 			}
+			connection.setStatus('connected');
 			connection.clearReconnection();
 			emitToast('success', 'Reconnected successfully');
 			console.log('[P2P Manager] Reconnection successful');
@@ -488,6 +576,93 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
  */
 export function getP2PConnection(): P2PConnection | null {
 	return p2pConnection;
+}
+
+/** The authenticated device id for this session's room, if joined. */
+export function getSessionDeviceId(): string | null {
+	return cryptoSession?.deviceId ?? null;
+}
+
+/** Room keys for at-rest blob access (UI rendering). */
+export function getRoomKeys() {
+	return cryptoSession?.roomKeys ?? null;
+}
+
+/**
+ * Offer media to every connected peer and place the message in the stream.
+ */
+export async function sendMediaMessage(
+	data: Uint8Array,
+	meta: {
+		kind: MediaKind;
+		name: string;
+		mime: string;
+		thumb?: string;
+		thumbMime?: string;
+		duration?: number;
+		waveform?: number[];
+	}
+): Promise<void> {
+	const userState = get(user);
+	const roomId = get(currentRoomId);
+	if (!mediaEngine || !p2pConnection || !roomId || !userState.initialized) {
+		throw new Error('media transfer requires an active room connection');
+	}
+
+	const messageId = crypto.randomUUID();
+	const offer = await mediaEngine.offer(
+		data,
+		meta,
+		p2pConnection.getConnectedPeers(),
+		{ id: userState.id, name: userState.name },
+		messageId
+	);
+
+	const message: Message = {
+		id: messageId,
+		sender_id: userState.id,
+		sender_name: userState.name,
+		message_type: 'Media',
+		content: meta.name,
+		timestamp: Date.now(),
+		room_id: roomId,
+		status: 'Sent',
+		edited: false,
+		edit_timestamp: null,
+		original_content: null,
+		reply_to: null,
+		reactions: {},
+		mentions: [],
+		local_timestamp: Date.now(),
+		delivery_attempts: 0,
+		size_bytes: data.byteLength,
+		sender_device: cryptoSession?.deviceId,
+		attachment: {
+			transferId: offer.transferId,
+			kind: meta.kind,
+			name: meta.name,
+			mime: meta.mime,
+			size: data.byteLength,
+			thumb: meta.thumb,
+			thumbMime: meta.thumbMime,
+			duration: meta.duration,
+			waveform: meta.waveform,
+			state: 'ready'
+		}
+	};
+	messages.addMessage(roomId, message);
+	saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+}
+
+/** Consent controls for large incoming transfers. */
+export function acceptMediaTransfer(offer: MediaOffer, peerDeviceId: string): void {
+	mediaConsent.remove(offer.transferId);
+	mediaEngine?.accept(offer, peerDeviceId);
+}
+
+export function declineMediaTransfer(transferId: string): void {
+	mediaConsent.remove(transferId);
+	mediaEngine?.decline(transferId);
 }
 
 /**

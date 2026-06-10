@@ -85,20 +85,21 @@ test.describe('Required Network', () => {
 		});
 
 		expect(relayFrames.length).toBeGreaterThan(0);
-		const relayContainsPlaintext = relayFrames.some(
-			(frame: { data?: { content?: string } }) =>
-				typeof frame?.data?.content === 'string' &&
-				frame.data.content.includes('relay-only-message')
+		// No plaintext anywhere in any relay frame (PROTOCOL.md §3.6)
+		const relayContainsPlaintext = relayFrames.some((frame: unknown) =>
+			JSON.stringify(frame).includes('relay-only-message')
 		);
 		expect(relayContainsPlaintext).toBeFalsy();
 
-		const hasEncryptedRelayPayload = relayFrames.some(
-			(frame: { data?: { algorithm?: string; ciphertext?: string; iv?: string } }) =>
-				frame?.data?.algorithm === 'AES-GCM' &&
-				typeof frame.data.ciphertext === 'string' &&
-				typeof frame.data.iv === 'string'
+		// Every relayed message is a v2 envelope: nonce + ciphertext
+		const hasEncryptedEnvelope = relayFrames.some(
+			(frame: { data?: { envelope?: { v?: number; c?: string; n?: string } } }) =>
+				frame?.data?.envelope?.v === 2 &&
+				typeof frame.data.envelope.c === 'string' &&
+				frame.data.envelope.c.length > 0 &&
+				typeof frame.data.envelope.n === 'string'
 		);
-		expect(hasEncryptedRelayPayload).toBeTruthy();
+		expect(hasEncryptedEnvelope).toBeTruthy();
 
 		await cleanup(contextB);
 	});

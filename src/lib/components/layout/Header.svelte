@@ -24,14 +24,15 @@
 		const roomId = $currentRoomId;
 		if (!roomId) return;
 
-		const url = `${window.location.origin}/${roomId}`;
+		// The full URL carries the key fragment; a bare path is a broken invite.
+		const url = window.location.href;
 
 		// Try Web Share API first (mobile-friendly)
 		if (navigator.share) {
 			try {
 				await navigator.share({
 					title: 'Join my Mindline chat',
-					text: 'Join my Mindline room. Anyone with this link can join.',
+					text: 'Join my real-time chat room',
 					url
 				});
 				return; // Success, exit early
@@ -43,7 +44,7 @@
 		// Try modern clipboard API (don't verify - readText often fails due to permissions)
 		try {
 			await navigator.clipboard.writeText(url);
-			toast.success('Invite link copied. Anyone with this link can join the room.');
+			toast.success('Link copied to clipboard!');
 			return;
 		} catch {
 			// Modern clipboard API failed - try legacy fallback
@@ -63,7 +64,7 @@
 			document.body.removeChild(textArea);
 
 			if (success) {
-				toast.success('Invite link copied. Anyone with this link can join the room.');
+				toast.success('Link copied to clipboard!');
 			} else {
 				toast.error('Failed to copy link');
 			}
@@ -73,33 +74,15 @@
 	}
 </script>
 
-<header class="z-10 border-b border-border/80 bg-background/92">
-	<div class="mx-auto flex h-16 min-w-0 max-w-6xl items-center justify-between gap-2 px-4 sm:px-6">
+<header class="border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+	<div class="mx-auto flex h-12 max-w-4xl items-center justify-between px-3 sm:px-4">
 		<!-- Logo -->
-		{#if $currentRoomId}
-			<div class="flex min-w-0 items-center gap-2 rounded-full sm:gap-3" aria-label="Mindline">
-				<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/80 bg-card text-sm font-semibold shadow-sm">
-					M
-				</span>
-				<span class="hidden min-w-0 flex-col leading-none sm:flex">
-					<span class="truncate text-base font-semibold tracking-tight">Mindline</span>
-					<span class="mt-1 hidden truncate text-xs text-muted-foreground md:block">Live drafts. Private rooms.</span>
-				</span>
-			</div>
-		{:else}
-			<a href="/" class="flex min-w-0 items-center gap-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:gap-3">
-				<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/80 bg-card text-sm font-semibold shadow-sm">
-					M
-				</span>
-				<span class="hidden min-w-0 flex-col leading-none sm:flex">
-					<span class="truncate text-base font-semibold tracking-tight">Mindline</span>
-					<span class="mt-1 hidden truncate text-xs text-muted-foreground md:block">Live drafts. Private rooms.</span>
-				</span>
-			</a>
-		{/if}
+		<div class="flex items-center gap-2 sm:gap-3">
+			<h1 class="text-lg font-bold tracking-tight">MINDLINE</h1>
+		</div>
 
 		<!-- Controls -->
-		<div class="flex shrink-0 items-center gap-2 sm:gap-3">
+		<div class="flex items-center gap-2 sm:gap-3">
 			<!-- Username input -->
 			<Input
 				type="text"
@@ -108,25 +91,19 @@
 				bind:value={userName}
 				onblur={handleNameChange}
 				onkeydown={(e) => e.key === 'Enter' && handleNameChange()}
-				class="w-24 sm:w-36"
+				class="w-28 sm:w-36"
 			/>
 
 			<!-- Share button (only when in a room) -->
 			{#if $currentRoomId}
-				<Button
-					variant="outline"
-					size="icon"
-					onclick={shareRoom}
-					class="h-11 w-11 shrink-0"
-					data-testid="share-room-btn"
-				>
+				<Button variant="outline" size="icon" onclick={shareRoom} class="h-11 w-11">
 					<Share2 class="h-4 w-4" />
-					<span class="sr-only">Share room. Anyone with the link can join.</span>
+					<span class="sr-only">Share room</span>
 				</Button>
 			{/if}
 
 			<!-- Theme toggle -->
-			<Button variant="ghost" size="icon" onclick={toggleMode} class="h-11 w-11 shrink-0">
+			<Button variant="ghost" size="icon" onclick={toggleMode} class="h-11 w-11">
 				{#if mode.current === 'dark'}
 					<Sun class="h-4 w-4" />
 				{:else}
