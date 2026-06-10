@@ -11,9 +11,10 @@ import { deviceIdFromSpki } from './identity';
 import type { RoomKeys } from './keys';
 
 const DB_NAME = 'mindline-keys';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const ROOMS = 'rooms';
 const DEVICE = 'device';
+const REPLAY = 'replay';
 
 interface StoredIdentity {
 	publicKey: CryptoKey;
@@ -28,6 +29,7 @@ function openDb(): Promise<IDBDatabase> {
 			const db = request.result;
 			if (!db.objectStoreNames.contains(ROOMS)) db.createObjectStore(ROOMS);
 			if (!db.objectStoreNames.contains(DEVICE)) db.createObjectStore(DEVICE);
+			if (!db.objectStoreNames.contains(REPLAY)) db.createObjectStore(REPLAY);
 		};
 		request.onsuccess = () => resolve(request.result);
 		request.onerror = () => reject(request.error);
@@ -95,7 +97,17 @@ export async function loadIdentity(): Promise<DeviceIdentity | null> {
 	};
 }
 
+export async function saveReplayState(roomId: string, state: unknown): Promise<void> {
+	await withStore(REPLAY, 'readwrite', (s) => s.put(state, roomId));
+}
+
+export async function loadReplayState<T>(roomId: string): Promise<T | null> {
+	const stored = await withStore<T | undefined>(REPLAY, 'readonly', (s) => s.get(roomId));
+	return stored ?? null;
+}
+
 /** Delete a room's keys. Message/blob stores handle their own burn. */
 export async function burnRoom(roomId: string): Promise<void> {
 	await withStore(ROOMS, 'readwrite', (s) => s.delete(roomId));
+	await withStore(REPLAY, 'readwrite', (s) => s.delete(roomId));
 }
