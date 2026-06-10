@@ -5,7 +5,7 @@
 	import { MessageList, MessageInput, DraftIndicator, ConnectionStatus } from '$lib/components/chat';
 	import { currentRoomId, currentRoomMessages, messages, user, drafts } from '$lib/stores';
 	import { loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
-	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError } from '$lib/p2p';
+	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError } from '$lib/p2p';
 	import type { Message } from '$lib/types/message';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -125,7 +125,8 @@
 				mentions: [],
 				local_timestamp: Date.now(),
 				delivery_attempts: 0,
-				size_bytes: new TextEncoder().encode(content).length
+				size_bytes: new TextEncoder().encode(content).length,
+				sender_device: getSessionDeviceId() ?? undefined
 			};
 
 			messages.addMessage(roomId, message);

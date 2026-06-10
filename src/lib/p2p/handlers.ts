@@ -111,7 +111,8 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 		mentions: [],
 		local_timestamp: Date.now(),
 		delivery_attempts: 0,
-		size_bytes: new TextEncoder().encode(content).length
+		size_bytes: new TextEncoder().encode(content).length,
+		sender_device: peerId
 	};
 
 	// Add to messages store
@@ -303,9 +304,14 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
 		return;
 	}
 
-	// Verify sender owns the message (optional security check)
+	// Authorization: the envelope-verified device must own the message.
+	// sender_id alone is self-asserted and forgeable within the room.
 	const existingMsg = messages.getMessage(targetRoomId, messageId);
-	if (existingMsg && existingMsg.sender_id !== senderId) {
+	if (existingMsg?.sender_device && existingMsg.sender_device !== peerId) {
+		console.warn('[P2P Handler] Edit rejected: device does not own message');
+		return;
+	}
+	if (existingMsg && !existingMsg.sender_device && existingMsg.sender_id !== senderId) {
 		console.warn('[P2P Handler] Edit rejected: sender does not own message');
 		return;
 	}
@@ -333,9 +339,13 @@ function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
 		return;
 	}
 
-	// Verify sender owns the message (optional security check)
+	// Authorization: the envelope-verified device must own the message.
 	const existingMsg = messages.getMessage(targetRoomId, messageId);
-	if (existingMsg && existingMsg.sender_id !== senderId) {
+	if (existingMsg?.sender_device && existingMsg.sender_device !== peerId) {
+		console.warn('[P2P Handler] Delete rejected: device does not own message');
+		return;
+	}
+	if (existingMsg && !existingMsg.sender_device && existingMsg.sender_id !== senderId) {
 		console.warn('[P2P Handler] Delete rejected: sender does not own message');
 		return;
 	}

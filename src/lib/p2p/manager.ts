@@ -520,6 +520,11 @@ export function getP2PConnection(): P2PConnection | null {
 	return p2pConnection;
 }
 
+/** The authenticated device id for this session's room, if joined. */
+export function getSessionDeviceId(): string | null {
+	return cryptoSession?.deviceId ?? null;
+}
+
 /**
  * Check if P2P is connected
  */
