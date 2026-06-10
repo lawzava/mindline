@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { generateTestRoomId, waitForConnectionStatus } from './helpers/test-utils';
+import { generateTestRoomId, keyFragmentFor, waitForConnectionStatus } from './helpers/test-utils';
 
 test.describe('Landing Page', () => {
 	test.describe.configure({ mode: 'serial' });
@@ -34,7 +34,7 @@ test.describe('Landing Page', () => {
 		await createBtn.click();
 
 		// Should navigate to a room with UUID-like path
-		await page.waitForURL(/\/[a-f0-9-]+$/);
+		await page.waitForURL(/\/[a-f0-9-]+#k=/);
 
 		// Room page should show connection status
 		await waitForConnectionStatus(page);
@@ -48,9 +48,9 @@ test.describe('Landing Page', () => {
 		// Wait for WASM
 		await expect(page.locator('[data-testid="create-room-btn"]')).toBeEnabled({ timeout: 10000 });
 
-		// Enter room ID
+		// Enter the full invite (room id + key fragment), as users paste it
 		const input = page.locator('[data-testid="join-room-input"]');
-		await input.fill(roomId);
+		await input.fill(`${roomId}${keyFragmentFor(roomId)}`);
 
 		// Join button should be enabled
 		const joinBtn = page.locator('[data-testid="join-room-btn"]');
@@ -60,7 +60,7 @@ test.describe('Landing Page', () => {
 		await joinBtn.click();
 
 		// Should navigate to the room
-		await page.waitForURL(`/${roomId}`);
+		await page.waitForURL(new RegExp(`/${roomId}`));
 		await waitForConnectionStatus(page);
 	});
 
@@ -72,9 +72,9 @@ test.describe('Landing Page', () => {
 		// Wait for WASM
 		await expect(page.locator('[data-testid="create-room-btn"]')).toBeEnabled({ timeout: 10000 });
 
-		// Paste a full invite link
+		// Paste a full invite link (room id + key fragment)
 		const origin = new URL(page.url()).origin;
-		const inviteLink = `${origin}/${roomId}`;
+		const inviteLink = `${origin}/${roomId}${keyFragmentFor(roomId)}`;
 
 		const input = page.locator('[data-testid="join-room-input"]');
 		await input.fill(inviteLink);
@@ -83,7 +83,7 @@ test.describe('Landing Page', () => {
 		await expect(joinBtn).toBeEnabled();
 		await joinBtn.click();
 
-		await page.waitForURL(`/${roomId}`);
+		await page.waitForURL(new RegExp(`/${roomId}`));
 		await waitForConnectionStatus(page);
 	});
 
@@ -119,13 +119,13 @@ test.describe('Landing Page', () => {
 		// Wait for WASM
 		await expect(page.locator('[data-testid="create-room-btn"]')).toBeEnabled({ timeout: 10000 });
 
-		// Enter room ID and press Enter
+		// Paste the full invite and press Enter
 		const input = page.locator('[data-testid="join-room-input"]');
-		await input.fill(roomId);
+		await input.fill(`${roomId}${keyFragmentFor(roomId)}`);
 		await input.press('Enter');
 
 		// Should navigate to the room
-		await page.waitForURL(`/${roomId}`);
+		await page.waitForURL(new RegExp(`/${roomId}`));
 		await waitForConnectionStatus(page);
 	});
 });

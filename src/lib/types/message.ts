@@ -21,6 +21,12 @@ export interface Message {
 	local_timestamp: number;
 	delivery_attempts: number;
 	size_bytes: number;
+	/**
+	 * Authenticated origin: the envelope-verified deviceId this message
+	 * arrived from (or our own for sent messages). Edit/delete authorization
+	 * compares against this, never against the self-asserted sender_id.
+	 */
+	sender_device?: string;
 }
 
 export interface DraftMessage {
