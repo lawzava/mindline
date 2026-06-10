@@ -30,10 +30,8 @@ We are committed to providing a welcoming and inclusive experience for everyone.
 ## Getting Started
 
 ### Prerequisites
-- **Rust** 1.70+ and cargo
 - **Node.js** 18+ and pnpm
-- **wasm-pack** for building WebAssembly
-- Basic understanding of Rust, TypeScript/Svelte, and WebRTC
+- Basic understanding of TypeScript/Svelte, WebCrypto, and WebRTC
 
 ### Development Setup
 
@@ -68,7 +66,6 @@ We are committed to providing a welcoming and inclusive experience for everyone.
 ### Project Structure
 ```
 mindline/
-├── src-rust/             # Rust/WASM source code
 │   ├── lib.rs            # Main entry point
 │   ├── crypto.rs         # Encryption implementation
 │   ├── messages.rs       # Message handling
@@ -133,47 +130,12 @@ Fixes #67
 
 ## AI-Assisted Workflow
 
-- Follow repository guardrails in `AGENTS.md` and scoped overrides in `src/AGENTS.md` and `src-rust/AGENTS.md`.
+- Follow repository guardrails in `AGENTS.md` and scoped overrides in `src/AGENTS.md`.
 - Use skill docs in `docs/ai-skills.md` and `.codex/skills/` for repeatable command selection.
 - Use MCP guidance from `docs/mcp-usage.md` when external systems are involved.
-- Run `pnpm run verify:ai` before opening or updating a PR unless the change is clearly narrow enough for `verify:rust` or `verify:web`.
+- Run `pnpm run verify:ai` before opening or updating a PR unless the change is clearly narrow enough for `test:unit` or `verify:web`.
 
 ## Coding Standards
-
-### Rust Code
-
-**Style**: Follow standard Rust conventions
-```bash
-cargo fmt --check  # Check formatting
-cargo clippy      # Lint code
-```
-
-**Guidelines**:
-- Use descriptive variable names
-- Keep functions small and focused
-- Add doc comments for public APIs
-- Handle errors explicitly (no unwrap in production)
-- Write unit tests for new functions
-
-**Example**:
-```rust
-/// Encrypts message content using AES-256-GCM
-///
-/// # Arguments
-/// * `content` - Plaintext message to encrypt
-/// * `key` - 256-bit encryption key
-///
-/// # Returns
-/// Base64-encoded encrypted message or error
-///
-/// # Example
-/// ```
-/// let encrypted = encrypt_message("Hello", &key)?;
-/// ```
-pub fn encrypt_message(content: &str, key: &[u8]) -> Result<String, JsValue> {
-    // Implementation
-}
-```
 
 ### TypeScript/Svelte Code
 
@@ -210,9 +172,9 @@ async function connectToPeer(peerId, options = {}) {
 
 ### Running Tests
 
-**Rust tests**:
+**Unit tests** (crypto/protocol, vitest):
 ```bash
-cargo test
+pnpm run test:unit
 ```
 
 **TypeScript checks**:
@@ -236,21 +198,14 @@ pnpm run test:e2e:with-signaling
 
 ### Writing Tests
 
-**Rust unit tests**:
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_encrypt_decrypt_roundtrip() {
-        let key = generate_encryption_key().unwrap();
-        let plaintext = "test message";
-        let encrypted = encrypt_message(plaintext, &key).unwrap();
-        let decrypted = decrypt_message(&encrypted, &key).unwrap();
-        assert_eq!(plaintext, decrypted);
-    }
-}
+**Unit tests** (vitest, see `tests/unit/`):
+```ts
+test('rejects envelope from another room (AAD mismatch)', async () => {
+	const env = await sealEnvelope(body, { keys, roomId: 'room-1', identity, klass: 'msg' });
+	await expect(
+		openEnvelope(env, { keys, roomId: 'room-2', senderPublicKey: identity.publicKey })
+	).rejects.toThrow();
+});
 ```
 
 **Integration tests**:
@@ -272,7 +227,7 @@ Create test files in `/tests` directory
 
 3. **Test thoroughly**
    ```bash
-   pnpm run verify:ai    # Rust + web + e2e verification
+   pnpm run verify:ai    # unit + web + e2e verification
    ```
 
 4. **Commit changes**
