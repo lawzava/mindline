@@ -175,16 +175,21 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 		// Get messages from store
 		const roomMessages = messages.getRoomMessages(roomId);
 
-		const syncResponse: SyncResponseMessage = {
-			type: 'sync-response',
-			roomId,
-			messages: roomMessages,
-			timestamp: Date.now()
-		};
-
-		// Send response to requesting peer
+		// Paginate (PROTOCOL.md §3.5): pages of 40 keep each wire envelope
+		// far below DataChannel message-size floors. Sync never relays.
+		const PAGE_SIZE = 40;
 		if (sendToPeerFn) {
-			sendToPeerFn(peerId, syncResponse);
+			for (let start = 0; start < roomMessages.length || start === 0; start += PAGE_SIZE) {
+				const page = roomMessages.slice(start, start + PAGE_SIZE);
+				const syncResponse: SyncResponseMessage = {
+					type: 'sync-response',
+					roomId,
+					messages: page,
+					timestamp: Date.now()
+				};
+				sendToPeerFn(peerId, syncResponse);
+				if (roomMessages.length === 0) break;
+			}
 		}
 	} catch (error) {
 		console.error('[P2P Handler] Error handling sync request:', error);

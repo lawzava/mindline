@@ -4,6 +4,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { user } from '$lib/stores';
+	import { createRoomKey, toKeyFragment } from '$lib/crypto/keys';
 	import { Plus, ArrowRight } from 'lucide-svelte';
 
 	let joinRoomId = $state('');
@@ -12,7 +13,7 @@
 		const trimmed = input.trim();
 		if (!trimmed) return '';
 
-		// Handle full URLs (e.g. https://mindline.chat/<roomId>)
+		// Handle full URLs (e.g. https://mindline.chat/<roomId>#k=...)
 		try {
 			const url = new URL(trimmed);
 			const last = url.pathname.split('/').filter(Boolean).pop();
@@ -28,7 +29,16 @@
 			return (last ?? '').trim();
 		}
 
-		return trimmed;
+		// Bare room id, possibly with the key fragment pasted along
+		return trimmed.split('#')[0];
+	}
+
+	/** Preserve a pasted '#k=...' so the join carries the room key. */
+	function extractKeyFragment(input: string): string {
+		const hashIndex = input.indexOf('#');
+		if (hashIndex === -1) return '';
+		const fragment = input.slice(hashIndex + 1).trim();
+		return /^k=[A-Za-z0-9_-]+$/.test(fragment) ? `#${fragment}` : '';
 	}
 
 	function ensureUser() {
@@ -39,7 +49,8 @@
 
 	async function createRoom() {
 		ensureUser();
-		await goto(`/${crypto.randomUUID()}`);
+		// The fragment carries the room key; it never reaches any server.
+		await goto(`/${crypto.randomUUID()}#${toKeyFragment(createRoomKey())}`);
 	}
 
 	async function joinRoom() {
@@ -47,7 +58,8 @@
 		if (!room) return;
 
 		ensureUser();
-		await goto(`/${room}`);
+		const fragment = extractKeyFragment(joinRoomId);
+		await goto(`/${room}${fragment}`);
 	}
 
 	function handleKeydown(e: KeyboardEvent) {

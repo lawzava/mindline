@@ -6,20 +6,23 @@
 import { browser, dev } from '$app/environment';
 import type { P2PConfig } from './types';
 
-// Free public TURN servers (Open Relay Project - metered.ca free tier)
-// Multiple URLs per server for better mobile/Safari compatibility
-const PUBLIC_TURN_SERVERS: RTCIceServer[] = [
-	{
-		urls: [
-			'turn:openrelay.metered.ca:80',
-			'turn:openrelay.metered.ca:443',
-			'turn:openrelay.metered.ca:443?transport=tcp',
-			'turns:openrelay.metered.ca:443' // TURN over TLS - preferred by Safari iOS
-		],
-		username: 'openrelayproject',
-		credential: 'openrelayproject'
-	}
-];
+/**
+ * TURN comes only from explicit configuration (runtime MINDLINE_ENV or
+ * VITE_TURN_* build vars). The previous hardcoded free openrelay tier is
+ * discontinued/throttled and gave a false sense of NAT coverage; deploys
+ * should provision real TURN (see docs/analysis/DECISIONS.md D4).
+ */
+function turnServersFromEnv(): RTCIceServer[] {
+	const urls = import.meta.env.VITE_TURN_URLS as string | undefined;
+	if (!urls) return [];
+	return [
+		{
+			urls: urls.split(',').map((u) => u.trim()),
+			username: import.meta.env.VITE_TURN_USERNAME as string | undefined,
+			credential: import.meta.env.VITE_TURN_CREDENTIAL as string | undefined
+		}
+	];
+}
 
 type RuntimeEnvConfig = {
 	SIGNALING_SERVER?: string;
@@ -56,7 +59,7 @@ function getConfiguredTurnServers(runtimeEnv: RuntimeEnvConfig): RTCIceServer[] 
 	if (Array.isArray(runtimeEnv.TURN_SERVERS)) {
 		return runtimeEnv.TURN_SERVERS;
 	}
-	return PUBLIC_TURN_SERVERS;
+	return turnServersFromEnv();
 }
 
 /**
@@ -137,7 +140,6 @@ export function getP2PConfig(): P2PConfig {
 	const runtimeEnv = getRuntimeEnvConfig();
 	const { server, useSSL } = getSignalingConfig();
 	const mobile = isMobileDevice();
-	const mobileNetwork = isMobileNetwork();
 	const strictDirect = isStrictDirectMode();
 	const turnServers = getConfiguredTurnServers(runtimeEnv);
 
@@ -151,7 +153,6 @@ export function getP2PConfig(): P2PConfig {
 		// Mobile-optimized settings
 		connectionTimeout: mobile ? 5000 : 2000,
 		icePoolSize: mobile ? 20 : 10,
-		forceRelay: strictDirect ? false : mobileNetwork, // Force TURN relay only on actual mobile networks
 		maxReconnectAttempts: mobile ? 10 : 7,
 		reconnectBackoffBase: 1000
 	};
@@ -165,12 +166,11 @@ export function getDevConfig(): P2PConfig {
 		signalingServer: 'localhost:3000',
 		useSSL: false,
 		websocketPath: '/ws',
-		turnServers: PUBLIC_TURN_SERVERS,
+		turnServers: [],
 		allowRelayFallback: true,
 		strictDirect: false,
 		connectionTimeout: 2000,
 		icePoolSize: 10,
-		forceRelay: false,
 		maxReconnectAttempts: 5,
 		reconnectBackoffBase: 1000
 	};
