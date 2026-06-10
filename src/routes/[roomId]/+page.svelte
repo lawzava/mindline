@@ -5,7 +5,7 @@
 	import { MessageList, MessageInput, DraftIndicator, ConnectionStatus } from '$lib/components/chat';
 	import { currentRoomId, currentRoomMessages, messages, user, drafts } from '$lib/stores';
 	import { loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
-	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers } from '$lib/p2p';
+	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError } from '$lib/p2p';
 	import type { Message } from '$lib/types/message';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -17,6 +17,7 @@
 	let isLoading = $state(true);
 	let isSending = $state(false);
 	let showLeaveDialog = $state(false);
+	let isKnocking = $state(false);
 
 	// Debounced typing broadcast to reduce network traffic
 	let typingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -65,6 +66,12 @@
 				// Setup page lifecycle handlers for all devices (graceful cleanup)
 				setupPageLifecycleHandlers();
 			} catch (error) {
+				if (error instanceof NoRoomKeyError) {
+					// No key in the URL and none stored: this device can't read
+					// the room. Honest state, no silent empty-room creation.
+					isKnocking = true;
+					return;
+				}
 				// P2P failed but app still works in local mode
 				console.warn('P2P initialization failed (running in local mode):', error);
 				toast.warning("P2P connection failed. Running in local mode - messages won't sync with others.");
@@ -149,8 +156,9 @@
 
 	async function copyRoomId() {
 		if (!roomId) return;
-		await navigator.clipboard.writeText(roomId);
-		toast.success('Room ID copied!');
+		// The invite is the full URL: room id in the path, key in the fragment.
+		await navigator.clipboard.writeText(window.location.href);
+		toast.success('Invite link copied! Anyone with this link can read the room.');
 	}
 
 	function confirmLeave() {
@@ -251,6 +259,17 @@
 		<div class="flex flex-col items-center gap-4 text-muted-foreground">
 			<Loader2 class="h-8 w-8 animate-spin motion-reduce:animate-none" />
 			<p class="text-sm">Joining room...</p>
+		</div>
+	</div>
+{:else if isKnocking}
+	<div class="flex flex-1 items-center justify-center p-4" data-testid="knocking-state">
+		<div class="flex max-w-sm flex-col items-center gap-3 text-center">
+			<p class="text-lg font-medium">This room is locked</p>
+			<p class="text-sm text-muted-foreground">
+				Your link is missing the room key. Ask the person who invited you for the full
+				invite link; it ends with <code>#k=...</code> and never reaches our servers.
+			</p>
+			<Button variant="outline" onclick={() => goto('/')}>Back to start</Button>
 		</div>
 	</div>
 {:else}

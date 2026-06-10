@@ -61,8 +61,12 @@ export {
 	setupNetworkHandler,
 	cleanupNetworkHandler,
 	setupPageLifecycleHandlers,
-	cleanupPageLifecycleHandlers
+	cleanupPageLifecycleHandlers,
+	NoRoomKeyError
 } from './manager';
+
+// Crypto session
+export { CryptoSession } from './crypto-session';
 
 // Handler utilities
 export { emitToast } from './handlers';

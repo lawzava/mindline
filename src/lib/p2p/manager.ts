@@ -4,13 +4,24 @@
  */
 
 import { P2PConnection } from './connection';
+import { CryptoSession } from './crypto-session';
+import { parseKeyFragment } from '$lib/crypto/keys';
 import { routeP2PMessage, setSendToPeerFn, emitToast } from './handlers';
 import { connection, user, drafts, currentRoomId, messages, delivery } from '$lib/stores';
 import type { P2PConfig, TypedP2PMessage, ChatMessage, TypingMessage, EditMessage, DeleteMessage, ReactionMessage, UserConnectedMessage, SyncRequestMessage } from './types';
 import { get } from 'svelte/store';
 
+/** Thrown when the URL has no key fragment and no stored keys exist. */
+export class NoRoomKeyError extends Error {
+	constructor() {
+		super('no room key: ask for the full invite link');
+		this.name = 'NoRoomKeyError';
+	}
+}
+
 // Module-level state
 let p2pConnection: P2PConnection | null = null;
+let cryptoSession: CryptoSession | null = null;
 let reconnectAttempts = 0;
 let reconnectInterval: ReturnType<typeof setInterval> | null = null;
 let lastP2PConfig: Partial<P2PConfig> | undefined = undefined;
@@ -69,8 +80,21 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 
 	connection.setStatus('connecting');
 
+	// Room crypto: fragment key from the URL, or previously stored keys.
+	if (!cryptoSession || cryptoSession.roomId !== roomId) {
+		const fragmentKey =
+			typeof window !== 'undefined' ? parseKeyFragment(window.location.hash) : null;
+		cryptoSession = await CryptoSession.create(roomId, fragmentKey);
+		if (!cryptoSession) {
+			isInitializing = false;
+			currentInitRoomId = null;
+			connection.setStatus('disconnected');
+			throw new NoRoomKeyError();
+		}
+	}
+
 	// Create connection
-	p2pConnection = new P2PConnection(userState.id, roomId, config);
+	p2pConnection = new P2PConnection(cryptoSession, config, () => get(user).name);
 
 	// Set up the sendToPeer function for handlers
 	setSendToPeerFn((peerId: string, message: TypedP2PMessage) => {
@@ -116,6 +140,10 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		emitToast('peer-left', `${displayName} left the room`);
 	});
 
+	p2pConnection.onKnocking((clientId) => {
+		console.warn('[P2P Manager] Peer without the room key knocked:', clientId);
+	});
+
 	p2pConnection.onConnectionLost((reason) => {
 		console.warn('[P2P Manager] Connection lost:', reason);
 
@@ -126,7 +154,12 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 			return;
 		}
 
-		connection.setStatus('disconnected');
+		// Healthy DataChannels keep chatting; only signaling needs repair.
+		if (p2pConnection?.hasLivePeers()) {
+			connection.setStatus('connected');
+		} else {
+			connection.setStatus('disconnected');
+		}
 		startReconnection(roomId, config);
 	});
 
@@ -166,6 +199,7 @@ export function disconnectP2P(): void {
 		p2pConnection.disconnect();
 		p2pConnection = null;
 	}
+	cryptoSession = null;
 
 	connection.reset();
 	drafts.clearAll();
@@ -450,11 +484,17 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 		await new Promise((r) => setTimeout(r, delay));
 
 		try {
-			await initializeP2P(roomId, config);
+			// Signaling-only repair first: existing DataChannels stay up.
+			if (p2pConnection) {
+				await p2pConnection.reconnectSignaling();
+			} else {
+				await initializeP2P(roomId, config);
+			}
 			if (reconnectInterval) {
 				clearTimeout(reconnectInterval);
 				reconnectInterval = null;
 			}
+			connection.setStatus('connected');
 			connection.clearReconnection();
 			emitToast('success', 'Reconnected successfully');
 			console.log('[P2P Manager] Reconnection successful');

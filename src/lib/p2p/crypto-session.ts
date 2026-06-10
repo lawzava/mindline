@@ -121,7 +121,7 @@ export class CryptoSession {
 			epoch = Date.now(); // no localStorage: monotonic enough per device
 		}
 
-		const replayState = await loadReplayState(roomId);
+		const replayState = await loadReplayState<import('$lib/crypto/replay').ReplayState>(roomId);
 		const guard = replayState ? ReplayGuard.hydrate(replayState) : new ReplayGuard();
 
 		return new CryptoSession(roomId, keys, identity, guard, epoch);
