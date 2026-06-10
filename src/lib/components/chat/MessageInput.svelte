@@ -2,6 +2,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Send, Loader2, Paperclip, Camera, Mic, Square, X } from 'lucide-svelte';
 	import { processImage } from '$lib/media/image';
+	import { mediaKindFor } from '$lib/media/classify';
 	import { Recorder, type Recording } from '$lib/media/recorder';
 	import type { MediaKind } from '$lib/media/transfer';
 	import { toast } from 'svelte-sonner';
@@ -85,7 +86,7 @@
 				} else {
 					const data = new Uint8Array(await file.arrayBuffer());
 					await onSendMedia(data, {
-						kind: forcedKind ?? 'file',
+						kind: forcedKind ?? mediaKindFor(file.type),
 						name: file.name,
 						mime: file.type || 'application/octet-stream'
 					});
@@ -179,11 +180,14 @@
 	onchange={(e) => handleFiles(e.currentTarget.files)}
 	data-testid="file-input"
 />
+<!-- No capture attribute: with a bare accept filter the OS offers the photo
+     gallery (with camera as an option) instead of forcing the camera or, on
+     some Androids, a generic file manager. -->
 <input
 	bind:this={photoInput}
 	type="file"
-	accept="image/*"
-	capture="environment"
+	accept="image/*,video/*"
+	multiple
 	class="hidden"
 	onchange={(e) => handleFiles(e.currentTarget.files)}
 	data-testid="photo-input"
@@ -225,10 +229,10 @@
 			<Button
 				variant="ghost"
 				size="icon"
-				class="hidden h-11 w-11 shrink-0 text-muted-foreground sm:inline-flex"
+				class="h-11 w-11 shrink-0 text-muted-foreground"
 				disabled={disabled || isPreparingMedia}
 				onclick={() => photoInput?.click()}
-				aria-label="Send a photo"
+				aria-label="Send a photo or video"
 				data-testid="photo-btn"
 			>
 				<Camera class="h-4 w-4" />
