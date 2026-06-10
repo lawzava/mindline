@@ -3,6 +3,7 @@
  */
 
 import type { Message } from '$lib/types/message';
+import type { MediaAbort, MediaAccept, MediaOffer } from '$lib/media/transfer';
 
 // ============================================
 // Configuration Types
@@ -99,6 +100,9 @@ export type P2PMessageType =
 	| 'delete'
 	| 'reaction'
 	| 'delivery-ack'
+	| 'media-offer'
+	| 'media-accept'
+	| 'media-abort'
 	| 'ready';
 
 /** Chat message sent between peers */
@@ -204,6 +208,9 @@ export type TypedP2PMessage =
 	| DeleteMessage
 	| ReactionMessage
 	| DeliveryAckMessage
+	| MediaOffer
+	| MediaAccept
+	| MediaAbort
 	| ReadyMessage;
 
 // Legacy P2PMessage type for backwards compatibility

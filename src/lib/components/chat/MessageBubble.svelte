@@ -11,6 +11,7 @@
 	import { longPress } from '$lib/hooks';
 	import { Check, CheckCheck, X } from 'lucide-svelte';
 	import { delivery } from '$lib/stores';
+	import MediaAttachment from './MediaAttachment.svelte';
 
 	interface Props {
 		message: Message;
@@ -138,6 +139,8 @@
 						<X class="h-4 w-4" />
 					</Button>
 				</div>
+			{:else if message.attachment}
+				<MediaAttachment attachment={message.attachment} roomId={message.room_id} />
 			{:else}
 				<p class="whitespace-pre-wrap break-words">{message.content}</p>
 			{/if}
