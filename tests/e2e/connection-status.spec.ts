@@ -1,12 +1,14 @@
 import { test, expect } from '@playwright/test';
-import { generateTestRoomId, waitForConnectionStatus } from './helpers/test-utils';
+import { generateTestRoomId, waitForConnectionStatus,
+	keyFragmentFor
+} from './helpers/test-utils';
 
 test.describe('Connection Status', () => {
 	test.describe.configure({ mode: 'serial' });
 
 	test('should show connection status badge', async ({ page }) => {
 		const roomId = generateTestRoomId();
-		await page.goto(`/${roomId}`);
+		await page.goto(`/${roomId}${keyFragmentFor(roomId)}`);
 
 		// Connection status should be visible
 		const statusBadge = page.locator('[data-testid="connection-status"]');
@@ -17,7 +19,7 @@ test.describe('Connection Status', () => {
 		const roomId = generateTestRoomId();
 
 		// Navigate to room
-		await page.goto(`/${roomId}`);
+		await page.goto(`/${roomId}${keyFragmentFor(roomId)}`);
 
 		// Should show some status (Connecting, Connected, or Local)
 		const statusBadge = page.locator('[data-testid="connection-status"]');
@@ -31,7 +33,7 @@ test.describe('Connection Status', () => {
 
 	test('should transition to connected or local status', async ({ page }) => {
 		const roomId = generateTestRoomId();
-		await page.goto(`/${roomId}`);
+		await page.goto(`/${roomId}${keyFragmentFor(roomId)}`);
 
 		// Wait for initial status
 		await waitForConnectionStatus(page);
@@ -51,7 +53,7 @@ test.describe('Connection Status', () => {
 
 	test('should show connection status with appropriate styling', async ({ page }) => {
 		const roomId = generateTestRoomId();
-		await page.goto(`/${roomId}`);
+		await page.goto(`/${roomId}${keyFragmentFor(roomId)}`);
 
 		await waitForConnectionStatus(page);
 
@@ -67,7 +69,7 @@ test.describe('Connection Status', () => {
 
 	test('should maintain connection status visibility throughout session', async ({ page }) => {
 		const roomId = generateTestRoomId();
-		await page.goto(`/${roomId}`);
+		await page.goto(`/${roomId}${keyFragmentFor(roomId)}`);
 
 		await waitForConnectionStatus(page);
 
@@ -88,7 +90,7 @@ test.describe('Connection Status', () => {
 
 	test('should handle page reload and reconnection', async ({ page }) => {
 		const roomId = generateTestRoomId();
-		await page.goto(`/${roomId}`);
+		await page.goto(`/${roomId}${keyFragmentFor(roomId)}`);
 
 		await waitForConnectionStatus(page);
 

@@ -59,12 +59,16 @@ test.describe('Room Page', () => {
 			await page.locator('[data-testid="copy-room-btn"]').click();
 
 			// Toast should appear
-			await expect(page.getByText('Room ID copied!')).toBeVisible({ timeout: 3000 });
+			await expect(page.getByText('Invite link copied', { exact: false })).toBeVisible({
+				timeout: 3000
+			});
 
 			// Safari/WebKit does not reliably allow programmatic clipboard reads.
 			if (!isWebKit) {
 				const clipboardContent = await page.evaluate(() => navigator.clipboard.readText());
-				expect(clipboardContent).toBe(roomId);
+				// The invite is the full URL: room id in the path, key fragment intact.
+				expect(clipboardContent).toContain(`/${roomId}`);
+				expect(clipboardContent).toContain('#k=');
 			}
 		});
 

@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext } from '@playwright/test';
+import { keyFragmentFor } from './helpers/test-utils';
 
 test.describe('Mobile P2P Connection Lifecycle', () => {
 	test.describe.configure({ mode: 'serial' });
@@ -25,7 +26,7 @@ test.describe('Mobile P2P Connection Lifecycle', () => {
 		page.on('console', (msg) => consoleLogs.push(msg.text()));
 
 		// Navigate to room
-		await page.goto(`/${testRoomId}`);
+		await page.goto(`/${testRoomId}${keyFragmentFor(testRoomId)}`);
 
 		// Wait for connection status to appear
 		await waitForConnectionStatus(page);
@@ -105,7 +106,7 @@ test.describe('Mobile P2P Connection Lifecycle', () => {
 		page.on('console', (msg) => consoleLogs.push(msg.text()));
 
 		const roomId = `offline-test-${Date.now()}`;
-		await page.goto(`/${roomId}`);
+		await page.goto(`/${roomId}${keyFragmentFor(roomId)}`);
 
 		// Wait for initial connection using data-testid
 		const statusBadge = await waitForConnectionStatus(page);
@@ -168,7 +169,7 @@ test.describe('Mobile P2P Connection Lifecycle', () => {
 		page.on('console', (msg) => consoleLogs.push(msg.text()));
 
 		const roomId = `cleanup-test-${Date.now()}`;
-		await page.goto(`/${roomId}`);
+		await page.goto(`/${roomId}${keyFragmentFor(roomId)}`);
 
 		// Wait for page to load using data-testid
 		await waitForConnectionStatus(page);

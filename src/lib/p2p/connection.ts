@@ -72,6 +72,9 @@ export class P2PConnection {
 	private onPeerDisconnectedCallback: PeerCallback | null = null;
 	private onConnectionLostCallback: ConnectionLostCallback | null = null;
 	private onKnockingCallback: ((clientId: string) => void) | null = null;
+	private onMediaChannelCallback:
+		| ((peerDeviceId: string, transferId: string, channel: RTCDataChannel) => void)
+		| null = null;
 
 	constructor(session: CryptoSession, config: Partial<P2PConfig> = {}, displayName: () => string) {
 		this.session = session;
@@ -165,6 +168,24 @@ export class P2PConnection {
 	/** A peer reached us but could not prove key knowledge. */
 	onKnocking(cb: (clientId: string) => void): void {
 		this.onKnockingCallback = cb;
+	}
+
+	/** An in-band media channel arrived from a verified peer (§5). */
+	onMediaChannel(cb: (peerDeviceId: string, transferId: string, channel: RTCDataChannel) => void): void {
+		this.onMediaChannelCallback = cb;
+	}
+
+	/** Open a dedicated in-band channel toward a verified peer. */
+	openMediaChannel(peerDeviceId: string, label: string): RTCDataChannel | null {
+		const clientId = this.deviceToClient.get(peerDeviceId);
+		const peer = clientId ? this.peers.get(clientId) : undefined;
+		if (!peer || !peer.verified || peer.pc.connectionState !== 'connected') return null;
+		try {
+			return peer.pc.createDataChannel(label, { ordered: true });
+		} catch (error) {
+			console.warn('[P2P] media channel open failed:', error);
+			return null;
+		}
 	}
 
 	// ============ sending ============
@@ -293,7 +314,13 @@ export class P2PConnection {
 				// The newcomer (us) initiates toward every existing member;
 				// collisions are handled by perfect negotiation.
 				for (const peerId of message.peers ?? []) {
-					void this.ensurePeer(peerId);
+					try {
+						this.ensurePeer(peerId);
+					} catch (error) {
+						// No WebRTC at all (blocked/unsupported): relay last resort.
+						console.warn('[P2P] RTCPeerConnection unavailable, trying relay:', error);
+						void this.offerRelay(peerId);
+					}
 				}
 				break;
 			}
@@ -414,6 +441,17 @@ export class P2PConnection {
 		chat.onmessage = (event) => void this.handleChannelMessage(peer, event.data);
 		eph.onmessage = (event) => void this.handleChannelMessage(peer, event.data);
 
+		// In-band media channels (§5): created per transfer by the sender.
+		pc.ondatachannel = ({ channel }) => {
+			if (!channel.label.startsWith('media-')) return;
+			if (!peer.verified || !peer.deviceId) {
+				channel.close();
+				return;
+			}
+			const transferId = channel.label.slice('media-'.length);
+			this.onMediaChannelCallback?.(peer.deviceId, transferId, channel);
+		};
+
 		return peer;
 	}
 
@@ -455,7 +493,15 @@ export class P2PConnection {
 			this.deviceToClient.set(deviceId, fromId);
 		}
 
-		const peer = this.ensurePeer(fromId);
+		let peer: Peer;
+		try {
+			peer = this.ensurePeer(fromId);
+		} catch (error) {
+			// Their offer reached us but we cannot do WebRTC: relay instead.
+			console.warn('[P2P] RTCPeerConnection unavailable, answering via relay:', error);
+			void this.offerRelay(fromId);
+			return;
+		}
 		peer.deviceId = deviceId;
 		// Stable politeness once deviceIds are known (survives clientId churn).
 		peer.polite = this.session.deviceId < deviceId;
@@ -595,11 +641,13 @@ export class P2PConnection {
 
 	private async enterRelayMode(peer: Peer): Promise<void> {
 		const clientId = peer.clientId;
-		const deviceId = peer.deviceId;
 		this.removePeerConnectionOnly(clientId);
-		if (!deviceId) return;
+		await this.offerRelay(clientId);
+	}
 
-		this.relayPeers.set(clientId, { deviceId, verified: false });
+	/** Send a relay-hello; the peer entry is created when theirs verifies. */
+	private async offerRelay(clientId: string): Promise<void> {
+		if (this.config.allowRelayFallback === false || this.config.strictDirect) return;
 		const hello = await this.session.makeHello(this.displayName(), this.relayBinding(clientId));
 		this.sendSignaling({ type: 'relay', targetId: clientId, data: { hello } as never });
 	}
@@ -619,8 +667,7 @@ export class P2PConnection {
 				this.deviceToClient.set(info.deviceId, fromId);
 				if (!existing) {
 					// Their side initiated relay mode; reciprocate the hello.
-					const hello = await this.session.makeHello(this.displayName(), this.relayBinding(fromId));
-					this.sendSignaling({ type: 'relay', targetId: fromId, data: { hello } as never });
+					await this.offerRelay(fromId);
 				}
 				this.onPeerConnectedCallback?.(info.deviceId);
 			} else {
