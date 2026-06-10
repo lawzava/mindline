@@ -194,7 +194,7 @@
 />
 
 <div
-	class="flex shrink-0 items-end gap-1.5 border-t border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:gap-2 sm:p-4"
+	class="flex shrink-0 items-end gap-1.5 border-t border-border bg-background p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:gap-2 sm:p-4"
 >
 	{#if recorder?.isRecording}
 		<div class="flex h-11 flex-1 items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 px-3">
