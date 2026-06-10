@@ -1,2 +1,2 @@
-// Default runtime config. Cloud builds overwrite this file in dist/js/env-config.js.
+// Default runtime config. Deploys overwrite this file in the published output.
 window.MINDLINE_ENV = window.MINDLINE_ENV || {};

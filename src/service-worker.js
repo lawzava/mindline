@@ -7,7 +7,9 @@ const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self
 import { build, files, version } from '$service-worker';
 
 const CACHE = `mindline-${version}`;
-const ASSETS = [...build, ...files];
+// env-config.js is injected per deploy at publish time; caching it would
+// freeze stale runtime config (signaling host) across releases.
+const ASSETS = [...build, ...files.filter((f) => !f.includes('env-config'))];
 
 sw.addEventListener('install', (event) => {
 	event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));
