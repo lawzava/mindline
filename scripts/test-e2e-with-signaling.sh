@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -m
 set -euo pipefail
 
 SIGNALING_HEALTH_URL="${SIGNALING_HEALTH_URL:-http://localhost:3000/health}"
@@ -75,7 +76,7 @@ validate_remote_mode_inputs() {
 
 cleanup() {
   if [ -n "${SIGNALING_PID:-}" ] && kill -0 "$SIGNALING_PID" 2>/dev/null; then
-    kill "-$SIGNALING_PID" 2>/dev/null || true
+    kill -- "-$SIGNALING_PID" 2>/dev/null || true
     kill "$SIGNALING_PID" 2>/dev/null || true
     for _ in {1..20}; do
       if ! kill -0 "$SIGNALING_PID" 2>/dev/null; then
@@ -83,6 +84,7 @@ cleanup() {
       fi
       sleep 0.1
     done
+    kill -9 -- "-$SIGNALING_PID" 2>/dev/null || true
     kill -9 "$SIGNALING_PID" 2>/dev/null || true
     disown "$SIGNALING_PID" 2>/dev/null || true
   fi
