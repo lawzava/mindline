@@ -32,7 +32,11 @@
 				const keys = getRoomKeys();
 				if (!keys) return;
 				const blob = await getBlob(keys, roomId, attachment.transferId);
-				if (!blob) return;
+				if (!blob) {
+					// Marked ready but absent locally (evicted or another device)
+					loadFailed = true;
+					return;
+				}
 				objectUrl = URL.createObjectURL(new Blob([blob.data as BufferSource], { type: blob.mime }));
 			} catch (error) {
 				console.warn('attachment load failed:', error);

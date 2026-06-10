@@ -19,7 +19,7 @@ const REPLAY = 'replay';
 interface StoredIdentity {
 	publicKey: CryptoKey;
 	privateKey: CryptoKey;
-	spki: ArrayBuffer;
+	spki: Uint8Array;
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -78,7 +78,8 @@ export async function saveIdentity(identity: DeviceIdentity): Promise<void> {
 	const record: StoredIdentity = {
 		publicKey: identity.publicKey,
 		privateKey: identity.privateKey,
-		spki: identity.spki.slice().buffer as ArrayBuffer
+		// structured clone stores Uint8Array directly; slice() copies exactly
+		spki: identity.spki.slice()
 	};
 	await withStore(DEVICE, 'readwrite', (s) => s.put(record, 'identity'));
 }
