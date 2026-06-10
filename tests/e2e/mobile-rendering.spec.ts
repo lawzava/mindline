@@ -53,6 +53,21 @@ test.describe('Mobile message rendering', () => {
 		expect(scrolled).toBe(0);
 	});
 
+	test('photo button targets the gallery on mobile', async ({ page }) => {
+		const roomId = generateTestRoomId();
+		await joinRoom(page, roomId);
+
+		// The button must exist on touch layouts (it used to be sm:+ only,
+		// leaving phones with just the generic file manager).
+		await expect(page.locator('[data-testid="photo-btn"]')).toBeVisible();
+
+		const picker = page.locator('[data-testid="photo-input"]');
+		await expect(picker).toHaveAttribute('accept', 'image/*,video/*');
+		// No capture attribute: capture forces the camera (or on some Androids
+		// a file manager) instead of offering the photo gallery.
+		expect(await picker.getAttribute('capture')).toBeNull();
+	});
+
 	test('long messages use most of the available width before wrapping', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);
