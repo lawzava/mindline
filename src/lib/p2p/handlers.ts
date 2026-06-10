@@ -23,6 +23,7 @@ import { delivery } from '$lib/stores/delivery';
 import { user } from '$lib/stores/user';
 import { saveRoomMessages } from '$lib/storage/messages';
 import type { Message } from '$lib/types/message';
+import type { MediaAbort, MediaAccept, MediaOffer } from '$lib/media/transfer';
 import { get } from 'svelte/store';
 import { toast } from 'svelte-sonner';
 
@@ -34,6 +35,17 @@ let sendToPeerFn: ((peerId: string, message: TypedP2PMessage) => void) | null = 
 
 export function setSendToPeerFn(fn: (peerId: string, message: TypedP2PMessage) => void): void {
 	sendToPeerFn = fn;
+}
+
+/** Media engine hook, registered by the manager per room session. */
+let mediaControlFn:
+	| ((message: MediaOffer | MediaAccept | MediaAbort, peerId: string) => void)
+	| null = null;
+
+export function setMediaControlFn(
+	fn: ((message: MediaOffer | MediaAccept | MediaAbort, peerId: string) => void) | null
+): void {
+	mediaControlFn = fn;
 }
 
 /**
@@ -68,6 +80,14 @@ export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void 
 				break;
 			case 'delivery-ack':
 				handleDeliveryAck(message, peerId);
+				break;
+			case 'media-offer':
+				handleMediaOffer(message, peerId);
+				mediaControlFn?.(message, peerId);
+				break;
+			case 'media-accept':
+			case 'media-abort':
+				mediaControlFn?.(message, peerId);
 				break;
 			default:
 				console.warn(`[P2P Handler] Unknown message type: ${(message as TypedP2PMessage).type}`);
@@ -138,6 +158,51 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 
 	// Clear the typing indicator for this peer since they sent a message
 	drafts.clearDraft(peerId);
+}
+
+/**
+ * A media offer arrived: place a Media message in the stream so the
+ * receiver sees the incoming item with progress; the engine moves the bytes.
+ */
+function handleMediaOffer(offer: MediaOffer, peerId: string): void {
+	const targetRoomId = offer.roomId || get(currentRoomId);
+	if (!targetRoomId) return;
+	if (offer.senderName) connection.setPeerName(peerId, offer.senderName);
+
+	const messageObj: Message = {
+		id: offer.messageId,
+		sender_id: offer.senderId || peerId,
+		sender_name: offer.senderName || peerId,
+		message_type: 'Media',
+		content: offer.name,
+		timestamp: offer.timestamp || Date.now(),
+		room_id: targetRoomId,
+		status: 'Sent',
+		edited: false,
+		edit_timestamp: null,
+		original_content: null,
+		reply_to: null,
+		reactions: {},
+		mentions: [],
+		local_timestamp: Date.now(),
+		delivery_attempts: 0,
+		size_bytes: offer.size,
+		sender_device: peerId,
+		attachment: {
+			transferId: offer.transferId,
+			kind: offer.kind,
+			name: offer.name,
+			mime: offer.mime,
+			size: offer.size,
+			thumb: offer.thumb,
+			thumbMime: offer.thumbMime,
+			duration: offer.duration,
+			waveform: offer.waveform,
+			state: 'transferring'
+		}
+	};
+	messages.addMessage(targetRoomId, messageObj);
+	saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 }
 
 /**
