@@ -283,7 +283,7 @@
 {:else}
 	<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden min-h-0">
 		<!-- Connection Status Bar -->
-		<div class="flex flex-col gap-2 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+		<div class="flex flex-col gap-2 border-b bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
 			<div class="flex items-center gap-2">
 				<span class="text-sm text-muted-foreground">Room:</span>
 				<button

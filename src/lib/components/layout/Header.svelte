@@ -74,7 +74,7 @@
 	}
 </script>
 
-<header class="border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+<header class="border-b border-border bg-background">
 	<div class="mx-auto flex h-12 max-w-4xl items-center justify-between px-3 sm:px-4">
 		<!-- Logo -->
 		<div class="flex items-center gap-2 sm:gap-3">
