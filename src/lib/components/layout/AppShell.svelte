@@ -9,7 +9,7 @@
 	let { children }: Props = $props();
 </script>
 
-<div class="flex h-screen flex-col overflow-hidden bg-background">
+<div class="flex h-dvh flex-col overflow-hidden bg-background">
 	<Header />
 
 	<main class="flex flex-1 flex-col overflow-hidden">

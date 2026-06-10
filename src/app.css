@@ -1,68 +1,87 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/newsreader";
+@import "@fontsource-variable/newsreader/wght-italic.css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	--font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-	--radius: 0.625rem;
+	/*
+	 * Iron Gall: dried ink on warm paper. Light is the authored theme;
+	 * dark ("Inkwell") is the same room with the lamp dimmed.
+	 * Paper neutrals carry hue 84, ink neutrals hue 272 — never #000/#fff.
+	 */
+	--font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+	--font-serif: "Newsreader Variable", "Iowan Old Style", Georgia, serif;
+	--radius: 0.5rem;
 
-	/* Clean minimalist light theme - high contrast */
-	--background: oklch(1 0 0);
-	--foreground: oklch(0.145 0 0);
-	--card: oklch(0.985 0 0);
-	--card-foreground: oklch(0.145 0 0);
-	--popover: oklch(1 0 0);
-	--popover-foreground: oklch(0.145 0 0);
-	--primary: oklch(0.205 0 0);
-	--primary-foreground: oklch(0.985 0 0);
-	--secondary: oklch(0.965 0 0);
-	--secondary-foreground: oklch(0.205 0 0);
-	--muted: oklch(0.965 0 0);
-	--muted-foreground: oklch(0.45 0 0);
-	--accent: oklch(0.965 0 0);
-	--accent-foreground: oklch(0.205 0 0);
-	--destructive: oklch(0.577 0.245 27.325);
-	--destructive-foreground: oklch(0.985 0 0);
-	--border: oklch(0.9 0 0);
-	--input: oklch(0.9 0 0);
-	--ring: oklch(0.708 0 0);
-	--chart-1: oklch(0.646 0.222 41.116);
-	--chart-2: oklch(0.6 0.118 184.704);
-	--chart-3: oklch(0.398 0.07 227.392);
-	--chart-4: oklch(0.828 0.189 84.429);
-	--chart-5: oklch(0.769 0.188 70.08);
+	--background: oklch(0.962 0.007 84);
+	--foreground: oklch(0.225 0.018 272);
+	--card: oklch(0.978 0.005 84);
+	--card-foreground: oklch(0.225 0.018 272);
+	--popover: oklch(0.978 0.005 84);
+	--popover-foreground: oklch(0.225 0.018 272);
+	--primary: oklch(0.45 0.105 272);
+	--primary-foreground: oklch(0.972 0.005 84);
+	--secondary: oklch(0.93 0.009 84);
+	--secondary-foreground: oklch(0.3 0.018 272);
+	--muted: oklch(0.93 0.009 84);
+	--muted-foreground: oklch(0.48 0.014 272);
+	--accent: oklch(0.915 0.012 84);
+	--accent-foreground: oklch(0.3 0.018 272);
+	--destructive: oklch(0.52 0.16 25);
+	--destructive-foreground: oklch(0.972 0.005 84);
+	--success: oklch(0.56 0.09 150);
+	--warning: oklch(0.65 0.12 75);
+	--border: oklch(0.885 0.008 84);
+	--input: oklch(0.885 0.008 84);
+	--ring: oklch(0.45 0.105 272);
+
+	/* The live layer: wet ink. The one Committed surface in the system. */
+	--draft: oklch(0.45 0.105 272);
+	--draft-idle: oklch(0.45 0.105 272 / 0.55);
+	--wash-draft: oklch(0.45 0.105 272 / 0.07);
+	--wash-sent: oklch(0.925 0.014 272);
+
+	/* Motion: state-conveying only */
+	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+	--dur-fast: 150ms;
+	--dur-slow: 250ms;
 }
 
 .dark {
-	--background: oklch(0.12 0 0);
-	--foreground: oklch(0.985 0 0);
-	--card: oklch(0.16 0 0);
-	--card-foreground: oklch(0.985 0 0);
-	--popover: oklch(0.14 0 0);
-	--popover-foreground: oklch(0.985 0 0);
-	--primary: oklch(0.985 0 0);
-	--primary-foreground: oklch(0.145 0 0);
-	--secondary: oklch(0.22 0 0);
-	--secondary-foreground: oklch(0.985 0 0);
-	--muted: oklch(0.22 0 0);
-	--muted-foreground: oklch(0.65 0 0);
-	--accent: oklch(0.25 0 0);
-	--accent-foreground: oklch(0.985 0 0);
-	--destructive: oklch(0.704 0.191 22.216);
-	--destructive-foreground: oklch(0.985 0 0);
-	--border: oklch(0.25 0 0);
-	--input: oklch(0.25 0 0);
-	--ring: oklch(0.556 0 0);
-	--chart-1: oklch(0.488 0.243 264.376);
-	--chart-2: oklch(0.696 0.17 162.48);
-	--chart-3: oklch(0.769 0.188 70.08);
-	--chart-4: oklch(0.627 0.265 303.9);
-	--chart-5: oklch(0.645 0.246 16.439);
+	--background: oklch(0.185 0.014 272);
+	--foreground: oklch(0.92 0.008 84);
+	--card: oklch(0.215 0.015 272);
+	--card-foreground: oklch(0.92 0.008 84);
+	--popover: oklch(0.215 0.015 272);
+	--popover-foreground: oklch(0.92 0.008 84);
+	--primary: oklch(0.74 0.085 268);
+	--primary-foreground: oklch(0.185 0.014 272);
+	--secondary: oklch(0.245 0.016 272);
+	--secondary-foreground: oklch(0.92 0.008 84);
+	--muted: oklch(0.245 0.016 272);
+	--muted-foreground: oklch(0.68 0.012 84);
+	--accent: oklch(0.27 0.018 272);
+	--accent-foreground: oklch(0.92 0.008 84);
+	--destructive: oklch(0.68 0.14 25);
+	--destructive-foreground: oklch(0.185 0.014 272);
+	--success: oklch(0.72 0.1 150);
+	--warning: oklch(0.78 0.11 80);
+	--border: oklch(0.275 0.015 272);
+	--input: oklch(0.275 0.015 272);
+	--ring: oklch(0.74 0.085 268);
+
+	--draft: oklch(0.78 0.075 268);
+	--draft-idle: oklch(0.78 0.075 268 / 0.55);
+	--wash-draft: oklch(0.74 0.085 268 / 0.09);
+	--wash-sent: oklch(0.265 0.022 272);
 }
 
 @theme inline {
 	--font-sans: var(--font-sans);
+	--font-serif: var(--font-serif);
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
@@ -83,14 +102,15 @@
 	--color-accent-foreground: var(--accent-foreground);
 	--color-destructive: var(--destructive);
 	--color-destructive-foreground: var(--destructive-foreground);
+	--color-success: var(--success);
+	--color-warning: var(--warning);
 	--color-border: var(--border);
 	--color-input: var(--input);
 	--color-ring: var(--ring);
-	--color-chart-1: var(--chart-1);
-	--color-chart-2: var(--chart-2);
-	--color-chart-3: var(--chart-3);
-	--color-chart-4: var(--chart-4);
-	--color-chart-5: var(--chart-5);
+	--color-draft: var(--draft);
+	--color-draft-idle: var(--draft-idle);
+	--color-wash-draft: var(--wash-draft);
+	--color-wash-sent: var(--wash-sent);
 }
 
 @layer base {
@@ -106,6 +126,67 @@
 	h4,
 	h5,
 	h6 {
-		@apply font-bold tracking-tight;
+		@apply font-semibold tracking-tight;
+	}
+}
+
+@layer utilities {
+	/* Human words are set in ink (serif); chrome stays sans. */
+	.prose-ink {
+		font-family: var(--font-serif);
+		font-size: 1.0625rem;
+		line-height: 1.5;
+		font-weight: 400;
+	}
+
+	/* The breathing presence dot: a 2400ms calm cycle, not a blink. */
+	.breathe {
+		animation: breathe 2400ms ease-in-out infinite;
+	}
+	@keyframes breathe {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.45;
+		}
+	}
+
+	/* New draft characters soak in like ink. */
+	.ink-in {
+		animation: ink-in var(--dur-fast) var(--ease-out-expo);
+	}
+	@keyframes ink-in {
+		from {
+			opacity: 0;
+			filter: blur(0.3px);
+		}
+		to {
+			opacity: 1;
+			filter: blur(0);
+		}
+	}
+
+	/* Draft block settles into a sent message: italic wet ink dries to roman. */
+	.ink-dry {
+		animation: ink-dry var(--dur-slow) var(--ease-out-expo);
+	}
+	@keyframes ink-dry {
+		from {
+			color: var(--draft);
+			background-color: var(--wash-draft);
+		}
+		to {
+			background-color: transparent;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.breathe,
+		.ink-in,
+		.ink-dry {
+			animation: none;
+		}
 	}
 }

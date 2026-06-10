@@ -70,7 +70,7 @@
 		if (!files?.length || !onSendMedia) return;
 		isPreparingMedia = true;
 		try {
-			for (const file of files) {
+			for (const file of Array.from(files)) {
 				const isImage = file.type.startsWith('image/');
 				if (isImage) {
 					// Re-encode strips EXIF/GPS by construction (PROTOCOL.md §5.3)
@@ -244,7 +244,7 @@
 			onkeydown={handleKeydown}
 			oninput={handleInput}
 			{disabled}
-			class="border-input bg-background selection:bg-primary dark:bg-input/30 selection:text-primary-foreground ring-offset-background placeholder:text-muted-foreground flex min-h-11 max-h-40 w-full min-w-0 flex-1 resize-none rounded-md border px-3 py-2 text-base leading-5 shadow-xs transition-[color,box-shadow] outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive"
+			class="border-input bg-background selection:bg-primary dark:bg-input/30 selection:text-primary-foreground ring-offset-background placeholder:font-sans placeholder:text-sm placeholder:not-italic placeholder:text-muted-foreground prose-ink flex min-h-11 max-h-40 w-full min-w-0 flex-1 resize-none rounded-md border px-3 py-2 italic text-draft shadow-xs transition-[color,box-shadow] outline-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
 			data-testid="message-input"
 		></textarea>
 		{#if onSendMedia && !message.trim()}
