@@ -125,8 +125,8 @@ export function getSignalingConfig(): { server: string; useSSL: boolean } {
 	const host = window.location.host;
 	// If on Cloudflare Pages, signaling might be on a different subdomain
 	if (host.includes('pages.dev')) {
-		// Default signaling server for production
-		return { server: 'signal-mindline.fly.dev', useSSL: true };
+		// Production signaling (the old signal-mindline.fly.dev host is gone)
+		return { server: 'signal.mindline.chat', useSSL: true };
 	}
 
 	// For custom domains, assume signaling on same host different port or subdomain
