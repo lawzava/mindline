@@ -3,9 +3,9 @@
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
 	import { MessageList, MessageInput, DraftIndicator, ConnectionStatus } from '$lib/components/chat';
-	import { currentRoomId, currentRoomMessages, messages, user, drafts } from '$lib/stores';
+	import { currentRoomId, currentRoomMessages, messages, user, drafts, mediaConsent } from '$lib/stores';
 	import { loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
-	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError } from '$lib/p2p';
+	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError, sendMediaMessage, acceptMediaTransfer, declineMediaTransfer } from '$lib/p2p';
 	import type { Message } from '$lib/types/message';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -140,6 +140,13 @@
 		} finally {
 			isSending = false;
 		}
+	}
+
+	async function handleSendMedia(
+		data: Uint8Array,
+		meta: Parameters<typeof sendMediaMessage>[1]
+	) {
+		await sendMediaMessage(data, meta);
 	}
 
 	function handleTyping(content: string) {
@@ -310,8 +317,25 @@
 		<!-- Draft indicators (what others are typing) -->
 		<DraftIndicator />
 
+		<!-- Large-transfer consent prompts -->
+		{#each $mediaConsent as request (request.offer.transferId)}
+			<div class="flex items-center gap-2 border-t border-border bg-muted/40 px-4 py-2 text-sm" data-testid="media-consent">
+				<span class="min-w-0 flex-1 truncate">
+					{request.offer.senderName} wants to send
+					<strong>{request.offer.name}</strong>
+					({Math.round(request.offer.size / 1024 / 1024)} MB)
+				</span>
+				<Button size="sm" onclick={() => acceptMediaTransfer(request.offer, request.peerDeviceId)}>
+					Accept
+				</Button>
+				<Button size="sm" variant="ghost" onclick={() => declineMediaTransfer(request.offer.transferId)}>
+					Decline
+				</Button>
+			</div>
+		{/each}
+
 		<!-- Message input -->
-		<MessageInput onSend={handleSend} onTyping={handleTyping} {isSending} />
+		<MessageInput onSend={handleSend} onSendMedia={handleSendMedia} onTyping={handleTyping} {isSending} />
 	</div>
 
 	<!-- Leave confirmation dialog -->

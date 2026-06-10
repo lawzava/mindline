@@ -27,6 +27,22 @@ export interface Message {
 	 * compares against this, never against the self-asserted sender_id.
 	 */
 	sender_device?: string;
+	/** Media metadata when message_type is 'Media'; blob lives in IndexedDB. */
+	attachment?: MessageAttachment;
+}
+
+export interface MessageAttachment {
+	transferId: string;
+	kind: 'file' | 'image' | 'voice' | 'video';
+	name: string;
+	mime: string;
+	size: number;
+	thumb?: string;
+	thumbMime?: string;
+	duration?: number;
+	waveform?: number[];
+	/** local | transferring | ready | failed */
+	state: string;
 }
 
 export interface DraftMessage {
