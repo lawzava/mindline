@@ -116,15 +116,15 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		console.log('[P2P Manager] Peer connected:', peerId);
 		connection.addPeer(peerId);
 
-		// Announce our connection IMMEDIATELY so peer learns our name right away
-		// This fixes race condition where peer is added but name is unknown
-		broadcastUserConnected();
+		// Target only the new peer: broadcasting here caused O(N^2)
+		// hello/sync storms in heavy rooms (ported stability fix).
+		sendUserConnectedTo(peerId);
 
-		// Request sync after connection stabilizes
-		setTimeout(() => requestSync(roomId), 1000);
+		// Request sync from the new peer after the channel stabilizes
+		setTimeout(() => requestSyncFrom(peerId, roomId), 1000);
 
-		// Re-announce after stabilization in case first one was missed
-		setTimeout(() => broadcastUserConnected(), 500);
+		// Re-announce in case the first one raced the channel opening
+		setTimeout(() => sendUserConnectedTo(peerId), 500);
 	});
 
 	p2pConnection.onPeerDisconnected((peerId) => {
@@ -454,7 +454,7 @@ export function broadcastReaction(messageId: string, reaction: string, action: '
 /**
  * Request message synchronization from peers
  */
-function requestSync(roomId: string): void {
+function requestSyncFrom(peerDeviceId: string, roomId: string): void {
 	if (!p2pConnection) {
 		return;
 	}
@@ -476,17 +476,17 @@ function requestSync(roomId: string): void {
 			requesterId: userState.id
 		};
 
-		p2pConnection.broadcast(syncRequest);
-		console.log('[P2P Manager] Sync request sent for room:', roomId);
+		p2pConnection.sendToPeer(peerDeviceId, syncRequest);
+		console.log('[P2P Manager] Sync requested from peer:', peerDeviceId);
 	} catch (error) {
 		console.error('[P2P Manager] Failed to request sync:', error);
 	}
 }
 
 /**
- * Broadcast user connected notification
+ * Announce ourselves to one newly connected peer
  */
-function broadcastUserConnected(): void {
+function sendUserConnectedTo(peerDeviceId: string): void {
 	const userState = get(user);
 
 	if (!p2pConnection || !userState.initialized) {
@@ -500,7 +500,7 @@ function broadcastUserConnected(): void {
 		timestamp: Date.now()
 	};
 
-	p2pConnection.broadcast(message);
+	p2pConnection.sendToPeer(peerDeviceId, message);
 }
 
 /**
