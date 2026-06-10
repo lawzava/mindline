@@ -24,7 +24,8 @@
 		const roomId = $currentRoomId;
 		if (!roomId) return;
 
-		const url = `${window.location.origin}/${roomId}`;
+		// The full URL carries the key fragment; a bare path is a broken invite.
+		const url = window.location.href;
 
 		// Try Web Share API first (mobile-friendly)
 		if (navigator.share) {
@@ -74,10 +75,10 @@
 </script>
 
 <header class="border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-	<div class="mx-auto flex h-14 sm:h-16 max-w-4xl items-center justify-between px-3 sm:px-4">
+	<div class="mx-auto flex h-12 max-w-4xl items-center justify-between px-3 sm:px-4">
 		<!-- Logo -->
 		<div class="flex items-center gap-2 sm:gap-3">
-			<h1 class="text-xl sm:text-2xl font-bold tracking-tight">MINDLINE</h1>
+			<h1 class="text-lg font-bold tracking-tight">MINDLINE</h1>
 		</div>
 
 		<!-- Controls -->
