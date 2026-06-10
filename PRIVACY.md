@@ -1,134 +1,71 @@
 # Privacy Policy
 
-**Last Updated: January 2025**
+**Last Updated: June 2026**
 
-## Our Privacy-First Philosophy
+## The short version
 
-Mindline is built on the principle that **true privacy isn't a promise—it's a technical guarantee**. Unlike traditional messaging apps, we literally cannot access your messages because they never pass through our servers.
+Your messages are end-to-end encrypted with a key that exists only in your
+invite link. We cannot read them: not in transit, not at rest, not when our
+server relays them. What we unavoidably see is rendezvous metadata: which
+room IDs connect, when, and from which IP addresses.
 
-## What We Don't Collect
+## What is encrypted, and with what
 
-We **do not** and **cannot** collect:
-- ❌ Message content
-- ❌ Message metadata (who talks to whom)
-- ❌ Chat history
-- ❌ User profiles
-- ❌ Usage analytics
-- ❌ IP addresses
-- ❌ Device information
-- ❌ Cookies or tracking data
+- Every message, live draft, history sync page, and media chunk is
+  AES-256-GCM encrypted using keys derived from the 256-bit key in your
+  invite link's URL fragment (`#k=...`).
+- URL fragments are never sent to any server by your browser.
+- Messages are signed with a per-device key, so room members cannot forge
+  each other's messages, edits, or deletions.
+- Chat history and received media are also encrypted at rest in your
+  browser's storage, using a key derived from the same link key.
 
-## How It Works
+The complete protocol and threat model: [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
-### True Peer-to-Peer Architecture
-- Messages are sent directly between users' browsers using WebRTC
-- Messages are end-to-end encrypted before they leave your device
-- Encryption happens entirely on your device
-- If direct P2P fails, the signaling server may relay encrypted payloads only
+## What the signaling server sees
 
-### What Our Signaling Server Does
-Our signaling server has a single, limited purpose: help two browsers find each other to establish a direct connection. Once connected, your browsers talk directly to each other.
+The signaling server introduces browsers to each other. It handles:
 
-The signaling server only handles:
-- Initial WebRTC handshake coordination
-- Room presence information (who's in which room)
-- Connection dropped/reconnected events
-- Encrypted relay fallback packets when direct P2P cannot be established
+- Room IDs (random identifiers; they grant no access without the link key)
+- Device identifiers (random per-device fingerprints, not names)
+- IP addresses and connection timing
+- Encrypted payloads when a direct connection cannot be established and
+  traffic must relay: ciphertext only, which it cannot decrypt or forge
 
-**It never sees plaintext message content.**
+It stores none of this. There is no database. Logs, if enabled by the
+operator, contain at most the metadata listed above.
 
-## Data Storage
+## What stays on your device
 
-### On Your Device Only
-- **Chat History**: Stored locally in your browser's localStorage
-- **User Preferences**: Theme settings, username, stored locally
-- **Room History**: List of rooms you've joined, stored locally
-- **Encryption Keys**: Generated and stored only on your device
+- Chat history (encrypted), received media (encrypted)
+- Your display name and theme preference
+- Room keys (non-extractable browser CryptoKeys) and your device keypair
 
-### Not On Our Servers
-We do not maintain any database of users, messages, or metadata.
+Leaving a room with "burn" removes the keys, history, and media for that
+room from your device. Other participants keep their copies.
 
-## Your Rights
+## Honest caveats
 
-Since we don't collect your data, you don't need to request deletion or export—you already have full control:
+- **The invite link is the room.** Anyone who obtains the full link can
+  read everything, including history. Share it the way you would share the
+  secret itself.
+- **Browser sync can copy your keys.** If your browser syncs history or
+  open tabs to a cloud account without end-to-end-encrypted sync, the
+  invite link (key included) may land on that provider's servers.
+- **Whoever you talk to keeps what you sent.** Past participants retain
+  everything already synced to them.
+- **Safari may evict storage.** Without the persistence permission, Safari
+  deletes site storage (your keys and history) after 7 days without a
+  visit.
+- **No forward secrecy.** The room key does not rotate in this version; a
+  leaked link exposes the room's past and future content.
 
-- **Right to Access**: All your data is in your browser's localStorage
-- **Right to Delete**: Clear your browser data or use the app's clear history feature
-- **Right to Export**: Use browser developer tools to export localStorage
-- **Right to Be Forgotten**: You already are—we never knew you existed
+## What we never have
 
-## Third-Party Services
+- Plaintext messages, drafts, or media, under any code path
+- Accounts, emails, phone numbers, or names
+- Analytics, tracking pixels, third-party scripts, or runtime CDN fonts
 
-### Cloudflare
-Our website and signaling server are protected by Cloudflare's CDN and DDoS protection. Cloudflare may collect:
-- Connection metadata (IP addresses, user agent)
-- Performance and security metrics
+## Changes
 
-See [Cloudflare's Privacy Policy](https://www.cloudflare.com/privacypolicy/) for details.
-
-### WebRTC STUN/TURN Servers
-To establish peer-to-peer connections through firewalls (NAT traversal), we use STUN/TURN servers. These may temporarily log:
-- Connection attempts
-- IP addresses for NAT traversal
-
-No plaintext message content is sent to STUN/TURN servers.
-
-## Security Measures
-
-### End-to-End Encryption
-- All messages encrypted with AES-256
-- Encryption keys generated locally on your device
-- Keys never leave your device
-
-### Technical Safeguards
-- Content Security Policy headers
-- XSS protection
-- HTTPS/WSS encryption for all connections
-- No third-party tracking scripts
-
-## Children's Privacy
-
-Mindline does not knowingly collect information from anyone, including children under 13. Since we don't collect personal information at all, COPPA compliance is inherent to our design.
-
-## Changes to This Policy
-
-If we ever change our privacy practices (for example, adding optional analytics), we will:
-1. Update this policy with a new "Last Updated" date
-2. Show a prominent notice in the application
-3. Require explicit opt-in for any new data collection
-
-Privacy-breaking changes will never be forced upon users.
-
-## International Users
-
-### GDPR Compliance (EU)
-We are compliant by design:
-- No personal data collection = no GDPR obligations
-- Data minimization principle fully satisfied
-- Right to erasure: data already on your device only
-
-### CCPA Compliance (California)
-Since we don't sell or collect personal information, CCPA requirements don't apply to us.
-
-## Technical Transparency
-
-Our source code is open source (MIT License). You can verify our privacy claims by reviewing:
-- [Source Code on GitHub](https://github.com/yourusername/mindline)
-- [Architecture Documentation](./SECURITY.md)
-
-## Contact
-
-Questions about privacy? Open an issue on our GitHub repository.
-
-**Remember**: We built Mindline this way specifically so we couldn't access your data even if we wanted to. Your privacy is protected by mathematics and architecture, not promises.
-
----
-
-## Developer Notes
-
-For technical details on our privacy implementation:
-- See `SECURITY.md` for encryption architecture
-- Review `src/crypto.rs` for encryption implementation
-- Check `js/webrtc.js` for P2P connection handling
-
-**Auditors welcome**: We encourage security researchers to review our code and report any privacy concerns.
+This policy changes only alongside the open-source code that enforces it.

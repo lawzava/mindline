@@ -8,8 +8,8 @@ test.describe('Landing Page', () => {
 		await page.goto('/');
 
 		// Check main elements are visible
-		await expect(page.getByText('Welcome to Mindline')).toBeVisible();
-		await expect(page.getByText('Real-time P2P chat with radical transparency.')).toBeVisible();
+		await expect(page.getByText('Talk on a live wire.')).toBeVisible();
+		await expect(page.getByText('end-to-end encrypted', { exact: false })).toBeVisible();
 		await expect(page.locator('[data-testid="create-room-btn"]')).toBeVisible();
 		await expect(page.locator('[data-testid="join-room-input"]')).toBeVisible();
 		await expect(page.locator('[data-testid="join-room-btn"]')).toBeVisible();

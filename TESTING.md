@@ -1,630 +1,69 @@
-# E2E Testing Guide - Mindline
+# Testing
 
-This document defines all features that should be tested end-to-end using Playwright.
+Two tiers, honestly separated: a **blocking** tier that gates merges and a
+**best-effort** tier for breadth that may flake in CI without failing it.
 
-## Test Implementation Status
-
-| Test File | Tests | Status |
-|-----------|-------|--------|
-| `landing-page.spec.ts` | 6 | ✅ Implemented |
-| `room-page.spec.ts` | 9 | ✅ Implemented |
-| `connection-status.spec.ts` | 6 | ✅ Implemented |
-| `messaging.spec.ts` | 12 | ✅ Implemented |
-| `typing-indicators.spec.ts` | 6 | ✅ Implemented (P2P tests skip without signaling) |
-| `reactions.spec.ts` | 8 | ✅ Implemented (skip on touch devices) |
-| `edit-delete.spec.ts` | 17 | ✅ Implemented |
-| `persistence.spec.ts` | 12 | ✅ Implemented |
-| `peer-list.spec.ts` | 9 | ✅ Implemented (P2P tests skip without signaling) |
-| `p2p-multiuser.spec.ts` | 10 | ✅ Implemented (P2P tests skip without signaling) |
-| `mobile-p2p.spec.ts` | 4 | ✅ Implemented (mobile lifecycle) |
-| `required-persistence.spec.ts` | 2 | ✅ Implemented (strict core persistence checks) |
-| `required-p2p.spec.ts` | 2 | ✅ Implemented (strict, no soft-skip in required mode) |
-| `required-network.spec.ts` | 2 | ✅ Implemented (relay fallback + offline/online recovery) |
-
-**Total: ~105 tests implemented**
-
-### Running Tests
+## Unit tests (vitest, blocking)
 
 ```bash
-# Run all tests
-pnpm test:e2e
+pnpm run test:unit
+```
 
-# Run required suite (blocking)
-pnpm run test:e2e:required
+Covers the protocol core against PROTOCOL.md §7: key derivation and
+domain separation, envelope seal/open with AAD context binding, sender
+spoof/tamper/signature rejection, (epoch, seq) replay rejection incl.
+reload epochs and serialize/hydrate, session hello verification and
+channel-binding replay rejection, keystore round-trips (fake-indexeddb),
+media frame round-trip/reorder/corruption/salt rules, encrypted blob
+store, message storage merge semantics + legacy format.
 
-# Run best-effort suite (informational)
-pnpm run test:e2e:best-effort
+## E2E tests (Playwright, blocking tier)
 
-# Run with local signaling server orchestration
-pnpm run test:e2e:with-signaling
-
-# CI-focused required run (Desktop Chrome + strict P2P)
+```bash
 pnpm run test:e2e:ci
+```
 
-# CI run including best-effort suite
-pnpm run test:e2e:ci:full
+Real two-browser-context WebRTC against a local signaling server:
 
-# Run required suite with local signaling orchestration
-pnpm run test:e2e:with-signaling:required
+- `required-typing.spec.ts` — the flagship: a peer's draft grows
+  progressively across three mid-flight assertions, holds without
+  vanishing, and resolves into the sent message; a DataChannel send hook
+  asserts every frame on `chat`/`eph` is a v2 envelope and no plaintext
+  marker ever leaves the device; key-less visitors land in the knocking
+  state and see nothing; fragment-less revisits open history from stored
+  keys.
+- `required-p2p.spec.ts` — message exchange and rejoin sync.
+- `required-network.spec.ts` — WebRTC disabled entirely → ciphertext
+  relay fallback delivers, asserted at the WebSocket frame level; offline/
+  online recovery (CDP).
+- `required-persistence.spec.ts`, `room-page`, `landing-page`,
+  `messaging`, `connection-status` — core flows.
 
-# Run best-effort suite with local signaling orchestration
+## Best-effort tier (non-blocking)
+
+```bash
 pnpm run test:e2e:with-signaling:best-effort
-
-# Run required suite against deployed environment (no localhost services)
-APP_BASE_URL="https://staging.example.com" \
-SIGNALING_HEALTH_URL="https://signal-staging.example.com/health" \
-pnpm run test:e2e:remote:required -- --project='Desktop Chrome'
-# For intentional localhost remote dry-runs only:
-# ALLOW_LOCALHOST_REMOTE=1 APP_BASE_URL="http://localhost:5173" SIGNALING_HEALTH_URL="http://localhost:3000/health" \
-# pnpm run test:e2e:remote:required -- --project='Desktop Chrome'
-
-# Run signaling server soak test (WebSocket load)
-pnpm run test:signaling:soak -- --url=ws://localhost:3000/ws --clients=120 --rooms=12 --durationSec=90 --minJoinRate=0.9 --minReceivedPerSent=0.9 --maxSocketErrorRate=0.05 --maxServerErrors=0
-# If local soak is rate-limited by a single client IP, raise server connection limits for the soak run:
-# RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE=240 pnpm run signaling
 ```
 
----
-
-## Overview
-
-Mindline is a P2P real-time chat application with "radical transparency" - users see each other's messages as they type. Testing requires simulating multiple browser contexts to verify P2P functionality.
-
----
-
-## Test Environment Setup
-
-### Prerequisites
-- Signaling server running on `localhost:3000` (auto-managed by `pnpm run test:e2e:with-signaling`)
-- Application running on `localhost:5173`
-- Multiple browser contexts to simulate different users
-- For remote/staging runs: set `APP_BASE_URL` and `SIGNALING_HEALTH_URL` and run with `SKIP_SIGNALING_START=1`
-
-### Test User Setup
-```typescript
-// Each test should create isolated users
-const userA = { name: 'Alice', context: browser.newContext() };
-const userB = { name: 'Bob', context: browser.newContext() };
-```
-
----
-
-## 1. Landing Page Tests
-
-### 1.1 Page Load
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Initial render | Navigate to `/` | Welcome card visible with "Welcome to Mindline" title |
-| Loading state | Navigate to `/` | Loading spinner shown while WASM initializes |
-| WASM load success | Wait for WASM | Loading spinner disappears, main content visible |
-| WASM load failure | Mock WASM error | Error message displayed with "Try again" button |
-
-### 1.2 Create Room Flow
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Click create room | Click "Create New Room" button | Navigates to `/{roomId}` with valid UUID |
-| User auto-initialization | Create room without name | User initialized as "Anonymous" |
-| User name preserved | Set name, create room | User name persisted in new room |
-
-### 1.3 Join Room Flow
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Join button disabled | Page load with empty input | Join button is disabled |
-| Join button enabled | Enter room ID | Join button becomes enabled |
-| Enter key submit | Type room ID, press Enter | Navigates to room |
-| Join via button | Type room ID, click arrow | Navigates to room |
-| Whitespace handling | Enter "  roomid  " | Whitespace trimmed, joins correctly |
-
----
-
-## 2. Header Tests
-
-### 2.1 Username Input
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Display current name | Load page | Username input shows current name |
-| Update name on blur | Change name, blur input | Toast "Name updated!" shown |
-| Update name on Enter | Change name, press Enter | Toast "Name updated!" shown |
-| Empty name rejected | Clear name, blur | Toast "Name cannot be empty", previous name restored |
-| Name persisted | Change name, reload | Name persisted in localStorage |
-
-### 2.2 Share Button (Room Only)
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Hidden on home | Navigate to `/` | Share button not visible |
-| Visible in room | Navigate to room | Share button visible |
-| Copy to clipboard | Click share button | Toast "Link copied to clipboard!" |
-| Clipboard content | Click share, check clipboard | Contains full room URL |
-| Web Share API | Mock navigator.share | Share dialog triggered (mobile) |
-
-### 2.3 Theme Toggle
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Toggle to dark | Click moon icon | `dark` class added to html, sun icon shown |
-| Toggle to light | Click sun icon | `dark` class removed, moon icon shown |
-| Persisted in storage | Toggle, reload | Theme preference maintained |
-| System preference | Clear storage, reload | Respects prefers-color-scheme |
-
----
-
-## 3. Room Page Tests
-
-### 3.1 Room Loading
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Loading state shown | Navigate to room | "Joining room..." spinner visible |
-| Loading state clears | Wait for initialization | Spinner removed, chat UI visible |
-| Room ID displayed | Enter room | Truncated room ID visible in header |
-
-### 3.2 Room ID Copy
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Hover shows icon | Hover room ID badge | Copy icon fades in |
-| Click copies ID | Click room ID badge | Toast "Room ID copied!" |
-| Full ID copied | Click, check clipboard | Full room ID (not truncated) in clipboard |
-
-### 3.3 Leave Room
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Leave button visible | Enter room | Leave button visible in header |
-| Click leaves room | Click leave button | Navigates to `/` |
-| State cleared | Leave room | Room ID cleared from store |
-| P2P disconnected | Leave room, check network | WebSocket/WebRTC connections closed |
-
----
-
-## 4. Connection Status Tests
-
-### 4.1 Status Display
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Connecting state | Join room | Yellow spinner, "Connecting" badge |
-| Connected state | P2P connects | Green icon, "Connected" badge |
-| Disconnected state | Kill signaling server | Gray icon, "Disconnected" badge |
-| Failed state | Max reconnect attempts | Red icon, "Failed" badge |
-| Local mode | P2P init fails | Gray icon, "Local" badge |
-
-### 4.2 Status Tooltips
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Connected tooltip | Hover connected badge | Shows "Connected to signaling server" |
-| Disconnected tooltip | Hover disconnected badge | Shows "Not connected to signaling server" |
-| Failed tooltip | Hover failed badge | Shows "Connection failed. Click reconnect..." |
-| Local tooltip | Hover local badge | Shows "Working offline. Messages won't sync..." |
-
-### 4.3 Peer Count
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Zero peers | Connect alone | Shows "Waiting for peers..." badge |
-| One peer | Second user joins | Shows "1 peer" badge |
-| Multiple peers | Third user joins | Shows "2 peers" badge |
-| Peer leaves | Second user leaves | Count decremented |
-
-### 4.4 Reconnect Button
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Hidden when connected | P2P connected | Reconnect button not visible |
-| Shown when disconnected | P2P disconnects | Reconnect button visible |
-| Shown when failed | P2P fails | Reconnect button visible |
-| Click reconnects | Click reconnect | Status changes to "Connecting" |
-| Success toast | Reconnection succeeds | Toast "Reconnected successfully!" |
-| Failure toast | Reconnection fails | Toast "Failed to reconnect" |
-| Spinner while reconnecting | Click reconnect | Button shows spinning icon |
-
-### 4.5 Error Display
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Error icon shown | Connection error occurs | Red AlertCircle icon visible |
-| Error tooltip | Hover error icon | Shows error message in tooltip |
-| Error cleared | Reconnection succeeds | Error icon disappears |
-
----
-
-## 5. Messaging Tests
-
-### 5.1 Message Input
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Empty input disabled | Page load | Send button disabled |
-| Non-empty enables | Type text | Send button enabled |
-| Enter sends | Type, press Enter | Message sent, input cleared |
-| Shift+Enter no send | Type, Shift+Enter | Newline inserted, not sent |
-| Whitespace trimmed | Send "  hello  " | Message content is "hello" |
-| Input auto-focused | Page load | Input has focus |
-
-### 5.2 Message Display
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Empty state | No messages | Shows "No messages yet. Start the conversation!" |
-| Own message right | Send message | Message aligned right, primary color |
-| Other message left | Receive message | Message aligned left, muted color |
-| Sender name shown | Receive message | Sender name above bubble (others only) |
-| Timestamp on hover | Hover message | Timestamp fades in |
-| Auto-scroll | Send message | Scrolls to bottom |
-
-### 5.3 Message Send Failure
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Error toast | WASM send fails | Toast "Failed to send message" |
-| Failed status | WASM send fails | Message shows "(failed)" indicator |
-
----
-
-## 6. Real-time Typing (Radical Transparency)
-
-### 6.1 Typing Broadcast
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Typing indicator sent | User A types | User B sees typing indicator |
-| Content visible | User A types "hello" | User B sees "hello" in draft indicator |
-| Cleared on send | User A sends message | Draft indicator disappears |
-| Cleared on clear | User A clears input | Draft indicator disappears |
-
-### 6.2 Draft Indicator Display
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Shows sender name | User A types | Shows "Alice" label |
-| Shows content | User A types "hi" | Shows italic "hi" |
-| Empty shows dots | User A focuses input | Shows animated typing dots |
-| Multiple drafts | A and B type | Both drafts visible |
-| Auto-timeout | User stops typing | Draft clears after 3 seconds |
-
----
-
-## 7. Message Reactions
-
-### 7.1 Adding Reactions
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Emoji picker on hover | Hover message | Smile icon appears |
-| Click opens picker | Click smile icon | Emoji picker popover opens |
-| Select emoji | Click 👍 | Reaction pill appears under message |
-| Picker closes | Select emoji | Popover closes |
-| Broadcast to peers | Add reaction | Other users see reaction |
-
-### 7.2 Reaction Display
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Pill shows emoji | Add reaction | Pill shows "👍 1" |
-| Count increments | Second user reacts | Pill shows "👍 2" |
-| Own reaction styled | Add own reaction | Pill has primary color highlight |
-| Other reaction styled | Other adds reaction | Pill has muted color |
-
-### 7.3 Toggle Reactions
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Click to remove | Click own reaction | Reaction removed |
-| Count decrements | Remove reaction | Count goes down |
-| Pill removed at zero | Last reaction removed | Pill disappears |
-| Re-add reaction | Click emoji again | Reaction re-added |
-
----
-
-## 8. Message Edit
-
-### 8.1 Edit UI
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Menu on own message | Hover own message | Three-dot menu appears |
-| No menu on others | Hover others' message | Only emoji picker, no menu |
-| Click edit | Click Edit in menu | Inline edit mode activated |
-| Input pre-filled | Enter edit mode | Input contains original content |
-| Cancel edit | Press Escape | Edit mode closed, content unchanged |
-| Cancel via button | Click X button | Edit mode closed, content unchanged |
-
-### 8.2 Save Edit
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Enter saves | Edit, press Enter | Edit saved, mode closed |
-| Button saves | Edit, click checkmark | Edit saved, mode closed |
-| Content updated | Save edit | Message shows new content |
-| Edited indicator | Save edit | Shows "(edited)" in timestamp |
-| Broadcast to peers | Save edit | Other users see edited content |
-| Toast shown | Save edit | Toast "Message edited" |
-
-### 8.3 Edit Validation
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Empty rejected | Clear content, save | Edit not saved |
-| Same content | Save unchanged | Edit mode closes, no update |
-| Whitespace trimmed | Add spaces, save | Spaces trimmed from content |
-
----
-
-## 9. Message Delete
-
-### 9.1 Delete UI
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Delete in menu | Open menu | Delete option visible (red) |
-| Confirmation dialog | Click Delete | Alert dialog opens |
-| Dialog content | Open dialog | Shows warning about deletion |
-| Cancel closes | Click Cancel | Dialog closes, message unchanged |
-
-### 9.2 Confirm Delete
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Click confirm | Click Delete in dialog | Message deleted |
-| Content changed | Delete message | Shows "[Message deleted]" |
-| Styled differently | Delete message | Message has italic, muted style |
-| No actions | Delete message | No edit/delete/reaction options |
-| Toast shown | Delete message | Toast "Message deleted" |
-| Broadcast to peers | Delete message | Other users see deletion |
-
----
-
-## 10. P2P Multi-User Tests
-
-### 10.1 User Join/Leave
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Join notification | User B joins room | User A sees toast "Bob joined the room" |
-| Leave notification | User B leaves | User A sees toast "Bob left the room" |
-| Peer name tracked | B joins, then leaves | Leave toast shows name, not ID |
-
-### 10.2 Message Sync
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| New message received | A sends | B receives message |
-| History sync | B joins after messages | B receives message history |
-| No duplicates | B syncs twice | Messages not duplicated |
-
-### 10.3 Multi-User Typing
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| See multiple drafts | A and B type | C sees both drafts |
-| Draft cleared on send | A sends | A's draft removed from C's view |
-| Draft timeout | A stops typing | A's draft clears after 3s |
-
----
-
-## 11. Offline/Error States
-
-### 11.1 P2P Failure
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Warning toast | P2P init fails | Toast "P2P connection failed..." shown |
-| Local mode | P2P fails | Status shows "Local" |
-| Messages still work | Send in local mode | Message appears in own view |
-
-### 11.2 Reconnection
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Auto-reconnect | Connection lost | Automatic reconnection attempts |
-| Max attempts | 5 failures | Stops trying, shows error toast |
-| Manual reconnect | Click reconnect | New connection attempt |
-
----
-
-## 12. Persistence Tests
-
-### 12.1 User Data
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| User ID persisted | Create user, reload | Same user ID |
-| User name persisted | Set name, reload | Same name shown |
-| Theme persisted | Toggle theme, reload | Theme preference maintained |
-
-### 12.2 Messages
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Messages saved | Send messages, reload | Messages still visible |
-| Edits saved | Edit message, reload | Edited content persisted |
-| Reactions saved | Add reaction, reload | Reaction persisted |
-| Deletions saved | Delete message, reload | Deletion persisted |
-
----
-
-## 13. Encryption Key Persistence Tests
-
-### 13.1 Key Generation
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Key generated on room create | Create new room | Console shows "Generated new key" |
-| Key saved to storage | Create room, check localStorage | `mindline_encryption_key_{roomId}` exists |
-| Key loaded on refresh | Create room, send message, refresh | Console shows "Loaded existing encryption key" |
-
-### 13.2 Message Decryption After Refresh
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Messages readable after refresh | Send encrypted message, refresh page | Message content still readable |
-| History preserved | Send multiple messages, refresh | All messages visible with correct content |
-| Cross-session persistence | Send message, close tab, reopen | Message history still visible and decryptable |
-
-### 13.3 Key Isolation
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Different keys per room | Create room A and B | Different keys in localStorage for each room |
-| Room A key doesn't decrypt B | Send message in A, check B | Messages only decryptable in their own room |
-
----
-
-## 14. Peer List Component Tests
-
-### 14.1 Peer List Display
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Clickable peer badge | Click peer count badge | Popover opens showing peer list |
-| Shows peer names | Two users connect | Popover shows both users' names |
-| Online indicator | User connects | Green dot shown next to name |
-| Empty state | Connect alone | Shows "No peers connected yet" message |
-
-### 14.2 Peer List Updates
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Peer added to list | Second user joins | New peer appears in list |
-| Peer removed from list | User leaves | Peer removed from list |
-| Name updated | User changes name | Name updates in peer list |
-| Count accurate | 3 users connect | Shows "2 peers" and lists both |
-
----
-
-## 15. P2P Connection Stability Tests
-
-### 15.1 Multiple Peer Join
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| 3 users simultaneous join | A creates, B and C join together | All 3 see each other (2 peers each) |
-| No random disconnects | 3 users chat for 30s | All connections remain stable |
-| Messages reach all peers | A sends message | B and C both receive it |
-
-### 15.2 Peer Disconnect Handling
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Single disconnect callback | B closes tab | A gets ONE "Bob left" toast (not two) |
-| Clean removal | B disconnects | B removed from A's peer list immediately |
-| Reconnection works | B refreshes | B reconnects, shows in A's peer list again |
-
-### 15.3 Room Switch
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Clean room switch | A in room 1, navigates to room 2 | No connection errors, clean transition |
-| No stale connections | Switch rooms quickly 3x | Final room shows correct peer count |
-| Previous room closed | Switch rooms | WebSocket to old room fully closed |
-
-### 15.4 Mesh Monitor
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Retry limit respected | B has network issues | A retries connection max 3 times then stops |
-| Successful reconnect resets | B reconnects | Retry counter reset for B |
-| No infinite loops | Network unstable | No unbounded connection attempts in console |
-
----
-
-## 16. Typing Debounce Tests
-
-### 16.1 Debounce Behavior
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Fast typing debounced | Type "hello" quickly | B receives ~1-2 typing updates, not 5 |
-| Final content sent | Type "hello", wait 100ms | B sees "hello" in draft indicator |
-| Cleared on send | Type, press Enter | Draft indicator clears on B's screen |
-
-### 16.2 Performance
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Reduced network traffic | Type 100 chars quickly | Network tab shows fewer P2P messages |
-| No lost content | Type fast, send | Full message content preserved |
-
----
-
-## 17. Sync and History Tests
-
-### 17.1 History Sync on Join
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| New peer gets history | A sends 5 messages, B joins | B receives all 5 messages |
-| Order preserved | A sends A1, A2, A3 | B sees messages in correct order |
-| No duplicates on resync | B reconnects | Messages not duplicated |
-
-### 17.2 Offline/Online Sync
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Messages persist offline | A sends while B offline | B sees messages when reconnects |
-| Sync after refresh | A sends, B refreshes | B still has messages after refresh |
-
----
-
-## 18. Responsive/Accessibility Tests
-
-### 18.1 Mobile Layout
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Leave text hidden | Mobile viewport | Leave button shows icon only |
-| Input full width | Mobile viewport | Message input spans full width |
-| Bubbles max 80% | Mobile viewport | Messages don't exceed 80% width |
-
-### 18.2 Keyboard Navigation
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Tab through controls | Press Tab | Focus moves through interactive elements |
-| Enter activates buttons | Focus button, Enter | Button activated |
-| Escape closes dialogs | Open dialog, Escape | Dialog closes |
-
-### 18.3 Screen Reader
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Buttons have labels | Check sr-only | All icon buttons have screen reader text |
-| Status announced | Connection changes | Status changes are announced |
-
----
-
-## Test Data Constants
-
-```typescript
-export const TEST_ROOM_ID = 'test-room-12345678';
-export const TEST_USER_A = { name: 'Alice' };
-export const TEST_USER_B = { name: 'Bob' };
-export const TEST_MESSAGE = 'Hello, World!';
-export const TEST_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'];
-```
-
----
-
-## Playwright Configuration Notes
-
-```typescript
-// playwright.config.ts recommendations
-export default defineConfig({
-  testDir: './tests/e2e',
-  timeout: 30000,
-  expect: { timeout: 5000 },
-  fullyParallel: false, // P2P tests need sequential execution
-  workers: 1, // Single worker for P2P coordination
-  use: {
-    baseURL: 'http://localhost:5173',
-    trace: 'on-first-retry',
-  },
-  webServer: [
-    {
-      command: 'pnpm run signaling',
-      port: 3000,
-      reuseExistingServer: true,
-    },
-    {
-      command: 'pnpm run dev',
-      port: 5173,
-      reuseExistingServer: true,
-    },
-  ],
-});
-```
-
----
-
-## Multi-Browser Context Pattern
-
-```typescript
-// Example: Testing P2P between two users
-test('two users can exchange messages', async ({ browser }) => {
-  // Create two isolated browser contexts
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
-
-  const pageA = await contextA.newPage();
-  const pageB = await contextB.newPage();
-
-  // User A creates room
-  await pageA.goto('/');
-  await pageA.getByRole('button', { name: 'Create New Room' }).click();
-  const roomUrl = pageA.url();
-
-  // User B joins same room
-  await pageB.goto(roomUrl);
-
-  // Wait for P2P connection
-  await expect(pageA.getByText('1 peer')).toBeVisible();
-  await expect(pageB.getByText('1 peer')).toBeVisible();
-
-  // User A sends message
-  await pageA.getByPlaceholder('Type a message...').fill('Hello from A!');
-  await pageA.getByPlaceholder('Type a message...').press('Enter');
-
-  // User B receives message
-  await expect(pageB.getByText('Hello from A!')).toBeVisible();
-
-  // Cleanup
-  await contextA.close();
-  await contextB.close();
-});
-```
+Edit/delete, reactions, peer list, typing indicators breadth, mobile
+viewport flows, multi-user (3+) scenarios. These run real P2P and may
+skip when the environment can't establish it; they never silently pass
+without asserting.
+
+## Known gaps (deliberate, tracked)
+
+- Media transfer E2E (two-browser file hash equality, EXIF strip) is
+  verified manually and via unit tests; a CI spec needs fake-device flags.
+- Mobile projects emulate viewports, not real devices or touch firmware.
+- Cross-engine voice playback (Chromium-recorded webm on WebKit) untested
+  in CI.
+- PR CI is Chromium-only; the staging workflow runs the wider matrix.
+
+## Conventions
+
+- Helpers in `tests/e2e/helpers/test-utils.ts` mint a per-room key
+  fragment; every room navigation must carry `#k=...` or the app
+  (correctly) locks you out.
+- `?fastConnect=true` shortens connection timers in test mode.
+- The signaling server rate-limits per IP; helpers throttle room
+  navigations to stay under it.
