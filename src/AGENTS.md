@@ -5,7 +5,7 @@ Additional rules for `/src` (SvelteKit app).
 ## Focus
 - Prefer changes in existing components/stores/modules over introducing new abstractions.
 - Preserve current UI behavior unless the task explicitly asks for UX changes.
-- Keep runtime interactions with WASM behind existing wrappers in `src/lib/wasm`.
+- Keep crypto/protocol logic in `src/lib/crypto` per `docs/PROTOCOL.md`; persistence in `src/lib/storage`.
 
 ## Verification
 - Run `pnpm run verify:web` after changes.

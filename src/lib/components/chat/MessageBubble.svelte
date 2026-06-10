@@ -3,7 +3,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import type { Message } from '$lib/wasm/types';
+	import type { Message } from '$lib/types/message';
 	import ReactionPills from './ReactionPills.svelte';
 	import EmojiPicker from './EmojiPicker.svelte';
 	import MessageActions from './MessageActions.svelte';

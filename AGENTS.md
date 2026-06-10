@@ -12,7 +12,7 @@ This file defines default agent behavior for the entire repository.
 - Do not modify cryptography, security policy, or signaling protocol behavior without explicit request.
 
 ## Verification Rules
-- For Rust/WASM changes: run `pnpm run verify:rust`.
+- For crypto/storage/protocol module changes: run `pnpm run test:unit`.
 - For SvelteKit/frontend changes: run `pnpm run verify:web`.
 - For P2P/signaling/e2e-sensitive changes: run `pnpm run test:e2e:with-signaling`.
 - For cross-cutting or release-ready changes: run `pnpm run verify:ai`.

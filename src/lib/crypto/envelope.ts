@@ -40,7 +40,7 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 /** Length-prefixed field encoding: u32be(len) ‖ utf8(field), per field. */
-function buildAad(roomId: string, senderId: string, klass: string): Uint8Array {
+function buildAad(roomId: string, senderId: string, klass: string): Uint8Array<ArrayBuffer> {
 	const fields = [roomId, senderId, klass].map((f) => textEncoder.encode(f));
 	const total = fields.reduce((sum, f) => sum + 4 + f.length, 0);
 	const out = new Uint8Array(total);
@@ -54,7 +54,7 @@ function buildAad(roomId: string, senderId: string, klass: string): Uint8Array {
 	return out;
 }
 
-function concat(...parts: Uint8Array[]): Uint8Array {
+function concat(...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
 	const out = new Uint8Array(parts.reduce((sum, p) => sum + p.length, 0));
 	let offset = 0;
 	for (const p of parts) {
