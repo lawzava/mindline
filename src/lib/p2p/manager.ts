@@ -6,7 +6,6 @@
 import { P2PConnection } from './connection';
 import { routeP2PMessage, setSendToPeerFn, emitToast } from './handlers';
 import { connection, user, drafts, currentRoomId, messages, delivery } from '$lib/stores';
-import { wasm, isWasmReady } from '$lib/wasm';
 import type { P2PConfig, TypedP2PMessage, ChatMessage, TypingMessage, EditMessage, DeleteMessage, ReactionMessage, UserConnectedMessage, SyncRequestMessage } from './types';
 import { get } from 'svelte/store';
 
@@ -364,7 +363,7 @@ export function broadcastReaction(messageId: string, reaction: string, action: '
  * Request message synchronization from peers
  */
 function requestSync(roomId: string): void {
-	if (!p2pConnection || !isWasmReady()) {
+	if (!p2pConnection) {
 		return;
 	}
 

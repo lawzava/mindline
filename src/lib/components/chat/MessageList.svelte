@@ -1,7 +1,7 @@
 <script lang="ts">
 	import MessageBubble from './MessageBubble.svelte';
 	import { userId } from '$lib/stores';
-	import type { Message } from '$lib/wasm/types';
+	import type { Message } from '$lib/types/message';
 
 	interface Props {
 		messages: Message[];

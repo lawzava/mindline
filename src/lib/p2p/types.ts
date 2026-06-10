@@ -2,7 +2,7 @@
  * P2P Types
  */
 
-import type { Message } from '$lib/wasm/types';
+import type { Message } from '$lib/types/message';
 
 // ============================================
 // Configuration Types
@@ -110,7 +110,6 @@ export interface ChatMessage {
 	messageId: string;
 	timestamp: number;
 	roomId: string;
-	encrypted?: boolean;
 }
 
 /** Typing indicator showing what a peer is currently typing */
@@ -137,7 +136,6 @@ export interface SyncResponseMessage {
 	roomId: string;
 	messages: Message[];
 	timestamp: number;
-	encrypted?: boolean;
 }
 
 /** Notification when a user connects to the room */
