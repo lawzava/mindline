@@ -29,6 +29,9 @@ const config = {
 							'font-src': ['self'],
 							'img-src': ['self', 'data:', 'blob:'],
 							'media-src': ['self', 'blob:'],
+							// scheme-wide ws allowance is deliberate: the signaling
+							// host is runtime-configurable per deploy (MINDLINE_ENV),
+							// so a concrete origin cannot be pinned at build time
 							'connect-src': ['self', 'wss:', 'ws:'],
 							'object-src': ['none'],
 							'base-uri': ['self'],
