@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
-	import { MessageList, MessageInput, DraftIndicator, ConnectionStatus } from '$lib/components/chat';
+	import { MessageList, MessageInput, ConnectionStatus } from '$lib/components/chat';
 	import { currentRoomId, currentRoomMessages, messages, user, drafts, mediaConsent } from '$lib/stores';
 	import { loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
 	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError, sendMediaMessage, acceptMediaTransfer, declineMediaTransfer } from '$lib/p2p';
@@ -313,9 +313,6 @@
 			onDelete={handleDelete}
 			onReaction={handleReaction}
 		/>
-
-		<!-- Draft indicators (what others are typing) -->
-		<DraftIndicator />
 
 		<!-- Large-transfer consent prompts -->
 		{#each $mediaConsent as request (request.offer.transferId)}

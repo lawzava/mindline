@@ -16,12 +16,14 @@
 	interface Props {
 		message: Message;
 		isMe: boolean;
+		/** Suppress the byline when the previous message has the same sender. */
+		grouped?: boolean;
 		onEdit?: (messageId: string, newContent: string) => void;
 		onDelete?: (messageId: string) => void;
 		onReaction?: (messageId: string, emoji: string) => void;
 	}
 
-	let { message, isMe, onEdit, onDelete, onReaction }: Props = $props();
+	let { message, isMe, grouped = false, onEdit, onDelete, onReaction }: Props = $props();
 
 	let isEditing = $state(false);
 	let editContent = $state('');
@@ -77,12 +79,17 @@
 	}
 
 	// Check if message is deleted
-	const isDeleted = $derived(message.message_type === 'Deleted' || message.content === '[Message deleted]');
+	const isDeleted = $derived(
+		message.message_type === 'Deleted' || message.content === '[Message deleted]'
+	);
 
-	// Delivery status for own messages
+	// Delivery status for own messages, reactive to the live store
+	// (the previous get()-based read froze at mount; audit finding).
 	const deliveryStatus = $derived.by(() => {
 		if (!isMe) return null;
-		return delivery.getDeliveryStatus(message.id);
+		const state = $delivery.get(message.id);
+		if (!state) return null;
+		return { delivered: state.deliveredTo.size, total: state.totalPeers };
 	});
 
 	const isFullyDelivered = $derived(
@@ -95,31 +102,25 @@
 </script>
 
 <div
-	class={cn(
-		'group flex flex-col gap-1',
-		isMe ? 'items-end' : 'items-start'
-	)}
+	class={cn('group flex flex-col gap-0.5', isMe ? 'items-end' : 'items-start', grouped ? 'mt-0.5' : 'mt-3')}
 	data-testid="message-bubble"
 >
-	<!-- Sender name (only for others) -->
-	{#if !isMe}
-		<span class="px-3 text-xs font-medium text-muted-foreground truncate max-w-[200px]">
+	<!-- Byline (others only, first message of a group) -->
+	{#if !isMe && !grouped}
+		<span class="max-w-[200px] truncate text-xs font-semibold text-muted-foreground">
 			{message.sender_name}
 		</span>
 	{/if}
 
-	<!-- Message bubble with actions -->
-	<div class={cn('flex items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
-		<!-- Message content -->
+	<!-- Message block with actions -->
+	<div class={cn('flex max-w-full items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
+		<!-- Message content: received is ink on paper, sent gets a faint wash -->
 		<div
 			use:longPress={{ duration: 400, onLongPress: handleLongPress }}
 			class={cn(
-				'max-w-[80%] max-h-[400px] overflow-y-auto rounded-2xl px-4 py-2.5 text-sm select-none',
-				isMe
-					? 'bg-primary text-primary-foreground'
-					: 'bg-muted text-foreground',
-				isDeleted && 'italic text-muted-foreground',
-				'active:scale-[0.98] transition-transform'
+				'max-w-[min(80%,42rem)] break-words',
+				isMe ? 'rounded-lg bg-wash-sent px-3 py-1.5' : 'py-0.5',
+				isDeleted && 'italic text-muted-foreground'
 			)}
 		>
 			{#if isEditing}
@@ -129,7 +130,7 @@
 						bind:value={editContent}
 						onkeydown={handleKeydown}
 						aria-label="Edit message content"
-						class="h-7 min-w-[200px] text-sm bg-background text-foreground"
+						class="h-7 min-w-[200px] bg-background text-sm text-foreground"
 						autofocus
 					/>
 					<Button variant="ghost" size="icon" onclick={saveEdit} class="h-7 w-7" aria-label="Save edit">
@@ -142,13 +143,13 @@
 			{:else if message.attachment}
 				<MediaAttachment attachment={message.attachment} roomId={message.room_id} />
 			{:else}
-				<p class="whitespace-pre-wrap break-words">{message.content}</p>
+				<p class="prose-ink whitespace-pre-wrap break-words">{message.content}</p>
 			{/if}
 		</div>
 
 		<!-- Desktop-only: Actions on hover (hidden on touch devices) -->
 		{#if !isTouchDevice}
-			{#if isMe && !isDeleted && !isEditing}
+			{#if isMe && !isDeleted && !isEditing && !message.attachment}
 				<MessageActions onEdit={startEdit} onDelete={handleDelete} />
 			{/if}
 
@@ -172,19 +173,13 @@
 
 	<!-- Reactions -->
 	{#if !isDeleted && message.reactions && Object.keys(message.reactions).length > 0}
-		<div class="px-3">
-			<ReactionPills
-				reactions={message.reactions}
-				onToggleReaction={handleReaction}
-				{isMe}
-			/>
-		</div>
+		<ReactionPills reactions={message.reactions} onToggleReaction={handleReaction} {isMe} />
 	{/if}
 
 	<!-- Timestamp and delivery status (always visible) -->
 	<span
 		class={cn(
-			'px-3 text-[10px] text-muted-foreground/70 flex items-center gap-1',
+			'flex items-center gap-1 text-xs tabular-nums text-muted-foreground',
 			isMe ? 'justify-end' : 'justify-start'
 		)}
 	>
@@ -198,7 +193,7 @@
 			<Tooltip.Provider>
 				<Tooltip.Root>
 					<Tooltip.Trigger>
-						<span class="inline-flex items-center cursor-help">
+						<span class="inline-flex cursor-help items-center">
 							{#if isFullyDelivered}
 								<CheckCheck class="h-3 w-3 text-primary" />
 							{:else if isPartiallyDelivered}
@@ -212,7 +207,9 @@
 						{#if deliveryStatus.total === 0}
 							<p>Sent (no peers connected)</p>
 						{:else}
-							<p>Delivered to {deliveryStatus.delivered}/{deliveryStatus.total} peer{deliveryStatus.total !== 1 ? 's' : ''}</p>
+							<p>
+								Delivered to {deliveryStatus.delivered}/{deliveryStatus.total} peer{deliveryStatus.total !== 1 ? 's' : ''}
+							</p>
 						{/if}
 					</Tooltip.Content>
 				</Tooltip.Root>
