@@ -1,46 +1,15 @@
-# Security Headers for Mindline
-# These headers work with Cloudflare Pages and other static hosts
+# Security headers for Mindline (Cloudflare). The CSP is strict by design:
+# the room key lives in the URL fragment, so no third-party script may ever
+# run (PROTOCOL.md §6). Fonts are self-hosted; there is no WASM.
 
 /*
-  # Content Security Policy - Prevent XSS attacks (with WASM support)
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss: ws:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';
-
-  # Prevent MIME type sniffing
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss: ws:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
-
-  # Prevent clickjacking
   X-Frame-Options: DENY
-
-  # Enable XSS filtering
-  X-XSS-Protection: 1; mode=block
-
-  # Control referrer information
-  Referrer-Policy: strict-origin-when-cross-origin
-
-  # Prevent DNS prefetching for privacy
+  Referrer-Policy: no-referrer
   X-DNS-Prefetch-Control: off
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(), payment=(), usb=()
 
-  # Disable features that could be exploited
-  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
-
-  # Cache control for static assets
+# Immutable build assets only
+/_app/immutable/*
   Cache-Control: public, max-age=31536000, immutable
-
-# Specific headers for JavaScript files
-/*.js
-  Content-Type: application/javascript; charset=utf-8
-  Cache-Control: public, max-age=31536000, immutable
-
-# Specific headers for CSS files
-/*.css
-  Content-Type: text/css; charset=utf-8
-  Cache-Control: public, max-age=31536000, immutable
-
-# Specific headers for WASM files
-/*.wasm
-  Content-Type: application/wasm
-  Cache-Control: public, max-age=31536000, immutable
-
-# HTML files should not be cached aggressively
-/*.html
-  Cache-Control: public, max-age=0, must-revalidate
