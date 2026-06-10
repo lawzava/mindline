@@ -9,7 +9,7 @@ export function toB64url(bytes: Uint8Array): string {
 	return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export function fromB64url(text: string): Uint8Array | null {
+export function fromB64url(text: string): Uint8Array<ArrayBuffer> | null {
 	if (!/^[A-Za-z0-9_-]*$/.test(text)) return null;
 	const b64 = text.replace(/-/g, '+').replace(/_/g, '/');
 	try {

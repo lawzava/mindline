@@ -21,8 +21,8 @@ import { currentRoomId } from '$lib/stores/room';
 import { connection } from '$lib/stores/connection';
 import { delivery } from '$lib/stores/delivery';
 import { user } from '$lib/stores/user';
-import { wasm, isWasmReady } from '$lib/wasm';
-import type { Message } from '$lib/wasm/types';
+import { saveRoomMessages } from '$lib/storage/messages';
+import type { Message } from '$lib/types/message';
 import { get } from 'svelte/store';
 import { toast } from 'svelte-sonner';
 
@@ -81,7 +81,7 @@ export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void 
  * Handle chat messages from peers
  */
 function handleChatMessage(message: ChatMessage, peerId: string): void {
-	const { content, senderName, senderId, messageId, timestamp, roomId, encrypted } = message;
+	const { content, senderName, senderId, messageId, timestamp, roomId } = message;
 
 	if (!content || (!senderName && !senderId)) {
 		console.warn('[P2P Handler] Invalid chat message received');
@@ -93,27 +93,13 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 		connection.setPeerName(peerId, senderName);
 	}
 
-	// Decrypt message if it's encrypted
-	let decryptedContent = content;
-	if (encrypted && isWasmReady()) {
-		try {
-			const result = wasm.decryptMessageContent(content);
-			if (result) {
-				decryptedContent = result;
-			}
-		} catch (error) {
-			console.warn('[P2P Handler] Failed to decrypt message:', error);
-			decryptedContent = '[Encrypted message - unable to decrypt]';
-		}
-	}
-
 	// Create message object
 	const messageObj: Message = {
 		id: messageId || `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
 		sender_id: senderId || peerId,
 		sender_name: senderName || senderId || peerId,
 		message_type: 'Text',
-		content: decryptedContent,
+		content,
 		timestamp: timestamp || Date.now(),
 		room_id: roomId || get(currentRoomId) || '',
 		status: 'Sent',
@@ -125,25 +111,14 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 		mentions: [],
 		local_timestamp: Date.now(),
 		delivery_attempts: 0,
-		size_bytes: new TextEncoder().encode(decryptedContent).length
+		size_bytes: new TextEncoder().encode(content).length
 	};
 
 	// Add to messages store
 	const targetRoomId = roomId || get(currentRoomId);
 	if (targetRoomId) {
 		messages.addMessage(targetRoomId, messageObj);
-
-		// Store in WASM state and save to localStorage
-		if (isWasmReady()) {
-			try {
-				// First add to WASM's internal state so it can be persisted
-				wasm.receiveMessageFromPeer(messageObj);
-				// Then save to localStorage
-				wasm.saveRoomMessagesToStorage(targetRoomId);
-			} catch (error) {
-				console.error('[P2P Handler] Failed to save to WASM storage:', error);
-			}
-		}
+		saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 
 		// Send delivery acknowledgment back to sender
 		if (sendToPeerFn) {
@@ -200,14 +175,11 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 		// Get messages from store
 		const roomMessages = messages.getRoomMessages(roomId);
 
-		// Send messages unencrypted for sync - WebRTC DataChannel is already encrypted
-		// and peers may have different room keys (key sharing not yet implemented)
 		const syncResponse: SyncResponseMessage = {
 			type: 'sync-response',
 			roomId,
 			messages: roomMessages,
-			timestamp: Date.now(),
-			encrypted: false
+			timestamp: Date.now()
 		};
 
 		// Send response to requesting peer
@@ -223,7 +195,7 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
  * Handle sync response from peer
  */
 function handleSyncResponse(message: SyncResponseMessage, peerId: string): void {
-	const { roomId, messages: syncedMessages, encrypted } = message;
+	const { roomId, messages: syncedMessages } = message;
 	const targetRoomId = roomId || get(currentRoomId);
 
 	if (!targetRoomId) {
@@ -240,31 +212,7 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 	// Start sync tracking
 	connection.startSync(peerId);
 
-	// Decrypt messages if they are encrypted
-	let processedMessages = syncedMessages;
-	if (encrypted && isWasmReady()) {
-		processedMessages = syncedMessages.map((msg) => {
-			// Skip system messages or already-decrypted content
-			if (msg.message_type === 'Deleted' || !(msg as Message & { encrypted?: boolean }).encrypted) {
-				return msg;
-			}
-
-			try {
-				const decryptedContent = wasm.decryptMessageContent(msg.content);
-				return {
-					...msg,
-					content: decryptedContent || msg.content,
-					encrypted: false
-				};
-			} catch (error) {
-				console.warn(`[P2P Handler] Failed to decrypt synced message ${msg.id}:`, error);
-				return {
-					...msg,
-					content: '[Encrypted message - unable to decrypt]'
-				};
-			}
-		});
-	}
+	const processedMessages = syncedMessages;
 
 	// Get existing messages to check for duplicates and state
 	const existingMessages = messages.getRoomMessages(targetRoomId);
@@ -281,14 +229,6 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 		if (!existingMsg) {
 			// New message - add it
 			messages.addMessage(targetRoomId, msg);
-			// Also add to WASM state for persistence
-			if (isWasmReady()) {
-				try {
-					wasm.receiveMessageFromPeer(msg);
-				} catch {
-					// Continue even if individual message fails
-				}
-			}
 			newCount++;
 		} else {
 			// Message exists - check if synced version has important updates
@@ -302,13 +242,6 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 					content: '[Message deleted]',
 					message_type: 'Deleted'
 				});
-				if (isWasmReady()) {
-					try {
-						wasm.deleteMessage(targetRoomId, msg.id);
-					} catch {
-						// Continue even if fails
-					}
-				}
 			}
 			// Also sync reactions if synced has more/different reactions
 			if (msg.reactions && Object.keys(msg.reactions).length > 0) {
@@ -326,14 +259,7 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 	}
 
 	if (newCount > 0) {
-		// Save to WASM storage
-		if (isWasmReady()) {
-			try {
-				wasm.saveRoomMessagesToStorage(targetRoomId);
-			} catch (error) {
-				console.warn('[P2P Handler] Failed to save synced messages to storage:', error);
-			}
-		}
+		saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 	}
 
 	// End sync with short delay for UI visibility
@@ -387,17 +313,7 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
 		original_content: existingMsg?.content || null
 	});
 
-	// Sync to WASM state and save to storage
-	if (isWasmReady()) {
-		try {
-			// Update WASM state first
-			wasm.editMessage(targetRoomId, messageId, newContent);
-			// Then save to localStorage
-			wasm.saveRoomMessagesToStorage(targetRoomId);
-		} catch (error) {
-			console.warn('[P2P Handler] Failed to save edited message:', error);
-		}
-	}
+	saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 }
 
 /**
@@ -425,17 +341,7 @@ function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
 		message_type: 'Deleted'
 	});
 
-	// Sync to WASM state and save to storage
-	if (isWasmReady()) {
-		try {
-			// Update WASM state first
-			wasm.deleteMessage(targetRoomId, messageId);
-			// Then save to localStorage
-			wasm.saveRoomMessagesToStorage(targetRoomId);
-		} catch (error) {
-			console.warn('[P2P Handler] Failed to save deleted message:', error);
-		}
-	}
+	saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 }
 
 /**
@@ -479,21 +385,7 @@ function handleReactionMessage(message: ReactionMessage, peerId: string): void {
 
 	messages.updateMessage(targetRoomId, messageId, { reactions });
 
-	// Sync to WASM state and save to storage
-	if (isWasmReady()) {
-		try {
-			// Update WASM state first
-			if (action === 'add') {
-				wasm.addReaction(targetRoomId, messageId, reaction, senderId);
-			} else {
-				wasm.removeReaction(targetRoomId, messageId, reaction, senderId);
-			}
-			// Then save to localStorage
-			wasm.saveRoomMessagesToStorage(targetRoomId);
-		} catch (error) {
-			console.warn('[P2P Handler] Failed to save reaction:', error);
-		}
-	}
+	saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 }
 
 /**

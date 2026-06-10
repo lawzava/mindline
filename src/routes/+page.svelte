@@ -4,7 +4,6 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { user } from '$lib/stores';
-	import { wasm, isWasmReady } from '$lib/wasm';
 	import { Plus, ArrowRight } from 'lucide-svelte';
 
 	let joinRoomId = $state('');
@@ -32,40 +31,22 @@
 		return trimmed;
 	}
 
-	async function createRoom() {
-		if (!isWasmReady()) return;
-
-		// Ensure user is initialized
+	function ensureUser() {
 		if (!$user.initialized) {
-			const userId = wasm.generateUuid();
-			const name = $user.name || 'Anonymous';
-			wasm.initialize(name, userId);
-			wasm.setMessageManagerUser(userId);
-			user.initialize(name, userId);
+			user.initialize($user.name || 'Anonymous', crypto.randomUUID());
 		}
+	}
 
-		// Generate room ID and create room
-		const roomId = wasm.generateUuid();
-		wasm.createRoom(roomId);
-
-		// Navigate to room
-		await goto(`/${roomId}`);
+	async function createRoom() {
+		ensureUser();
+		await goto(`/${crypto.randomUUID()}`);
 	}
 
 	async function joinRoom() {
 		const room = extractRoomId(joinRoomId);
-		if (!isWasmReady() || !room) return;
+		if (!room) return;
 
-		// Ensure user is initialized
-		if (!$user.initialized) {
-			const userId = wasm.generateUuid();
-			const name = $user.name || 'Anonymous';
-			wasm.initialize(name, userId);
-			wasm.setMessageManagerUser(userId);
-			user.initialize(name, userId);
-		}
-
-		// Navigate to room
+		ensureUser();
 		await goto(`/${room}`);
 	}
 
