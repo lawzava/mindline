@@ -7,7 +7,13 @@
  */
 
 import { fromB64url, toB64url } from '$lib/crypto/b64';
-import { openEnvelope, sealEnvelope, type Envelope } from '$lib/crypto/envelope';
+import {
+	ENVELOPE_VERSION,
+	openEnvelope,
+	sealEnvelope,
+	type Envelope,
+	type EnvelopeClass
+} from '$lib/crypto/envelope';
 import { lp } from '$lib/crypto/lp';
 import {
 	createDeviceIdentity,
@@ -55,7 +61,17 @@ export class CryptoSession {
 	private guard: ReplayGuard;
 	private epoch: number;
 	private seq = 0;
+	// Current key generation (§1.4). The ratchet engine manages this in a
+	// later v3 sub-task; today the room runs at generation 0.
+	private g = 0;
 	private persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/** AES key for an envelope class (PROTOCOL.md §2). */
+	private classKey(t: EnvelopeClass): CryptoKey {
+		if (t === 'hs') return this.keys.hs;
+		if (t === 'eph') return this.keys.eph;
+		return this.keys.msg;
+	}
 
 	private constructor(
 		roomId: string,
@@ -160,7 +176,7 @@ export class CryptoSession {
 		const proof = await crypto.subtle.sign(
 			'HMAC',
 			this.keys.auth,
-			lp('hello', this.deviceId, channelBinding)
+			lp('hello-v3', this.deviceId, channelBinding)
 		);
 		const body: HelloBody = {
 			type: 'hello',
@@ -171,11 +187,14 @@ export class CryptoSession {
 			epoch: this.epoch,
 			seq: ++this.seq
 		};
+		// Hello is an 'hs' envelope under the static handshake key (§3.4):
+		// a member can verify a joiner regardless of the room's generation.
 		const envelope = await sealEnvelope(body, {
-			keys: this.keys,
+			key: this.keys.hs,
 			roomId: this.roomId,
 			identity: this.identity,
-			klass: 'msg'
+			klass: 'hs',
+			g: 0
 		});
 		return JSON.stringify(envelope);
 	}
@@ -187,12 +206,12 @@ export class CryptoSession {
 	async acceptHello(wire: string | Envelope, channelBinding: string): Promise<PeerInfo | null> {
 		try {
 			const envelope: Envelope = typeof wire === 'string' ? JSON.parse(wire) : wire;
-			if (envelope.t !== 'msg' || !envelope.sig) return null;
+			if (envelope.t !== 'hs' || !envelope.sig) return null;
 
 			// The hello carries the key we verify it with: decrypt first
-			// (room-key AAD gate), then check the key binds to the claimed id.
+			// (handshake-key AAD gate), then check the key binds to the id.
 			const spkiProbe = await openEnvelope(envelope, {
-				keys: this.keys,
+				key: this.keys.hs,
 				roomId: this.roomId,
 				senderPublicKey: await this.probeHelloKey(envelope)
 			});
@@ -216,7 +235,7 @@ export class CryptoSession {
 				'HMAC',
 				this.keys.auth,
 				proof,
-				lp('hello', body.deviceId, channelBinding)
+				lp('hello-v3', body.deviceId, channelBinding)
 			);
 			if (!valid) return null;
 
@@ -240,10 +259,11 @@ export class CryptoSession {
 		const nonce = fromB64url(envelope.n);
 		const ciphertext = fromB64url(envelope.c);
 		if (!nonce || !ciphertext) throw new Error('malformed hello');
-		const aad = lp(this.roomId, envelope.s, 'msg');
+		// Must match the v3 envelope AAD for an 'hs' (g=0) envelope (§2).
+		const aad = lp(String(ENVELOPE_VERSION), this.roomId, envelope.s, 'hs', '0');
 		const plaintext = await crypto.subtle.decrypt(
 			{ name: 'AES-GCM', iv: nonce, additionalData: aad },
-			this.keys.msg,
+			this.keys.hs,
 			ciphertext
 		);
 		const body = JSON.parse(new TextDecoder().decode(plaintext)) as HelloBody;
@@ -256,10 +276,11 @@ export class CryptoSession {
 	async sealMessage(body: Record<string, unknown>): Promise<string> {
 		const stamped = { ...body, epoch: this.epoch, seq: ++this.seq };
 		const envelope = await sealEnvelope(stamped, {
-			keys: this.keys,
+			key: this.keys.msg,
 			roomId: this.roomId,
 			identity: this.identity,
-			klass: 'msg'
+			klass: 'msg',
+			g: this.g
 		});
 		return JSON.stringify(envelope);
 	}
@@ -268,10 +289,11 @@ export class CryptoSession {
 	async sealDraft(body: Record<string, unknown>): Promise<string> {
 		const stamped = { ...body, epoch: this.epoch, seq: ++this.seq };
 		const envelope = await sealEnvelope(stamped, {
-			keys: this.keys,
+			key: this.keys.eph,
 			roomId: this.roomId,
 			identity: this.identity,
-			klass: 'eph'
+			klass: 'eph',
+			g: this.g
 		});
 		return JSON.stringify(envelope);
 	}
@@ -282,21 +304,26 @@ export class CryptoSession {
 	 */
 	async openMessage(envelope: Envelope): Promise<Record<string, unknown>> {
 		let senderPublicKey: CryptoKey | undefined;
-		if (envelope.t === 'msg') {
+		// Signed classes (msg, hs) require the sender's TOFU key. A duplicate
+		// hello arrives here as an 'hs' envelope after the peer is verified.
+		if (envelope.t === 'msg' || envelope.t === 'hs') {
 			const peer = this.peers.get(envelope.s);
 			if (!peer) throw new Error(`unverified sender: ${envelope.s}`);
 			senderPublicKey = peer.publicKey;
 		}
 
 		const body = (await openEnvelope(envelope, {
-			keys: this.keys,
+			key: this.classKey(envelope.t),
 			roomId: this.roomId,
 			senderPublicKey
 		})) as Record<string, unknown>;
 
 		const epoch = Number(body.epoch);
 		const seq = Number(body.seq);
-		if (!this.guard.check(envelope.s, envelope.t, epoch, seq)) {
+		// 'hs' (e.g. a duplicate hello) replays under the reliable 'msg'
+		// class, matching how acceptHello tracks the initial hello.
+		const replayClass = envelope.t === 'eph' ? 'eph' : 'msg';
+		if (!this.guard.check(envelope.s, replayClass, epoch, seq)) {
 			throw new Error(`replayed envelope from ${envelope.s} (${epoch}:${seq})`);
 		}
 		this.schedulePersist();

@@ -91,10 +91,10 @@ test.describe('Required Network', () => {
 		);
 		expect(relayContainsPlaintext).toBeFalsy();
 
-		// Every relayed message is a v2 envelope: nonce + ciphertext
+		// Every relayed message is a v3 envelope: nonce + ciphertext
 		const hasEncryptedEnvelope = relayFrames.some(
 			(frame: { data?: { envelope?: { v?: number; c?: string; n?: string } } }) =>
-				frame?.data?.envelope?.v === 2 &&
+				frame?.data?.envelope?.v === 3 &&
 				typeof frame.data.envelope.c === 'string' &&
 				frame.data.envelope.c.length > 0 &&
 				typeof frame.data.envelope.n === 'string'
