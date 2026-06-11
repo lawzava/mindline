@@ -50,7 +50,11 @@ one of them is a bug.
   page load runs whatever JavaScript the server and CDN deliver. The
   encryption stops the infrastructure from reading your messages; it
   cannot stop a malicious build of the app itself. An installed, signed
-  client would raise this ceiling; bundle verification is future work.
+  client would raise this ceiling. Subresource Integrity does **not** —
+  it can't defend against the party that serves the entry HTML, which is
+  exactly this adversary; [`docs/BUNDLE_VERIFICATION.md`](docs/BUNDLE_VERIFICATION.md)
+  is the full analysis and the genuine (reproducible-build / pinned-verifier)
+  paths.
 
 ## Architecture
 
