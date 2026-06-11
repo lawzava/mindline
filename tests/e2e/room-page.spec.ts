@@ -179,6 +179,25 @@ test.describe('Room Page', () => {
 		expect(residue.currentRoom).toBeNull();
 	});
 
+	test('burning in one tab evacuates other tabs of the same room', async ({ page, context }) => {
+		const roomId = generateTestRoomId();
+		await joinRoom(page, roomId);
+		const roomUrl = page.url(); // includes the #k= fragment
+
+		const second = await context.newPage();
+		await second.goto(roomUrl);
+		await expect(second.locator('[data-testid="message-input"]')).toBeVisible();
+
+		await page.locator('[data-testid="leave-room-btn"]').click();
+		await page.locator('[data-testid="leave-burn-btn"]').click();
+		await page.waitForURL('/');
+
+		// The second tab holds the keys in memory; the burn broadcast must
+		// evacuate it so it cannot re-persist the deleted history.
+		await second.waitForURL('/');
+		await second.close();
+	});
+
 	test('should show empty message state initially', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);

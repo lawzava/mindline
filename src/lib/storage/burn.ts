@@ -33,6 +33,16 @@ export async function burnRoomData(roomId: string, deviceId: string | null): Pro
 			/* no localStorage: nothing persisted there to burn */
 		}
 	}
+	// Other tabs hold the room keys in memory and would re-persist history;
+	// tell them to evacuate. Announced even on partial failure so they stop
+	// writing either way.
+	try {
+		const channel = new BroadcastChannel('mindline_burn');
+		channel.postMessage({ roomId });
+		channel.close();
+	} catch {
+		/* BroadcastChannel unsupported: single-tab burn only */
+	}
 	if (failures.length > 0) {
 		throw new Error(`burn incomplete — ${failures.join('; ')}`);
 	}
