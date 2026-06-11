@@ -101,6 +101,22 @@ test.describe('Required Network', () => {
 		);
 		expect(hasEncryptedEnvelope).toBeTruthy();
 
+		// Relay honesty (§3.6): the UI says the server is carrying traffic
+		await expect(page.locator('[data-testid="connection-status"]')).toHaveText(
+			/relayed via server/
+		);
+
+		// Drafts (eph, per-keystroke) must never transit the relay (§3.6)
+		await page.locator('[data-testid="message-input"]').fill('draft never relays');
+		await page.waitForTimeout(1500);
+		const ephFrames = await page.evaluate(() => {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			return ((window as any).__relayFrames || []).filter(
+				(frame: { data?: { envelope?: { t?: string } } }) => frame?.data?.envelope?.t === 'eph'
+			);
+		});
+		expect(ephFrames).toHaveLength(0);
+
 		await cleanup(contextB);
 	});
 

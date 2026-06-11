@@ -112,16 +112,19 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		routeP2PMessage(message, peerId);
 	});
 
-	p2pConnection.onPeerConnected((peerId) => {
-		console.log('[P2P Manager] Peer connected:', peerId);
-		connection.addPeer(peerId);
+	p2pConnection.onPeerConnected((peerId, transport) => {
+		console.log('[P2P Manager] Peer connected:', peerId, `(${transport})`);
+		connection.addPeer(peerId, undefined, transport);
 
 		// Target only the new peer: broadcasting here caused O(N^2)
 		// hello/sync storms in heavy rooms (ported stability fix).
 		sendUserConnectedTo(peerId);
 
-		// Request sync from the new peer after the channel stabilizes
-		setTimeout(() => requestSyncFrom(peerId, roomId), 1000);
+		// Request sync from the new peer after the channel stabilizes.
+		// History never relays (§3.5): only direct peers can serve sync.
+		if (transport === 'direct') {
+			setTimeout(() => requestSyncFrom(peerId, roomId), 1000);
+		}
 
 		// Re-announce in case the first one raced the channel opening
 		setTimeout(() => sendUserConnectedTo(peerId), 500);
@@ -609,11 +612,18 @@ export async function sendMediaMessage(
 		throw new Error('media transfer requires an active room connection');
 	}
 
+	// Media never relays (§3.6): offering to relay-only peers would show
+	// the attachment as sent while the bytes can never arrive.
+	const directPeers = p2pConnection.getDirectPeers();
+	if (directPeers.length === 0 && p2pConnection.getConnectedPeers().length > 0) {
+		throw new Error('Direct connection needed for files — the relay cannot carry media.');
+	}
+
 	const messageId = crypto.randomUUID();
 	const offer = await mediaEngine.offer(
 		data,
 		meta,
-		p2pConnection.getConnectedPeers(),
+		directPeers,
 		{ id: userState.id, name: userState.name },
 		messageId
 	);
