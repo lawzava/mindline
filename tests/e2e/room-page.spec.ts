@@ -82,12 +82,13 @@ test.describe('Room Page', () => {
 		// Dialog should appear
 		await expect(page.getByText('Leave Room?')).toBeVisible();
 		await expect(
-			page.getByText('Are you sure you want to leave this room?')
+			page.getByText("Leave keeps this room's history on this device", { exact: false })
 		).toBeVisible();
 
-		// Cancel and Leave buttons should be visible
+		// Cancel, Leave, and Burn buttons should be visible
 		await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Leave Room' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Burn & Leave' })).toBeVisible();
 	});
 
 	test('should cancel leave room and stay in room', async ({ page }) => {
@@ -121,6 +122,80 @@ test.describe('Room Page', () => {
 		// Should navigate to home page
 		await page.waitForURL('/');
 		await expect(page.getByText('Talk on a live wire.')).toBeVisible();
+	});
+
+	test('burn & leave removes keys, history, and room markers from the device', async ({
+		page
+	}) => {
+		const roomId = generateTestRoomId();
+		await joinRoom(page, roomId);
+
+		// Create some history so there is something to burn
+		const input = page.locator('[data-testid="message-input"]');
+		await input.fill('burn me');
+		await input.press('Enter');
+		await expect(page.getByText('burn me')).toBeVisible();
+
+		await page.locator('[data-testid="leave-room-btn"]').click();
+		await page.locator('[data-testid="leave-burn-btn"]').click();
+		await page.waitForURL('/');
+
+		const residue = await page.evaluate(async (id) => {
+			const idbGet = (db: string, store: string) =>
+				new Promise<unknown>((resolve) => {
+					const open = indexedDB.open(db);
+					open.onsuccess = () => {
+						const conn = open.result;
+						if (!conn.objectStoreNames.contains(store)) {
+							conn.close();
+							resolve(undefined);
+							return;
+						}
+						const req = conn.transaction(store).objectStore(store).get(id);
+						req.onsuccess = () => {
+							conn.close();
+							resolve(req.result);
+						};
+						req.onerror = () => {
+							conn.close();
+							resolve(undefined);
+						};
+					};
+					open.onerror = () => resolve(undefined);
+				});
+			return {
+				keys: await idbGet('mindline-keys', 'rooms', id),
+				replay: await idbGet('mindline-keys', 'replay', id),
+				history: await idbGet('mindline-messages', 'pages', id),
+				legacyPlaintext: localStorage.getItem(`chatHistory_${id}`),
+				currentRoom: localStorage.getItem('mindline_currentRoomId')
+			};
+		}, roomId);
+
+		expect(residue.keys).toBeUndefined();
+		expect(residue.replay).toBeUndefined();
+		expect(residue.history).toBeUndefined();
+		expect(residue.legacyPlaintext).toBeNull();
+		expect(residue.currentRoom).toBeNull();
+	});
+
+	test('burning in one tab evacuates other tabs of the same room', async ({ page, context }) => {
+		const roomId = generateTestRoomId();
+		await joinRoom(page, roomId);
+		const roomUrl = page.url(); // includes the #k= fragment
+
+		const second = await context.newPage();
+		await second.goto(roomUrl);
+		await expect(second.locator('[data-testid="message-input"]')).toBeVisible();
+
+		await page.locator('[data-testid="leave-room-btn"]').click();
+		await page.locator('[data-testid="leave-burn-btn"]').click();
+		await page.waitForURL('/');
+
+		// The second tab holds the keys in memory; the burn broadcast must
+		// evacuate it so it cannot re-persist the deleted history.
+		await second.waitForURL('/');
+		await second.close();
 	});
 
 	test('should show empty message state initially', async ({ page }) => {

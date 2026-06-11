@@ -3,6 +3,7 @@
  */
 
 import { writable, derived, get } from 'svelte/store';
+import type { PeerTransport } from '$lib/p2p/types';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'failed' | 'local';
 
@@ -25,6 +26,7 @@ function createConnectionStore() {
 		status: ConnectionStatus;
 		peers: Set<string>;
 		peerNames: Map<string, string>;
+		peerTransports: Map<string, PeerTransport>;
 		error: string | null;
 		reconnection: ReconnectionState;
 		sync: SyncState;
@@ -32,6 +34,7 @@ function createConnectionStore() {
 		status: 'disconnected',
 		peers: new Set(),
 		peerNames: new Map(),
+		peerTransports: new Map(),
 		error: null,
 		reconnection: {
 			isReconnecting: false,
@@ -67,13 +70,19 @@ function createConnectionStore() {
 		/**
 		 * Add a connected peer
 		 */
-		addPeer: (peerId: string, peerName?: string) => {
+		addPeer: (peerId: string, peerName?: string, transport: PeerTransport = 'direct') => {
 			update((state) => {
 				state.peers.add(peerId);
 				if (peerName) {
 					state.peerNames.set(peerId, peerName);
 				}
-				return { ...state, peers: new Set(state.peers), peerNames: new Map(state.peerNames) };
+				state.peerTransports.set(peerId, transport);
+				return {
+					...state,
+					peers: new Set(state.peers),
+					peerNames: new Map(state.peerNames),
+					peerTransports: new Map(state.peerTransports)
+				};
 			});
 		},
 
@@ -101,7 +110,13 @@ function createConnectionStore() {
 			update((state) => {
 				state.peers.delete(peerId);
 				state.peerNames.delete(peerId);
-				return { ...state, peers: new Set(state.peers), peerNames: new Map(state.peerNames) };
+				state.peerTransports.delete(peerId);
+				return {
+					...state,
+					peers: new Set(state.peers),
+					peerNames: new Map(state.peerNames),
+					peerTransports: new Map(state.peerTransports)
+				};
 			});
 		},
 
@@ -109,7 +124,12 @@ function createConnectionStore() {
 		 * Clear all peers
 		 */
 		clearPeers: () => {
-			update((state) => ({ ...state, peers: new Set(), peerNames: new Map() }));
+			update((state) => ({
+				...state,
+				peers: new Set(),
+				peerNames: new Map(),
+				peerTransports: new Map()
+			}));
 		},
 
 		/**
@@ -194,6 +214,7 @@ function createConnectionStore() {
 				status: 'disconnected',
 				peers: new Set(),
 				peerNames: new Map(),
+				peerTransports: new Map(),
 				error: null,
 				reconnection: {
 					isReconnecting: false,
@@ -226,6 +247,10 @@ export const peerCount = derived(connection, ($conn) => $conn.peers.size);
 export const isConnected = derived(connection, ($conn) => $conn.status === 'connected');
 export const connectionError = derived(connection, ($conn) => $conn.error);
 export const peerNames = derived(connection, ($conn) => $conn.peerNames);
+/** Peers reached via the signaling relay instead of a direct channel (§3.6). */
+export const relayedPeers = derived(connection, ($conn) =>
+	[...$conn.peerTransports].filter(([, transport]) => transport === 'relay').map(([id]) => id)
+);
 
 // Reconnection state
 export const isReconnecting = derived(connection, ($conn) => $conn.reconnection.isReconnecting);
