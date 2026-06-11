@@ -90,6 +90,12 @@ pnpm run verify:ai    # all of the above
 
 - App: Cloudflare (adapter-cloudflare), `pnpm run build`.
 - Signaling: `node signaling-server.js` anywhere WebSockets work.
+- **Self-hosted signaling host:** set `VITE_SIGNALING_SERVER` (host or full
+  `wss://` origin) at **build time** and rebuild. The production CSP pins
+  `connect-src` to `self` + that origin, so a different signaling host must
+  be baked into the build — the runtime `MINDLINE_ENV.SIGNALING_SERVER`
+  override no longer bypasses CSP (that scheme-wide `ws:` allowance was an
+  any-host exfil channel for any script that ran).
 - TURN (recommended for reliability across carrier NATs): provision coturn
   or a paid service and set `VITE_TURN_URLS`, `VITE_TURN_USERNAME`,
   `VITE_TURN_CREDENTIAL` (or runtime `MINDLINE_ENV.TURN_SERVERS`). Without

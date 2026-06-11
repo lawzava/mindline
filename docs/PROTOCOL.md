@@ -598,7 +598,7 @@ AAD   = lp(transferId, str(chunkIndex))
 | Past participant           | Keeps everything already synced, and the link (can rejoin visibly). Loses passive read of post-departure traffic once the leave-triggered ratchet lands (§1.4) |
 | Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, delete, or react as others (signatures + §3.7 authorization); can misrepresent history it serves to a syncing device (§3.5) |
 | Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB |
-| XSS / malicious extension  | Game over (can use keys in place). Mitigation: strict CSP, zero third-party runtime origins, self-hosted fonts |
+| XSS / malicious extension  | Game over (can use keys in place). Mitigation: strict CSP — `connect-src` pinned to self + the signaling origin (no any-host WebSocket exfil), zero third-party runtime origins, self-hosted fonts |
 
 Platform residuals, documented user-facing: Safari evicts IndexedDB after
 7 days without interaction unless `persist()` is granted — history and
