@@ -14,6 +14,7 @@ import type {
 	MessageCallback,
 	P2PConfig,
 	PeerCallback,
+	PeerDisconnectedCallback,
 	ConnectionLostCallback,
 	SignalingMessage,
 	TypedP2PMessage
@@ -54,6 +55,26 @@ const CHAT_CHANNEL_ID = 0;
 const EPH_CHANNEL_ID = 1;
 const MAX_RESTART_ATTEMPTS = 5;
 
+/**
+ * §3.6: drafts/presence (eph), sync, and media never transit the relay;
+ * only live msg-class traffic does. The signaling server's 16 KB
+ * maxPayload terminates any socket that exceeds it, so relayed frames
+ * are size-guarded with headroom for the {type,targetId,data} wrapper.
+ */
+const RELAY_FORBIDDEN_TYPES = new Set([
+	'typing',
+	'sync-request',
+	'sync-response',
+	'media-offer',
+	'media-accept',
+	'media-abort'
+]);
+export const MAX_RELAY_WIRE_BYTES = 14 * 1024;
+
+export function relayEligible(type: string, wireBytes: number): boolean {
+	return !RELAY_FORBIDDEN_TYPES.has(type) && wireBytes <= MAX_RELAY_WIRE_BYTES;
+}
+
 export class P2PConnection {
 	private session: CryptoSession;
 	private config: P2PConfig;
@@ -71,7 +92,7 @@ export class P2PConnection {
 
 	private onMessageCallback: MessageCallback | null = null;
 	private onPeerConnectedCallback: PeerCallback | null = null;
-	private onPeerDisconnectedCallback: PeerCallback | null = null;
+	private onPeerDisconnectedCallback: PeerDisconnectedCallback | null = null;
 	private onConnectionLostCallback: ConnectionLostCallback | null = null;
 	private onKnockingCallback: ((clientId: string) => void) | null = null;
 	private onMediaChannelCallback:
@@ -161,7 +182,7 @@ export class P2PConnection {
 	onPeerConnected(cb: PeerCallback): void {
 		this.onPeerConnectedCallback = cb;
 	}
-	onPeerDisconnected(cb: PeerCallback): void {
+	onPeerDisconnected(cb: PeerDisconnectedCallback): void {
 		this.onPeerDisconnectedCallback = cb;
 	}
 	onConnectionLost(cb: ConnectionLostCallback): void {
@@ -229,13 +250,18 @@ export class P2PConnection {
 			}
 		}
 
-		for (const [clientId, relay] of this.relayPeers) {
-			if (!relay.verified) continue;
-			this.sendSignaling({
-				type: 'relay',
-				targetId: clientId,
-				data: { envelope: JSON.parse(wire) as Envelope } as never
-			});
+		if (
+			this.relayPeers.size > 0 &&
+			relayEligible(message.type, new TextEncoder().encode(wire).length)
+		) {
+			for (const [clientId, relay] of this.relayPeers) {
+				if (!relay.verified) continue;
+				this.sendSignaling({
+					type: 'relay',
+					targetId: clientId,
+					data: { envelope: JSON.parse(wire) as Envelope } as never
+				});
+			}
 		}
 	}
 
@@ -259,7 +285,11 @@ export class P2PConnection {
 					}
 				}
 			}
-			if (clientId && this.relayPeers.get(clientId)?.verified) {
+			if (
+				clientId &&
+				this.relayPeers.get(clientId)?.verified &&
+				relayEligible(message.type, new TextEncoder().encode(wire).length)
+			) {
 				this.sendSignaling({
 					type: 'relay',
 					targetId: clientId,
@@ -645,7 +675,7 @@ export class P2PConnection {
 				peer.verified = true;
 				this.deviceToClient.set(info.deviceId, peer.clientId);
 				await this.sendHello(peer); // reciprocate if their hello came first
-				this.onPeerConnectedCallback?.(info.deviceId);
+				this.onPeerConnectedCallback?.(info.deviceId, 'direct');
 			} else {
 				this.onKnockingCallback?.(peer.clientId);
 			}
@@ -693,7 +723,7 @@ export class P2PConnection {
 					// Their side initiated relay mode; reciprocate the hello.
 					await this.offerRelay(fromId);
 				}
-				this.onPeerConnectedCallback?.(info.deviceId);
+				this.onPeerConnectedCallback?.(info.deviceId, 'relay');
 			} else {
 				this.onKnockingCallback?.(fromId);
 			}

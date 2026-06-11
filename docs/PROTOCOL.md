@@ -184,11 +184,17 @@ Only to key-confirmed peers.
 
 ### 3.6 Relay of last resort
 
-If ICE fails (no direct, no TURN), `msg` envelopes (only) may transit the
-signaling relay, same bytes as the DataChannel would carry, after a
-relay-hello (§3.4). The v1 ECDH relay crypto and the plaintext
-compatibility path are deleted. Media and sync never relay (16 KB server
-cap); UI degrades honestly ("direct connection needed for files").
+If ICE fails (no direct, no TURN), live `msg` envelopes —
+chat/edit/delete/reaction/delivery-ack/user-connected, plus the
+relay-hello — may transit the signaling relay, same bytes as the
+DataChannel would carry, after a relay-hello (§3.4). Each relayed frame
+is size-guarded below the server's 16 KB `maxPayload` (oversized
+envelopes are dropped instead of killing the socket). Drafts/presence
+(`eph`), sync, and media never relay; the connection indicator shows
+relayed peers distinctly, with the relay-path metadata cost disclosed in
+PRIVACY.md. The v1 ECDH relay crypto and the plaintext compatibility
+path are deleted. UI degrades honestly ("direct connection needed for
+files").
 
 ## 4. Storage at rest
 

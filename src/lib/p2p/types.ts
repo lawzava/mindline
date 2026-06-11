@@ -224,7 +224,10 @@ export interface P2PMessage {
 // ============================================
 
 export type MessageCallback = (message: TypedP2PMessage, peerId: string) => void;
-export type PeerCallback = (peerId: string) => void;
+/** How a verified peer is reached (§3.6): direct DataChannel or server relay. */
+export type PeerTransport = 'direct' | 'relay';
+export type PeerCallback = (peerId: string, transport: PeerTransport) => void;
+export type PeerDisconnectedCallback = (peerId: string) => void;
 export type ConnectionLostCallback = (reason: string) => void;
 
 // ============================================
