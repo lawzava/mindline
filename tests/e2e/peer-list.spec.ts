@@ -133,7 +133,7 @@ test.describe('Peer List Component', () => {
 		await cleanup(contextB);
 	});
 
-	test('should show green online indicator for connected peers', async ({ page, browser }) => {
+	test('should show online indicator for connected peers', async ({ page, browser }) => {
 		const { pageA, pageB, contextB } = await setupTwoUsers(browser, page);
 
 		const connected = await waitForPeersConnected(pageA, pageB);
@@ -148,9 +148,12 @@ test.describe('Peer List Component', () => {
 		const peerList = pageA.locator('[data-testid="peer-list"]');
 		await expect(peerList).toBeVisible();
 
-		// Should show green dot (Circle element with fill-green-500 class)
-		const greenDot = peerList.locator('.fill-green-500');
-		await expect(greenDot).toBeVisible();
+		// Each peer row carries a status dot: green (bg-success) when direct,
+		// amber (bg-warning) when relayed via the server (§3.6). The old
+		// .fill-green-500 assertion targeted PeerList.svelte, deleted in the
+		// redesign.
+		const statusDot = peerList.locator('.bg-success, .bg-warning').first();
+		await expect(statusDot).toBeVisible();
 
 		await cleanup(contextB);
 	});
