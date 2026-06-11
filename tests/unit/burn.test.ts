@@ -106,6 +106,28 @@ describe('burnRoomData (PROTOCOL.md §4, PRIVACY.md)', () => {
 		expect(await getBlob(keysKept, kept, 't-kept')).not.toBeNull();
 	});
 
+	test('announces the burn on BroadcastChannel so other tabs evacuate', async () => {
+		const roomId = `room-${crypto.randomUUID()}`;
+		const keys = await deriveRoomKeys(await importRoomKeyMaterial(createRoomKey()));
+		await saveRoomKeys(roomId, keys);
+
+		const received = new Promise<unknown>((resolve, reject) => {
+			const channel = new BroadcastChannel('mindline_burn');
+			const timer = setTimeout(() => {
+				channel.close();
+				reject(new Error('no burn broadcast received'));
+			}, 2000);
+			channel.onmessage = (event) => {
+				clearTimeout(timer);
+				channel.close();
+				resolve(event.data);
+			};
+		});
+
+		await burnRoomData(roomId, null);
+		expect(await received).toEqual({ roomId });
+	});
+
 	test('throws when deletion fails, so the UI can report an incomplete burn', async () => {
 		const roomId = `room-${crypto.randomUUID()}`;
 		const keys = await deriveRoomKeys(await importRoomKeyMaterial(createRoomKey()));

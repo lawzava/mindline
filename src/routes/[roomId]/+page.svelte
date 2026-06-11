@@ -4,7 +4,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { MessageList, MessageInput, ConnectionStatus } from '$lib/components/chat';
 	import { currentRoomId, currentRoomMessages, messages, user, drafts, mediaConsent } from '$lib/stores';
-	import { loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
+	import { clearRoomMessages, loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
 	import { burnRoomData } from '$lib/storage/burn';
 	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError, sendMediaMessage, acceptMediaTransfer, declineMediaTransfer } from '$lib/p2p';
 	import type { Message } from '$lib/types/message';
@@ -28,10 +28,29 @@
 	let typingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	const TYPING_DEBOUNCE_MS = 100; // Debounce typing broadcasts
 
+	// A burn in another tab must evacuate this one too: its in-memory keys
+	// would otherwise re-persist the history the burn just deleted.
+	let burnChannel: BroadcastChannel | null = null;
+
 	onMount(async () => {
 		if (!roomId) {
 			isLoading = false;
 			return;
+		}
+
+		try {
+			burnChannel = new BroadcastChannel('mindline_burn');
+			burnChannel.onmessage = (event) => {
+				if (!roomId || event.data?.roomId !== roomId) return;
+				disconnectP2P();
+				void clearRoomMessages(roomId); // drops this tab's cached keys + any rewrite
+				messages.clearRoom(roomId);
+				currentRoomId.clear();
+				toast.info('This room was burned in another tab');
+				goto('/');
+			};
+		} catch {
+			/* BroadcastChannel unsupported: single-tab burn only */
 		}
 
 		// Ensure user is initialized
@@ -90,6 +109,8 @@
 	});
 
 	onDestroy(() => {
+		burnChannel?.close();
+		burnChannel = null;
 		// Cleanup typing debounce timer
 		if (typingDebounceTimer) {
 			clearTimeout(typingDebounceTimer);
@@ -195,16 +216,19 @@
 		showLeaveDialog = false;
 		const id = roomId;
 		const deviceId = getSessionDeviceId();
-		// Disconnect first so no handler persists anything mid-burn.
-		disconnectP2P();
 		if (burn && id) {
+			// Disconnect first so no handler persists anything mid-burn.
+			disconnectP2P();
 			try {
 				await burnRoomData(id, deviceId);
-				messages.clearRoom(id);
 			} catch (error) {
+				// Stay in the room: navigating away would hide the failure
+				// while data remains on the device.
 				console.error('[Room] burn failed:', error);
-				toast.error('Burn incomplete: some local data may remain on this device');
+				toast.error('Burn incomplete: some data may remain on this device. Try again.');
+				return;
 			}
+			messages.clearRoom(id);
 		}
 		currentRoomId.clear();
 		goto('/');
