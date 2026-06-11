@@ -22,6 +22,7 @@ import { connection } from '$lib/stores/connection';
 import { delivery } from '$lib/stores/delivery';
 import { user } from '$lib/stores/user';
 import { saveRoomMessages } from '$lib/storage/messages';
+import { remotePeerOwnsMessage } from './ownership';
 import { applyReaction } from './reactions';
 import { paginateSyncMessages } from './sync';
 import type { Message } from '$lib/types/message';
@@ -356,7 +357,7 @@ function handleUserConnected(message: UserConnectedMessage, peerId: string): voi
  * Handle message edit requests
  */
 function handleEditMessage(message: EditMessage, peerId: string): void {
-	const { messageId, roomId, newContent, senderId, timestamp } = message;
+	const { messageId, roomId, newContent, timestamp } = message;
 
 	const targetRoomId = roomId || get(currentRoomId);
 	if (!targetRoomId || !messageId) {
@@ -364,15 +365,12 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
 		return;
 	}
 
-	// Authorization: the envelope-verified device must own the message.
-	// sender_id alone is self-asserted and forgeable within the room.
+	// Authorization: the envelope-verified device must own the message
+	// (PROTOCOL.md §3.7). Fail closed — no body-asserted fallback.
 	const existingMsg = messages.getMessage(targetRoomId, messageId);
-	if (existingMsg?.sender_device && existingMsg.sender_device !== peerId) {
+	if (!existingMsg) return;
+	if (!remotePeerOwnsMessage(existingMsg, peerId)) {
 		console.warn('[P2P Handler] Edit rejected: device does not own message');
-		return;
-	}
-	if (existingMsg && !existingMsg.sender_device && existingMsg.sender_id !== senderId) {
-		console.warn('[P2P Handler] Edit rejected: sender does not own message');
 		return;
 	}
 
@@ -381,7 +379,7 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
 		content: newContent,
 		edited: true,
 		edit_timestamp: timestamp,
-		original_content: existingMsg?.content || null
+		original_content: existingMsg.content || null
 	});
 
 	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
@@ -391,7 +389,7 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
  * Handle message delete requests
  */
 function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
-	const { messageId, roomId, senderId } = message;
+	const { messageId, roomId } = message;
 
 	const targetRoomId = roomId || get(currentRoomId);
 	if (!targetRoomId || !messageId) {
@@ -399,14 +397,12 @@ function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
 		return;
 	}
 
-	// Authorization: the envelope-verified device must own the message.
+	// Authorization: the envelope-verified device must own the message
+	// (PROTOCOL.md §3.7). Fail closed — no body-asserted fallback.
 	const existingMsg = messages.getMessage(targetRoomId, messageId);
-	if (existingMsg?.sender_device && existingMsg.sender_device !== peerId) {
+	if (!existingMsg) return;
+	if (!remotePeerOwnsMessage(existingMsg, peerId)) {
 		console.warn('[P2P Handler] Delete rejected: device does not own message');
-		return;
-	}
-	if (existingMsg && !existingMsg.sender_device && existingMsg.sender_id !== senderId) {
-		console.warn('[P2P Handler] Delete rejected: sender does not own message');
 		return;
 	}
 
