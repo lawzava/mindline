@@ -8,11 +8,14 @@ test.describe('Required Persistence', () => {
 		const roomId = generateTestRoomId('required-persist-name');
 		await joinRoom(page, roomId);
 
+		await page.locator('[data-testid="room-menu-btn"]').click();
 		const nameInput = page.getByPlaceholder('Your name');
 		await nameInput.fill('RequiredName');
 		await nameInput.press('Enter');
+		await page.keyboard.press('Escape');
 		await page.reload();
 
+		await page.locator('[data-testid="room-menu-btn"]').click();
 		await expect(page.getByPlaceholder('Your name')).toHaveValue('RequiredName', { timeout: 10000 });
 	});
 

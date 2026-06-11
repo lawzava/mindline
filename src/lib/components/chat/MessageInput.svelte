@@ -2,8 +2,10 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Send, Loader2, Paperclip, Camera, Mic, Square, X } from 'lucide-svelte';
 	import { processImage } from '$lib/media/image';
+	import { mediaKindFor } from '$lib/media/classify';
 	import { Recorder, type Recording } from '$lib/media/recorder';
 	import type { MediaKind } from '$lib/media/transfer';
+	import { peerCount } from '$lib/stores';
 	import { toast } from 'svelte-sonner';
 
 	interface Props {
@@ -85,7 +87,7 @@
 				} else {
 					const data = new Uint8Array(await file.arrayBuffer());
 					await onSendMedia(data, {
-						kind: forcedKind ?? 'file',
+						kind: forcedKind ?? mediaKindFor(file.type),
 						name: file.name,
 						mime: file.type || 'application/octet-stream'
 					});
@@ -179,29 +181,32 @@
 	onchange={(e) => handleFiles(e.currentTarget.files)}
 	data-testid="file-input"
 />
+<!-- No capture attribute: with a bare accept filter the OS offers the photo
+     gallery (with camera as an option) instead of forcing the camera or, on
+     some Androids, a generic file manager. -->
 <input
 	bind:this={photoInput}
 	type="file"
-	accept="image/*"
-	capture="environment"
+	accept="image/*,video/*"
+	multiple
 	class="hidden"
 	onchange={(e) => handleFiles(e.currentTarget.files)}
 	data-testid="photo-input"
 />
 
 <div
-	class="flex shrink-0 items-end gap-1.5 border-t border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:gap-2 sm:p-4"
+	class="flex shrink-0 items-end gap-1 border-t border-border bg-background px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:gap-1.5 sm:px-3"
 >
 	{#if recorder?.isRecording}
-		<div class="flex h-11 flex-1 items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 px-3">
+		<div class="flex h-11 flex-1 items-center gap-3 rounded-[1.375rem] bg-destructive/5 px-4">
 			<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-destructive motion-reduce:animate-none"></span>
-			<span class="text-sm tabular-nums" data-testid="record-elapsed">{formatSeconds(recordSeconds)}</span>
+			<span class="text-xs tabular-nums" data-testid="record-elapsed">{formatSeconds(recordSeconds)}</span>
 			<span class="flex-1 text-sm text-muted-foreground">Recording voice note...</span>
-			<Button variant="ghost" size="icon" class="h-9 w-9" onclick={cancelVoice} aria-label="Cancel recording">
+			<Button variant="ghost" size="icon" class="h-9 w-9 text-destructive" onclick={cancelVoice} aria-label="Cancel recording">
 				<X class="h-4 w-4" />
 			</Button>
 		</div>
-		<Button onclick={toggleVoice} size="icon" class="h-11 w-11 shrink-0" data-testid="voice-stop-btn">
+		<Button onclick={toggleVoice} size="icon" class="h-10 w-10 shrink-0 rounded-full" data-testid="voice-stop-btn">
 			<Square class="h-4 w-4" />
 			<span class="sr-only">Stop and send</span>
 		</Button>
@@ -210,7 +215,7 @@
 			<Button
 				variant="ghost"
 				size="icon"
-				class="h-11 w-11 shrink-0 text-muted-foreground"
+				class="h-10 w-10 shrink-0 text-muted-foreground"
 				disabled={disabled || isPreparingMedia}
 				onclick={() => fileInput?.click()}
 				aria-label="Attach a file"
@@ -225,46 +230,53 @@
 			<Button
 				variant="ghost"
 				size="icon"
-				class="hidden h-11 w-11 shrink-0 text-muted-foreground sm:inline-flex"
+				class="h-10 w-10 shrink-0 text-muted-foreground"
 				disabled={disabled || isPreparingMedia}
 				onclick={() => photoInput?.click()}
-				aria-label="Send a photo"
+				aria-label="Send a photo or video"
 				data-testid="photo-btn"
 			>
 				<Camera class="h-4 w-4" />
 			</Button>
 		{/if}
-		<textarea
-			bind:this={inputRef}
-			placeholder="Type a message..."
-			aria-label="Message input"
-			enterkeyhint="send"
-			rows={1}
-			bind:value={message}
-			onkeydown={handleKeydown}
-			oninput={handleInput}
-			{disabled}
-			class="border-input bg-background selection:bg-primary dark:bg-input/30 selection:text-primary-foreground ring-offset-background placeholder:font-sans placeholder:text-sm placeholder:not-italic placeholder:text-muted-foreground prose-ink flex min-h-11 max-h-40 w-full min-w-0 flex-1 resize-none rounded-md border px-3 py-2 italic text-draft shadow-xs transition-[color,box-shadow] outline-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-			data-testid="message-input"
-		></textarea>
-		{#if onSendMedia && !message.trim()}
-			<Button
-				variant="ghost"
-				size="icon"
-				class="h-11 w-11 shrink-0 text-muted-foreground"
-				disabled={disabled || isPreparingMedia}
-				onclick={toggleVoice}
-				aria-label="Record a voice note"
-				data-testid="voice-btn"
-			>
-				<Mic class="h-4 w-4" />
-			</Button>
-		{/if}
+		<div class="relative min-w-0 flex-1">
+			<textarea
+				bind:this={inputRef}
+				placeholder="Message"
+				aria-label="Message input"
+				enterkeyhint="send"
+				rows={1}
+				bind:value={message}
+				onkeydown={handleKeydown}
+				oninput={handleInput}
+				{disabled}
+				class={`flex max-h-40 min-h-10 w-full resize-none rounded-[1.25rem] border border-input bg-input/60 px-4 py-2 text-base leading-[1.45] text-foreground outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[2px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 ${onSendMedia && !message.trim() ? 'pr-11' : 'pr-4'}`}
+				data-testid="message-input"
+			></textarea>
+			<!-- The wire dot: glows only when your words are actually on a wire
+			     (text in the field AND at least one peer connected). -->
+			{#if message.trim() && $peerCount > 0}
+				<span class="breathe absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-draft" aria-hidden="true"></span>
+			{/if}
+			{#if onSendMedia && !message.trim()}
+				<Button
+					variant="ghost"
+					size="icon"
+					class="absolute bottom-0.5 right-1 h-9 w-9 text-muted-foreground"
+					disabled={disabled || isPreparingMedia}
+					onclick={toggleVoice}
+					aria-label="Record a voice note"
+					data-testid="voice-btn"
+				>
+					<Mic class="h-4 w-4" />
+				</Button>
+			{/if}
+		</div>
 		<Button
 			onclick={handleSubmit}
 			disabled={disabled || isSending || !message.trim()}
 			size="icon"
-			class="h-11 w-11 shrink-0"
+			class="h-10 w-10 shrink-0 rounded-full"
 			data-testid="send-btn"
 		>
 			{#if isSending}
