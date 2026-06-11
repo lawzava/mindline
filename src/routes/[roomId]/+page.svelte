@@ -9,8 +9,12 @@
 	import type { Message } from '$lib/types/message';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Copy, LogOut, Loader2 } from 'lucide-svelte';
+	import * as Popover from '$lib/components/ui/popover';
+	import { ChevronLeft, Share2, EllipsisVertical, Loader2, Sun, Moon, Link } from 'lucide-svelte';
+	import { shareInvite } from '$lib/share';
+	import { toggleMode, mode } from 'mode-watcher';
 
 	// Get room ID from URL params
 	const roomId = $derived(page.params.roomId);
@@ -169,6 +173,19 @@
 		toast.success('Invite link copied! Anyone with this link can read the room.');
 	}
 
+	let menuName = $state($user.name);
+
+	function saveMenuName() {
+		const trimmed = menuName.trim();
+		if (trimmed) {
+			user.setName(trimmed);
+			toast.success('Name updated!');
+		} else {
+			menuName = $user.name;
+			toast.error('Name cannot be empty');
+		}
+	}
+
 	function confirmLeave() {
 		showLeaveDialog = true;
 	}
@@ -282,27 +299,89 @@
 	</div>
 {:else}
 	<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden min-h-0">
-		<!-- Connection Status Bar -->
-		<div class="flex flex-col gap-2 border-b bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
-			<div class="flex items-center gap-2">
-				<span class="text-sm text-muted-foreground">Room:</span>
-				<button
-					onclick={copyRoomId}
-					aria-label="Copy room ID to clipboard"
-					class="group inline-flex h-11 items-center gap-2 rounded-full bg-muted px-3 text-xs hover:bg-muted/80 transition-colors"
-					title="Tap to copy room ID"
-					data-testid="copy-room-btn"
+		<!-- Room header: one row of chrome above the stream. -->
+		<div class="border-b border-border bg-background">
+			<div class="flex h-14 items-center gap-1 px-1 sm:px-2">
+				<Button
+					variant="ghost"
+					size="icon"
+					onclick={confirmLeave}
+					class="h-11 w-11 shrink-0 text-muted-foreground"
+					aria-label="Back to start"
+					data-testid="leave-room-btn"
 				>
-					<code>{roomId?.slice(0, 8)}...</code>
-					<Copy class="h-4 w-4 opacity-70 transition-opacity group-hover:opacity-100 motion-reduce:transition-none" />
-				</button>
-			</div>
-			<div class="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-				<ConnectionStatus />
-				<Button variant="ghost" size="sm" onclick={confirmLeave} class="h-11 px-3 gap-2 text-muted-foreground hover:text-foreground" data-testid="leave-room-btn">
-					<LogOut class="h-4 w-4" />
-					<span class="hidden sm:inline">Leave</span>
+					<ChevronLeft class="h-5 w-5" />
 				</Button>
+				<div class="flex min-w-0 flex-1 flex-col items-start">
+					<button
+						onclick={copyRoomId}
+						aria-label="Copy invite link"
+						title="Tap to copy the invite link"
+						class="max-w-full truncate rounded-sm text-sm font-semibold tabular-nums outline-ring/50 hover:text-primary"
+						data-testid="copy-room-btn"
+					>
+						{roomId?.slice(0, 8)}...
+					</button>
+					<ConnectionStatus />
+				</div>
+				<Button
+					variant="ghost"
+					size="icon"
+					onclick={shareInvite}
+					class="h-11 w-11 shrink-0 text-muted-foreground"
+					aria-label="Share invite link"
+					data-testid="share-room-btn"
+				>
+					<Share2 class="h-4 w-4" />
+				</Button>
+				<Popover.Root>
+					<Popover.Trigger
+						class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-ring/50 hover:bg-accent hover:text-foreground"
+						aria-label="Room menu"
+						data-testid="room-menu-btn"
+					>
+						<EllipsisVertical class="h-4 w-4" />
+					</Popover.Trigger>
+					<Popover.Content class="w-64 p-3" side="bottom" align="end">
+						<div class="space-y-3">
+							<div class="space-y-1.5">
+								<label for="display-name" class="text-xs font-medium text-muted-foreground">
+									Your name
+								</label>
+								<Input
+									id="display-name"
+									type="text"
+									placeholder="Your name"
+									aria-label="Your display name"
+									bind:value={menuName}
+									onblur={saveMenuName}
+									onkeydown={(e) => e.key === 'Enter' && saveMenuName()}
+								/>
+							</div>
+							<div class="space-y-0.5 border-t border-border pt-2">
+								<button
+									onclick={copyRoomId}
+									class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+								>
+									<Link class="h-4 w-4 text-muted-foreground" />
+									Copy invite link
+								</button>
+								<button
+									onclick={toggleMode}
+									class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+								>
+									{#if mode.current === 'dark'}
+										<Sun class="h-4 w-4 text-muted-foreground" />
+										Light theme
+									{:else}
+										<Moon class="h-4 w-4 text-muted-foreground" />
+										Dark theme
+									{/if}
+								</button>
+							</div>
+						</div>
+					</Popover.Content>
+				</Popover.Root>
 			</div>
 		</div>
 

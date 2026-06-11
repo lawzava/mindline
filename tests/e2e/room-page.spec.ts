@@ -128,7 +128,7 @@ test.describe('Room Page', () => {
 		await joinRoom(page, roomId);
 
 		// Empty state message should be visible
-		await expect(page.getByText('No messages yet. Start the conversation!')).toBeVisible();
+		await expect(page.getByText("You're the only one here.")).toBeVisible();
 	});
 
 	test('should focus message input on load', async ({ page }) => {
