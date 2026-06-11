@@ -16,6 +16,12 @@ export function paginateSyncMessages(roomMessages: Message[]): Message[][] {
 	let bytes = 0;
 	for (const msg of roomMessages) {
 		const size = new TextEncoder().encode(JSON.stringify(msg)).length;
+		if (size > MAX_BYTES) {
+			// A single oversized item would blow past DataChannel floors
+			// after envelope overhead; it stays local and live-only (§3.5).
+			console.warn('[P2P Sync] excluding oversized history item from sync:', msg.id);
+			continue;
+		}
 		if (page.length > 0 && (page.length >= MAX_COUNT || bytes + size > MAX_BYTES)) {
 			pages.push(page);
 			page = [];
