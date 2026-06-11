@@ -7,7 +7,8 @@
 		connectionError,
 		isReconnecting as isReconnectingStore,
 		reconnectionState,
-		isSyncing
+		isSyncing,
+		relayedPeers
 	} from '$lib/stores';
 	import { reconnectP2P } from '$lib/p2p';
 	import { Loader2, User } from 'lucide-svelte';
@@ -36,6 +37,18 @@
 		switch ($connectionStatus) {
 			case 'connected': {
 				const n = $connectedPeers.length;
+				const relayed = $relayedPeers.length;
+				// Relay honesty (§3.6): ciphertext transits the server; say so.
+				if (relayed > 0) {
+					return {
+						label:
+							relayed === n
+								? 'Connected · relayed via server'
+								: `Connected · ${relayed} of ${n} relayed via server`,
+						dot: 'bg-warning',
+						pulse: false
+					};
+				}
 				return {
 					label: n > 0 ? `Connected · ${n} peer${n !== 1 ? 's' : ''}` : 'Connected · just you',
 					dot: 'bg-success',
@@ -104,13 +117,25 @@
 					{#if $connectedPeers.length > 0}
 						<div class="max-h-48 space-y-1 overflow-y-auto">
 							{#each $connectedPeers as peerId (peerId)}
+								{@const isRelayed = $relayedPeers.includes(peerId)}
 								<div class="flex items-center gap-2 rounded-md px-2 py-1.5">
-									<span class="h-1.5 w-1.5 rounded-full bg-success"></span>
+									<span
+										class={cn('h-1.5 w-1.5 rounded-full', isRelayed ? 'bg-warning' : 'bg-success')}
+									></span>
 									<User class="h-3.5 w-3.5 text-muted-foreground" />
 									<span class="truncate text-sm">{getPeerDisplayName(peerId)}</span>
+									{#if isRelayed}
+										<span class="ml-auto shrink-0 text-xs text-muted-foreground">relay</span>
+									{/if}
 								</div>
 							{/each}
 						</div>
+						{#if $relayedPeers.length > 0}
+							<p class="border-t border-border pt-2 text-xs text-muted-foreground">
+								Relayed peers get live messages only — history and files need a direct
+								connection. Encrypted messages pass through the signaling server.
+							</p>
+						{/if}
 					{:else}
 						<div class="py-4 text-center text-sm text-muted-foreground">
 							<p>No peers connected yet</p>

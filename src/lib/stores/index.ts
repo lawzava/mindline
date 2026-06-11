@@ -17,7 +17,8 @@ export {
 	isReconnecting,
 	reconnectionState,
 	isSyncing,
-	syncState
+	syncState,
+	relayedPeers
 } from './connection';
 export { delivery, fullyDeliveredMessages } from './delivery';
 export { transfers, mediaConsent } from './transfers';
