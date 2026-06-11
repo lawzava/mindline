@@ -190,7 +190,15 @@ cap); UI degrades honestly ("direct connection needed for files").
 
 - `mindline-messages` (IndexedDB): per room, AES-GCM blobs of message pages
   encrypted with `k_storage`, nonce random, AAD `lp(roomId, 'storage',
-  pageIndex)`. localStorage plaintext history is migrated then deleted.
+  pageIndex)`. localStorage plaintext history is migrated then deleted —
+  deletion only after the encrypted write durably commits; on a failed
+  write the plaintext is kept and migration retries on the next load.
+  Plaintext for rooms whose keys were never persisted on the device cannot
+  be encrypted; the start-up migration sweep deletes it instead of leaving
+  it readable at rest (history re-syncs from peers on the next keyed
+  visit). Storage operations are serialized per room, so a stale
+  fire-and-forget save can neither overwrite a newer write nor resurrect
+  a page deleted by burn.
 - `mindline-blobs`: media blobs encrypted with `k_storage`, AAD
   `lp(roomId, 'blob', transferId)`, keyed `{roomId}/{transferId}`; object
   URLs created on demand, revoked on leave; "burn room" deletes keys +
