@@ -215,14 +215,21 @@ export class P2PConnection {
 
 	/** Peers (by deviceId) with a verified open chat channel or relay. */
 	getConnectedPeers(): string[] {
+		const ids = this.getDirectPeers();
+		for (const relay of this.relayPeers.values()) {
+			if (relay.verified) ids.push(relay.deviceId);
+		}
+		return ids;
+	}
+
+	/** Peers reachable over a verified open direct channel — the only ones
+	 *  eligible for media and sync (§3.5/§3.6). */
+	getDirectPeers(): string[] {
 		const ids: string[] = [];
 		for (const peer of this.peers.values()) {
 			if (peer.verified && peer.deviceId && peer.chat.readyState === 'open') {
 				ids.push(peer.deviceId);
 			}
-		}
-		for (const relay of this.relayPeers.values()) {
-			if (relay.verified) ids.push(relay.deviceId);
 		}
 		return ids;
 	}
@@ -674,6 +681,10 @@ export class P2PConnection {
 				peer.deviceId = info.deviceId;
 				peer.verified = true;
 				this.deviceToClient.set(info.deviceId, peer.clientId);
+				// Direct supersedes relay: a stale verified relay entry would
+				// keep ciphertext flowing through the server while the UI
+				// says "direct" — a false security indication.
+				this.relayPeers.delete(peer.clientId);
 				await this.sendHello(peer); // reciprocate if their hello came first
 				this.onPeerConnectedCallback?.(info.deviceId, 'direct');
 			} else {
@@ -732,10 +743,18 @@ export class P2PConnection {
 
 		const envelope = payload.envelope;
 		if (!envelope) return;
+		// Inbound mirror of the outbound relay policy (§3.5/§3.6): eph,
+		// sync, and media bodies are rejected even if a modified peer
+		// pushes them through the server.
+		if (envelope.t !== 'msg') return;
 		const relay = this.relayPeers.get(fromId);
 		if (!relay?.verified) return;
 		try {
 			const body = (await this.session.openMessage(envelope)) as unknown as TypedP2PMessage;
+			if (RELAY_FORBIDDEN_TYPES.has(body.type)) {
+				console.warn('[P2P] dropping relay-forbidden body type:', body.type);
+				return;
+			}
 			this.onMessageCallback?.(body, relay.deviceId);
 		} catch (error) {
 			console.warn('[P2P] dropping relayed envelope:', error);
