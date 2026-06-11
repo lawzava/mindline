@@ -57,8 +57,12 @@ describe('paginateSyncMessages (PROTOCOL.md §3.5)', () => {
 		).toEqual(msgs.map((m) => m.id));
 	});
 
-	test('a single oversized message still ships alone', () => {
+	test('an oversized message is excluded so no page can break the cap', () => {
+		// A single >32KB item would otherwise ship alone and blow past the
+		// DataChannel floor after envelope overhead (§3.5).
 		const huge = makeMessage({ id: 'huge', content: 'y'.repeat(40 * 1024) });
-		expect(paginateSyncMessages([huge])).toEqual([[huge]]);
+		const normal = makeMessage({ id: 'normal' });
+		const pages = paginateSyncMessages([huge, normal]);
+		expect(pages).toEqual([[normal]]);
 	});
 });

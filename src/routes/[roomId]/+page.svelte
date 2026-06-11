@@ -172,7 +172,13 @@
 		data: Uint8Array,
 		meta: Parameters<typeof sendMediaMessage>[1]
 	) {
-		await sendMediaMessage(data, meta);
+		try {
+			await sendMediaMessage(data, meta);
+		} catch (error) {
+			console.warn('[Room] media send refused:', error);
+			toast.error(error instanceof Error ? error.message : 'Could not send media');
+			throw error;
+		}
 	}
 
 	function handleTyping(content: string) {
