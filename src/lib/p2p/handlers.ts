@@ -22,6 +22,7 @@ import { connection } from '$lib/stores/connection';
 import { delivery } from '$lib/stores/delivery';
 import { user } from '$lib/stores/user';
 import { saveRoomMessages } from '$lib/storage/messages';
+import { applyReaction } from './reactions';
 import { paginateSyncMessages } from './sync';
 import type { Message } from '$lib/types/message';
 import type { MediaAbort, MediaAccept, MediaOffer } from '$lib/media/transfer';
@@ -422,7 +423,7 @@ function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
  * Handle message reactions
  */
 function handleReactionMessage(message: ReactionMessage, peerId: string): void {
-	const { messageId, roomId, reaction, senderId, senderName, action } = message;
+	const { messageId, roomId, reaction, action } = message;
 
 	const targetRoomId = roomId || get(currentRoomId);
 	if (!targetRoomId || !messageId || !reaction) {
@@ -436,27 +437,9 @@ function handleReactionMessage(message: ReactionMessage, peerId: string): void {
 		return;
 	}
 
-	// Update reactions in TS store
-	const reactions = { ...existingMsg.reactions };
-	const reactionData = reactions[reaction] || { users: [], count: 0 };
-
-	if (action === 'add') {
-		if (!reactionData.users.includes(senderId)) {
-			reactionData.users.push(senderId);
-			reactionData.count = reactionData.users.length;
-		}
-	} else {
-		reactionData.users = reactionData.users.filter((u) => u !== senderId);
-		reactionData.count = reactionData.users.length;
-		if (reactionData.count === 0) {
-			delete reactions[reaction];
-		}
-	}
-
-	if (reactionData.count > 0) {
-		reactions[reaction] = reactionData;
-	}
-
+	// Membership is keyed by the envelope-verified peerId; the body's
+	// senderId is self-asserted and ignored (PROTOCOL.md §3.5).
+	const reactions = applyReaction(existingMsg.reactions, reaction, peerId, action);
 	messages.updateMessage(targetRoomId, messageId, { reactions });
 
 	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
