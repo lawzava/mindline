@@ -9,7 +9,9 @@
 
 	onMount(() => {
 		// Encrypt any pre-v3 plaintext history at rest (PROTOCOL.md §4).
-		void migrateLegacyPlaintext();
+		migrateLegacyPlaintext().catch((error) => {
+			console.error('[storage] legacy history migration sweep failed:', error);
+		});
 	});
 </script>
 

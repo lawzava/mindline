@@ -64,12 +64,37 @@ async function withStore<T>(
 		return await new Promise<T>((resolve, reject) => {
 			const tx = db.transaction(STORE, mode);
 			const request = fn(tx.objectStore(STORE));
-			request.onsuccess = () => resolve(request.result);
+			let result: T;
+			request.onsuccess = () => {
+				result = request.result;
+			};
 			request.onerror = () => reject(request.error);
+			// Resolve only on durable commit: a write acknowledged at request
+			// level can still abort at commit, and migrate-then-delete must
+			// not drop the plaintext before the ciphertext is committed.
+			tx.oncomplete = () => resolve(result);
+			tx.onabort = () => reject(tx.error ?? request.error);
+			tx.onerror = () => reject(tx.error ?? request.error);
 		});
 	} finally {
 		db.close();
 	}
+}
+
+// Per-room serialization: storage ops apply strictly in call order, so a
+// stale fire-and-forget save can never overwrite a newer write, and an
+// in-flight save can never resurrect a page that a later clear (burn)
+// deleted.
+const opQueues = new Map<string, Promise<unknown>>();
+
+function serialize<T>(roomId: string, op: () => Promise<T>): Promise<T> {
+	const prev = opQueues.get(roomId) ?? Promise.resolve();
+	const next = prev.then(op, op);
+	opQueues.set(
+		roomId,
+		next.catch(() => undefined)
+	);
+	return next;
 }
 
 async function roomKeysFor(roomId: string): Promise<RoomKeys | null> {
@@ -160,50 +185,58 @@ function removeLegacyPlaintext(roomId: string): void {
 	}
 }
 
-export async function loadRoomMessages(roomId: string): Promise<Message[]> {
-	const keys = await roomKeysFor(roomId);
-	if (!keys) return [];
+export function loadRoomMessages(roomId: string): Promise<Message[]> {
+	return serialize(roomId, async () => {
+		const keys = await roomKeysFor(roomId);
+		if (!keys) return [];
 
-	let stored = await readPage(keys, roomId);
-	const legacy = readLegacyPlaintext(roomId);
-	if (legacy.length > 0) {
-		// The encrypted copy is newer when both exist; migrate-then-delete (§4).
-		stored = merge(stored, legacy)
+		let stored = await readPage(keys, roomId);
+		const legacy = readLegacyPlaintext(roomId);
+		if (legacy.length > 0) {
+			// The encrypted copy is newer when both exist; migrate-then-delete
+			// (§4). On a failed write the plaintext is kept and migration
+			// retries on the next load.
+			stored = merge(stored, legacy)
+				.sort((a, b) => a.timestamp - b.timestamp)
+				.slice(-MAX_STORED_MESSAGES);
+			try {
+				await writePage(keys, roomId, stored);
+				removeLegacyPlaintext(roomId);
+			} catch {
+				console.warn(`[storage] history migration failed for ${roomId}; will retry`);
+			}
+		}
+		return [...stored].sort((a, b) => a.timestamp - b.timestamp);
+	});
+}
+
+export function saveRoomMessages(roomId: string, inMemory: Message[]): Promise<void> {
+	return serialize(roomId, async () => {
+		const keys = await roomKeysFor(roomId);
+		if (!keys) return; // no k_storage: nothing is ever persisted in plaintext
+
+		const existing = await readPage(keys, roomId);
+		const merged = merge(inMemory, existing)
 			.sort((a, b) => a.timestamp - b.timestamp)
 			.slice(-MAX_STORED_MESSAGES);
 		try {
-			await writePage(keys, roomId, stored);
-			removeLegacyPlaintext(roomId);
+			await writePage(keys, roomId, merged);
 		} catch {
-			/* quota errors: keep plaintext until a later attempt succeeds */
+			/* quota exceeded: history persistence is best-effort */
 		}
-	}
-	return [...stored].sort((a, b) => a.timestamp - b.timestamp);
+	});
 }
 
-export async function saveRoomMessages(roomId: string, inMemory: Message[]): Promise<void> {
-	const keys = await roomKeysFor(roomId);
-	if (!keys) return; // no k_storage: nothing is ever persisted in plaintext
-
-	const existing = await readPage(keys, roomId);
-	const merged = merge(inMemory, existing)
-		.sort((a, b) => a.timestamp - b.timestamp)
-		.slice(-MAX_STORED_MESSAGES);
-	try {
-		await writePage(keys, roomId, merged);
-	} catch {
-		/* quota exceeded: history persistence is best-effort */
-	}
-}
-
-export async function clearRoomMessages(roomId: string): Promise<void> {
-	keyCache.delete(roomId);
-	try {
-		await withStore('readwrite', (s) => s.delete(roomId));
-	} catch {
-		/* best-effort */
-	}
-	removeLegacyPlaintext(roomId);
+export function clearRoomMessages(roomId: string): Promise<void> {
+	return serialize(roomId, async () => {
+		keyCache.delete(roomId);
+		try {
+			await withStore('readwrite', (s) => s.delete(roomId));
+		} catch {
+			/* best-effort */
+		}
+		removeLegacyPlaintext(roomId);
+	});
 }
 
 /**
