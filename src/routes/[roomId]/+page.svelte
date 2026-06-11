@@ -5,6 +5,7 @@
 	import { MessageList, MessageInput, ConnectionStatus } from '$lib/components/chat';
 	import { currentRoomId, currentRoomMessages, messages, user, drafts, mediaConsent } from '$lib/stores';
 	import { loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
+	import { burnRoomData } from '$lib/storage/burn';
 	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError, sendMediaMessage, acceptMediaTransfer, declineMediaTransfer } from '$lib/p2p';
 	import type { Message } from '$lib/types/message';
 	import { toast } from 'svelte-sonner';
@@ -190,8 +191,21 @@
 		showLeaveDialog = true;
 	}
 
-	function leaveRoom() {
+	async function leaveRoom(burn: boolean) {
 		showLeaveDialog = false;
+		const id = roomId;
+		const deviceId = getSessionDeviceId();
+		// Disconnect first so no handler persists anything mid-burn.
+		disconnectP2P();
+		if (burn && id) {
+			try {
+				await burnRoomData(id, deviceId);
+				messages.clearRoom(id);
+			} catch (error) {
+				console.error('[Room] burn failed:', error);
+				toast.error('Burn incomplete: some local data may remain on this device');
+			}
+		}
 		currentRoomId.clear();
 		goto('/');
 	}
@@ -422,12 +436,23 @@
 			<AlertDialog.Header>
 				<AlertDialog.Title>Leave Room?</AlertDialog.Title>
 				<AlertDialog.Description>
-					Are you sure you want to leave this room? Any unsent messages will be lost.
+					Leave keeps this room's history on this device. Burn also deletes the room's
+					keys, history, and media from this device — other participants keep their
+					copies.
 				</AlertDialog.Description>
 			</AlertDialog.Header>
 			<AlertDialog.Footer>
 				<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-				<AlertDialog.Action onclick={leaveRoom}>Leave Room</AlertDialog.Action>
+				<AlertDialog.Action onclick={() => leaveRoom(false)} data-testid="leave-keep-btn">
+					Leave Room
+				</AlertDialog.Action>
+				<AlertDialog.Action
+					onclick={() => leaveRoom(true)}
+					data-testid="leave-burn-btn"
+					class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+				>
+					Burn &amp; Leave
+				</AlertDialog.Action>
 			</AlertDialog.Footer>
 		</AlertDialog.Content>
 	</AlertDialog.Root>
