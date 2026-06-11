@@ -42,8 +42,8 @@
 		try {
 			currentRoomId.set(roomId);
 
-			// Load existing messages from storage
-			const stored = loadRoomMessages(roomId);
+			// Load existing messages from storage (decrypted with stored keys)
+			const stored = await loadRoomMessages(roomId);
 			if (stored.length > 0) {
 				messages.setRoomMessages(roomId, stored);
 			}
@@ -134,7 +134,7 @@
 			};
 
 			messages.addMessage(roomId, message);
-			saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+			void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 
 			// Broadcast via P2P
 			broadcastChat(content, messageId);
@@ -209,7 +209,7 @@
 			original_content: originalContent
 		});
 
-		saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+		void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 
 		// Broadcast to peers
 		broadcastEdit(messageId, newContent);
@@ -226,7 +226,7 @@
 			message_type: 'Deleted'
 		});
 
-		saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+		void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 
 		// Broadcast to peers
 		broadcastDelete(messageId);
@@ -268,7 +268,7 @@
 
 		// Update local message
 		messages.updateMessage(roomId, messageId, { reactions });
-		saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+		void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 
 		// Broadcast to peers
 		broadcastReaction(messageId, emoji, action);

@@ -174,7 +174,7 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 					messages.updateMessage(targetRoomId, offer.messageId, {
 						attachment: { ...existing.attachment, state: 'ready' }
 					});
-					saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+					void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 				}
 			},
 			onAborted: (transferId, reason) => {
@@ -651,7 +651,7 @@ export async function sendMediaMessage(
 		}
 	};
 	messages.addMessage(roomId, message);
-	saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+	void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 }
 
 /** Consent controls for large incoming transfers. */
