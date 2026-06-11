@@ -1,4 +1,4 @@
-# Mindline Protocol v2
+# Mindline Protocol v3
 
 This is the portable, implementation-defining spec for Mindline's E2E
 encryption, P2P wire protocol, and media transfer. TypeScript + WebCrypto
@@ -7,6 +7,16 @@ only. If code and this document disagree, one of them is a bug.
 Revision 2: incorporates adversarial review (docs/analysis/
 protocol-verification.json) — media nonce-salt fix, seq epochs, defined
 channel binding, sync caps, platform corrections.
+
+Revision 3: key generations with a signed, gid-identified grant
+certificate and a `g == g+1` adoption invariant (wire forward secrecy,
+§1.4); handshake subkey + envelope `g` field and version-bound AAD (§2);
+replay multi-epoch window over a device-identity-scoped monotonic epoch
+high-water that survives burn — no peer-side reset, so no reopened replay
+window (§2); canonical `lp()` in every binding and media-key derivation
+(§0 violations removed). v3 is a hard wire cutover from v2 — pre-launch,
+no install base: deployed v2 sessions stop interoperating and must
+reload. v3 receivers drop `v: 2` envelopes.
 
 ## 0. Canonical encoding
 
@@ -30,17 +40,43 @@ games.
 
 ### 1.2 Subkeys (HKDF-SHA-256, domain-separated)
 
-The raw fragment key is imported once as HKDF material (salt:
-`utf8("mindline-v2")`, info strings below), subkeys derived, and the
-material then dropped — it is never persisted.
+Subkeys split into two families. **Link-static keys** derive from the
+fragment key and never rotate — they are what "holding the link" means
+(membership bootstrap, at-rest access). **Generation keys** derive from
+the current generation secret `rk_g` (§1.4) and rotate with it. The raw
+fragment key is imported once as HKDF material (salt:
+`utf8("mindline-v2")`, info strings below), the static subkeys derived,
+and the material then dropped — it is never persisted.
+
+Link-static (from the fragment key):
 
 | Subkey        | info                     | Use                               |
 | ------------- | ------------------------ | --------------------------------- |
-| `k_msg`       | `mindline/v2/msg`        | AES-256-GCM for chat/control/sync |
-| `k_eph`       | `mindline/v2/eph`        | AES-256-GCM for drafts/presence   |
 | `k_storage`   | `mindline/v2/storage`    | AES-256-GCM at-rest               |
 | `k_auth`      | `mindline/v2/auth`       | HMAC-SHA-256 handshake/signaling  |
+| `k_hs`        | `mindline/v3/handshake`  | AES-256-GCM for hello + rekey-grant bodies (§3.4, §1.4) |
 | `k_mediaBase` | `mindline/v2/media-base` | HMAC-SHA-256 base for media keys  |
+
+Generation-keyed (from `rk_g`, §1.4; same salt):
+
+| Subkey        | info                     | Use                               |
+| ------------- | ------------------------ | --------------------------------- |
+| `k_msg(g)`    | `mindline/v3/msg`        | AES-256-GCM for chat/control/sync |
+| `k_eph(g)`    | `mindline/v3/eph`        | AES-256-GCM for drafts/presence   |
+
+`k_mediaBase` stays static deliberately: media chunks travel only over
+direct DTLS channels (§3.6 — never relay), so there is no capturable
+ciphertext for a leaked link to retro-decrypt; rotating it would buy
+nothing and break fragment-less revisit playback. `k_hs` is static
+because it is the membership bootstrap: a hello must be decryptable by
+members regardless of how far the room has ratcheted past the joiner.
+Note the consequence: `k_hs` is derivable from the link, so it provides
+no confidentiality against a link holder. For hellos that is fine (they
+carry identity metadata a link holder could learn by joining). For
+rekey-grants — which carry `rk_g` itself — confidentiality against a
+leaked link rests **entirely on the carrier**: grants travel only over
+direct DTLS channels whose operator-MITM is detectable via the §3.4
+binding, and never relay (§1.4, §3.6).
 
 Per-transfer media keys are `importKey(HMAC(k_mediaBase, lp('media',
 transferId)))` as AES-256-GCM — an HMAC-based KDF rather than direct HKDF
@@ -66,6 +102,166 @@ identity. That eviction risk is documented user-facing (§6).
 - Residual limit (documented, inherent to capability URLs): a key-holder can
   mint new identities; they cannot impersonate an existing deviceId.
 
+### 1.4 Key generations (wire forward secrecy)
+
+The room runs at an integer **generation** `g ≥ 0`, carried on every
+envelope (§2). Generation 0's secret is the fragment key itself
+(`rk_0 = link key`); every later secret is **32 fresh random bytes**
+minted by the ratcheting member — deliberately *not* an HKDF chain from
+`rk_{g-1}`: any deterministic chain rooted in the link would let a
+leaked link derive every future generation, which is precisely the
+property being removed. `k_msg(g)`/`k_eph(g)` derive from `rk_g` (§1.2).
+
+**What this buys (exact claim — CLAIMS.md must not exceed it).** Wire
+ciphertext a **passive** adversary captured — in practice the signaling
+operator archiving relay frames, the only party that ever sees envelope
+ciphertext (§3.6; direct paths are DTLS) — becomes undecryptable with a
+later-leaked link for every generation `g ≥ 1`, because `rk_g` never
+derives from the link and never transits a relay. Once members destroy a
+generation's keys (retention policy below), it is gone on their side too.
+
+**What it does not buy** (each a named CLAIMS residual). (1) A leaked
+link still grants *entry* — join, then history-by-sync. That is the
+capability-URL membership model, unchanged and visible: a joiner appears
+as a peer, runs §3.4, and is TOFU-pinned. (2) At-rest history stays
+under static `k_storage` (§4): link + a copy of a member device's
+IndexedDB still decrypts stored pages. At-rest generation re-keying is
+explicitly deferred (§4). (3) Members hold the current generation by
+definition; forward secrecy is about *captures*, not about revoking
+members. (4) **Endpoint capture, not just relay.** Grant ciphertext is
+sealed under static `k_hs`, which is link-derivable; so a grant captured
+*anywhere off the direct wire* — an endpoint debug log, a malicious
+browser extension, disk forensics of the `hs` envelope before it is
+discarded — is readable by a later link leak. The relay-archive claim
+above holds because grants never relay; it does **not** extend to
+endpoint captures. Closing this would require wrapping `rk_g` under
+per-device asymmetric keys instead of `k_hs` (see Quantum note) — an
+asymmetric-agreement change deferred to Phase 2 and reserved for owner
+decision (no-WASM stance vs ML-KEM). (5) An **active** adversary holding
+the link at grant time is simply a member (capability model) and reads
+the room live; the §3.4 binding detects a *keyless* operator MITM, not a
+link-holding one. The claim is passive-and-later-leak, never active.
+
+**Generation identity.** A generation is identified not by `g` alone but
+by `gid = base64url(SHA-256(rk_g))[0..16]`. `gid` is unforgeable without
+`rk_g` and unpredictable, so it both names the generation instance and
+proves the namer holds the key. Two members that independently mint at
+the same `g` produce different `rk_g` and therefore different `gid` —
+the wire distinguishes them (below), which `g` alone cannot.
+
+**Grant certificate (chained).** The original minter signs a certificate
+`cert = ECDSA(minterDeviceKey, lp('rekey-grant', roomId, str(g), minterDeviceId, gid, prevGid))`
+where `prevGid` is the `gid` of the generation this one succeeds
+(`prevGid = ''` only for `g = 1` succeeding the link generation, whose
+`gid` is fixed `gid_0 = SHA-256(rk_0)[0..16]`). The grant body is
+`rekey-grant { g, minter, minterSpki, gid, prevGid, rk: base64url(rk_g), cert }`.
+A recipient verifies `SHA-256(minterSpki)==minter`, `H(rk)==gid`, and
+`cert` against `minterSpki` before considering the grant — so a forwarder
+cannot claim a forged low `minter` to win a tie-break (F2), nor substitute
+its own `rk` under an honest member's identity. The `prevGid` link makes
+the generation line a **hash chain**: minting generation `g` requires
+naming `gid_{g-1}`, which a member only knows if it actually held
+generation `g-1`, so no member can fabricate a far-ahead `g` to wedge
+the room (F1) — the chain, not a numeric `< 2³²` bound alone, is what
+forecloses leaps.
+
+**Distribution (rekey-grant).** The minter sends each verified **direct**
+peer the grant as a signed `hs` envelope (§2). A recipient that *adopts*
+re-grants the certificate **verbatim** (same `cert`, same `minter`) to
+its own verified direct peers — gossip, so meshes and partitions
+converge without the minter reaching everyone. The transport `hs`
+envelope is re-signed by each forwarder (envelope `s` = forwarder); the
+inner `cert` is never re-signed. Grants never relay (§3.6) — see §1.2
+for why this carrier restriction, not detectability, is the security
+boundary. A member that sees an envelope it cannot decrypt at a known
+`g`, or a hello advertising a `gid` it lacks, sends
+`rekey-request { g, gid? }` direct-only; the answer is a grant.
+
+**Convergence (chained total order on `(g, gid)`).** A grant is
+*admissible* only if its `cert` verifies and `g` is a non-negative
+integer `< 2³²`. Among admissible grants:
+- `g == g_current + 1` and `prevGid == currentGid`: adopt (the normal
+  forward step).
+- `g > g_current + 1`: do not adopt yet — the receiver is behind. It
+  sends `rekey-request { g, gid }` for the missing ancestors and adopts
+  the chain in order once each link verifies back to a generation it
+  holds. This lets a member two or more generations behind **catch up**
+  across a gap (the verified chain authorises the jump) without ever
+  honouring an unchained leap (closes the strict-`+1` liveness gap while
+  keeping F1's wedge defence).
+- `g == g_current` with a *different* `gid`: a same-generation sibling
+  (concurrent mint or healed partition). Resolve to lower `gid`. To bound
+  grind/flood, same-`g` siblings are accepted **only within a short
+  convergence window** (`SIBLING_WINDOW`, from first observing `g`) and
+  at most a small fixed number of siblings are retained per `g`; after
+  the window the established `gid` is final and a later same-`g` sibling
+  is rejected (a genuinely-behind member instead requests the established
+  generation). This stops a member from forcing unbounded ever-lower
+  same-`g` siblings to bloat retained keys and trial-decrypt (review #3).
+
+The chain + lower-`gid` tie-break is a deterministic total order, so
+concurrent ratchets and healed partitions converge on one winner (F3).
+`g` is never advanced from a hello advertisement — only from a verified
+grant chain.
+
+**Key retention and the FS horizon.** Encryption always uses the winning
+current generation. The receiver retains *decrypt-only* keys for prior
+and losing-sibling generations indexed by `(g, gid)`, and **trial-decrypts**
+an incoming envelope across the retained keys for its `g` — so a winner
+adopting `g` never silently drops a losing sibling's in-flight `g`
+traffic (F3). Retention is an **availability** parameter, deliberately
+separated from the FS horizon: a generation is *retired* (no longer used
+to encrypt) the instant a successor is adopted — that is what bounds new
+ciphertext — and its decrypt keys are destroyed only when **two** further
+generations have superseded it (so a member holds at most ~3
+generations). Destroying old wire keys does not lose *content* **as long
+as a key-confirmed direct peer still holds the history to serve**:
+history re-syncs re-encrypted under the current generation (§3.5), so a
+member that missed a generation recovers those messages by sync, not by
+hoarding old keys. The conditional matters — if the only reachable peers
+are relay-only, offline, or have themselves dropped the history (and the
+item was not a sync-excluded oversized one, §3.5), that content is not
+recoverable; this is the same reachability dependency sync already has.
+The FS guarantee is therefore "no new ciphertext under a retired
+generation, and its keys are gone within two further ratchets"; backward
+key recovery is impossible by design.
+
+**Triggers and minter selection.** Any member may ratchet. Mandatory
+triggers: (a) a verified newcomer join; (b) an explicit member leave or
+burn-on-leave. The minter is the **lowest-deviceId verified direct peer
+that currently holds a grantable (non-reloaded) generation** — i.e. one
+that still has raw `rk_g`. Concurrent mints converge by `(g, gid)`.
+Join-triggered ratchets are debounced (one ratchet per burst of joins
+within a short window) so a churning room does not ratchet per-join.
+Raw generation secrets are **never persisted** — members persist only
+the derived non-extractable `k_msg(g)`/`k_eph(g)` CryptoKeys (plus
+retained generations, swept on startup). A reloaded member can read and
+write but cannot grant. **Liveness rule (F2/F8):** a member asked for a
+generation it can no longer grant (raw `rk` gone after reload, or the
+generation is past retention) responds by **minting `g_current + 1`**
+(fresh random — always possible without any prior secret) and granting
+that; gossip propagates it room-wide. So the room can always make
+forward progress even if every member has reloaded. Multi-tab: a tab
+that ratchets or adopts persists the keys, then notifies siblings on
+`BroadcastChannel('mindline_rekey')`; they re-read from the keystore.
+
+**Relay-only members are stranded by a ratchet** (grants never relay):
+they keep sending at their last generation — readable by others only
+while that generation is still retained — and cannot read newer traffic
+until a direct connection delivers a grant. The UI must say so
+explicitly (extends the §3.6 relay honesty: "key rotation pending direct
+connection"). Consistent with relay peers already having no sync and no
+media.
+
+**Quantum note.** No asymmetric agreement is introduced — grants are
+symmetric under `k_hs` over DTLS — so no harvest-now-decrypt-later
+surface is added and the §6 post-quantum content posture is unchanged.
+Moving grants to per-device asymmetric wrapping would *also* close the
+endpoint-capture residual (4) above, but it is the one change the brief
+reserves: it must be **hybrid ML-KEM-768 + X25519**, it pulls in a
+vetted WASM PQC dependency against the repo's no-WASM stance, and it is
+therefore a Phase-2, owner-decided item — never introduced silently.
+
 ## 2. Envelope (everything on the wire)
 
 Every DataChannel payload and every relayed payload is exactly one JSON
@@ -73,15 +269,20 @@ envelope; there is no plaintext message path.
 
 ```ts
 interface Envelope {
-  v: 2;
-  t: 'msg' | 'eph';          // which subkey class encrypted the body
+  v: 3;
+  t: 'msg' | 'eph' | 'hs';   // which subkey class encrypted the body
+  g: number;                  // key generation (§1.4); 0 for 'hs'
   s: string;                  // sender deviceId
   n: string;                  // base64url 96-bit nonce
   c: string;                  // base64url ciphertext (includes GCM tag)
-  sig?: string;               // base64url ECDSA P-256/SHA-256, 'msg' only
+  sig?: string;               // base64url ECDSA P-256/SHA-256, 'msg'+'hs'
 }
 ```
 
+- Key classes: `msg` → `k_msg(g)`, `eph` → `k_eph(g)`, `hs` → static
+  `k_hs` with `g: 0` always (§1.2). `hs` carries only `hello`,
+  `rekey-grant`, and `rekey-request` bodies; receivers reject other body
+  types under `hs`, and reject those three under any other class.
 - Body (plaintext before encryption) is the `TypedP2PMessage` discriminated
   union plus replay fields `epoch` and `seq` (below).
 - **Nonces**: random 96-bit per envelope. All participants encrypt under the
@@ -90,26 +291,69 @@ interface Envelope {
   (q²/2⁹⁷), and per-keystroke draft traffic burns `k_eph`, not `k_msg`.
   Note AAD does not mitigate an IV collision; GCM keystream depends only on
   key+nonce. Media volume uses salted counter nonces instead (§5.2).
-- **AAD**: `lp(roomId, s, t)` — exactly the external context a receiver
-  knows before decrypting. A ciphertext cannot be replayed in another room,
-  as another sender, or under the other key class. Body type and ids live
-  inside the authenticated plaintext.
-- **Signatures**: `t='msg'` envelopes are signed over `AAD ‖ nonce ‖
-  ciphertext`; receivers verify against the TOFU pubkey for `s`.
-  `t='eph'` skips signatures: drafts/presence are transient UI. Accepted
-  residual: any room member can spoof another member's draft or presence
-  ping (not their chat messages).
-- **Replay**: senders maintain `(epoch, seq)` — `epoch` is a persisted
-  per-device counter incremented each session start; when no counter is
-  persisted (first run, or after a burn) it seeds from the wall clock,
-  which exceeds any prior increment count and any earlier clock seed
-  (barring clock regression), so a device that cleared local state is
-  not censored by peers' persisted high-water state; `seq` restarts at 0
-  per session. Receivers persist per `(roomId, senderDeviceId)` high-water
-  `(epoch, seq)` in IndexedDB and accept only `epoch > last` or
-  `epoch == last && seq > seqHigh` (eph: within a 64-entry reorder window,
-  duplicates rejected). A reloaded sender is never censored; replayed old
-  envelopes are never accepted, across reloads too.
+- **AAD**: `lp(str(v), roomId, s, t, str(g))` — the protocol version plus
+  exactly the external context a receiver knows before decrypting. A
+  ciphertext cannot be replayed in another room, as another sender, under
+  another key class, under another generation, or (cheap insurance for
+  any future version interop) across a protocol version. Body type and
+  ids live inside the authenticated plaintext.
+- **Signatures**: `t='msg'` and `t='hs'` envelopes are signed over
+  `AAD ‖ nonce ‖ ciphertext`; receivers verify against the TOFU pubkey
+  for `s`. `t='eph'` skips signatures: drafts/presence are transient UI.
+  Accepted residual: any room member can spoof another member's draft or
+  presence ping (not their chat messages).
+- **Replay — terminology**: the replay `epoch` below is a per-device
+  *session counter*, unrelated to the key generation `g` (§1.4). The two
+  advance independently.
+- **Replay — sender (monotonic device high-water)**: senders stamp every
+  body with `(epoch, seq)`. `epoch` is drawn from a **device-identity-scoped
+  monotonic high-water** persisted alongside the device keypair (§1.3),
+  *not* a room-scoped counter. On each session start the sender takes
+  `epoch = max(Date.now(), highWater + 1)` and writes that back as the
+  new high-water. The read-modify-write must be **atomic** so two tabs
+  never draw the same epoch: serialize with the Web Locks API (lock name
+  `mindline_epoch_{deviceId}`), and where Web Locks is unavailable use a
+  single IndexedDB `readwrite` transaction as the allocator (read,
+  increment, put in one transaction — IDB transactions are atomic) —
+  **not** a plain read-increment-write, which races two tabs onto the
+  same `(epoch, seq=0)` and gets the second tab's traffic rejected as
+  duplicates (review #5). Concurrent tabs thus get **distinct, strictly
+  increasing** epochs. `seq` restarts at 0 per session (per tab). The
+  high-water never regresses, so the epoch a device presents always
+  exceeds any value a peer persisted for it. Bound: the high-water is a
+  safe integer; a one-time far-future clock leaves it permanently large
+  but monotonic, which is harmless (it only ever needs to exceed peers'
+  persisted values, never to be meaningful as a timestamp).
+- **Replay — survives burn without self-censorship**: the high-water is
+  scoped to the device identity, which a burn-on-leave preserves (burn
+  clears room keys/history/replay and the *room*-scoped epoch markers,
+  not the device keypair). So a burned device keeps a monotonic epoch
+  line and is never censored by peers' persisted high-water — the
+  property the Phase-0 wall-clock seed delivered, now without the
+  regression hazard a corrected clock created. This **replaces** the
+  channel-bound guard-reset the design first considered: because the
+  epoch can no longer move backwards, no peer ever needs to reset its
+  acceptance floor, which removes the reset's downgrade-replay window
+  entirely (a reset would have re-admitted a sender's recently-captured
+  signed control envelopes — edit/delete/reaction have no store-layer
+  messageId dedupe — for a member or operator to replay; with no reset
+  there is no such window). Only a device that loses its identity
+  altogether reseeds, and that yields a new `deviceId` for which peers
+  hold no high-water.
+- **Replay — receiver**: per `(roomId, senderDeviceId, class)` the
+  receiver retains up to `K = 4` concurrently-active epochs (a device
+  legitimately runs several tabs, each its own epoch), each with its own
+  seq state: `msg` requires strictly increasing seq within its epoch;
+  `eph` accepts within a 64-entry reorder window, duplicates rejected.
+  An envelope is accepted iff its epoch is in the retained set with
+  fresh seq, or its epoch exceeds the largest retained (admitting it,
+  evicting the smallest when over K). Epochs below the smallest retained
+  are rejected. Eviction is one-way: an evicted epoch is rejected, never
+  reopened, so epoch churn cannot manufacture a replay slot. State
+  persists in IndexedDB across reloads. A reloaded sender is never
+  censored; a delivered envelope is never accepted twice. The K cap also
+  bounds concurrent tabs per device before the lowest-epoch tab
+  self-censors — a self-inflicted, reload-healed limit.
 
 ## 3. Connection lifecycle
 
@@ -149,27 +393,43 @@ discipline is what prevents id exhaustion in long-lived rooms.
 
 ### 3.4 Key confirmation (replaces `ready`)
 
-On `chat` channel open, both sides send, as a normal `msg` envelope:
+On `chat` channel open, both sides send, as a signed `hs` envelope
+(§2 — static `k_hs`, so members can verify a joiner regardless of how
+far the room has ratcheted past it):
 
 ```
-hello { deviceId, name, spki, proof }
-proof = HMAC(k_auth, lp('hello', deviceId, channelBinding))
+hello { deviceId, name, spki, g, gid, proof }
+proof = HMAC(k_auth, lp('hello-v3', deviceId, fpLow, fpHigh))
 ```
 
-`channelBinding` = `lp(sortedPair(localDtlsFingerprint,
-remoteDtlsFingerprint))` — the `a=fingerprint` values from the negotiated
-SDP, sorted lexicographically. The receiver **recomputes** the binding from
-its own view of the connection and verifies the proof; a captured hello
-replayed onto any other connection fails. A peer that cannot produce a
-valid envelope+proof is **unverified**: no sync, no messages accepted,
-surfaced as "knocking without the key". Only key-confirmed peers count as
-participants.
+`fpLow`/`fpHigh` are the two `a=fingerprint` values from the negotiated
+SDP (local and remote), sorted lexicographically and fed to `lp()` as
+separate fields — no delimiter joining (§0). The receiver **recomputes**
+the binding from its own view of the connection and verifies the proof;
+a captured hello replayed onto any other connection fails. Because the
+hello is also ECDSA-signed under the device key (§2), the binding it
+asserts cannot be re-forged by anyone lacking that key even if they hold
+`k_auth` (a link holder): substituting fingerprints requires re-signing
+the body, which a link-holding operator MITM cannot do. The HMAC keeps a
+keyless operator out; the signature keeps a link-holding one from
+impersonating the device. A peer that cannot produce a valid
+envelope+proof is **unverified**: no sync, no messages accepted,
+surfaced as "knocking without the key". Only key-confirmed peers count
+as participants. `g`/`gid` advertise the sender's current generation
+(§1.4): a verified hello whose `gid` the receiver lacks at an equal or
+lower `g` prompts a `rekey-grant`; a higher advertised `g` prompts a
+`rekey-request`. The hello never moves the receiver's own generation —
+only a verified, sequential grant does (§1.4, F1).
 
 Relay variant (§3.6): no DTLS exists, so
-`proof = HMAC(k_auth, lp('hello-relay', deviceId, clientId_self,
+`proof = HMAC(k_auth, lp('hello-relay-v3', deviceId, clientId_self,
 clientId_peer, roomId))`. Weaker binding (clientIds are server-assigned),
-acceptable because envelope signatures + persisted replay state still hold;
-the operator can replay a stale hello but cannot mint traffic with it.
+acceptable because envelope signatures + the monotonic replay high-water
+(§2) still hold; the operator can replay a stale hello but cannot mint
+traffic with it — and, because the relay hello carries no rekey material
+(grants never relay, §1.4/§3.6) and the replay high-water never regresses
+(§2, so there is no acceptance floor to reopen), a replayed stale
+relay-hello yields the operator nothing beyond a phantom presence entry.
 
 ### 3.5 Sync
 
@@ -183,7 +443,11 @@ excluded from sync entirely — it stays local and live-delivered only,
 so no page can break the cap. Edits
 reconcile by `(messageId, editTimestamp)` last-writer-wins; reaction state
 syncs as the full per-message reaction map (fixes removal resurrection).
-Only to key-confirmed peers.
+Only to key-confirmed peers. Sync pages are sealed under the **current**
+`k_msg(g)` like any other `msg` envelope — history reaches a returning
+member re-encrypted at the present generation, which is why catching up
+never requires old generation keys (§1.4): grants restore live
+readability, sync restores missed content.
 
 ### 3.6 Relay of last resort
 
@@ -193,11 +457,16 @@ relay-hello — may transit the signaling relay, same bytes as the
 DataChannel would carry, after a relay-hello (§3.4). Each relayed frame
 is size-guarded below the server's 16 KB `maxPayload` (oversized
 envelopes are dropped instead of killing the socket). Drafts/presence
-(`eph`), sync, and media never relay; the connection indicator shows
-relayed peers distinctly, with the relay-path metadata cost disclosed in
-PRIVACY.md. The v1 ECDH relay crypto and the plaintext compatibility
-path are deleted. UI degrades honestly ("direct connection needed for
-files").
+(`eph`), sync, media, and **rekey-grant/rekey-request** never relay —
+the grant restriction is a security boundary, not a bandwidth choice
+(§1.2, §1.4): a relayed grant would hand the operator ciphertext that a
+leaked link decrypts. Enforced outbound and inbound (a relayed `hs`
+envelope other than the relay-hello is rejected). The connection
+indicator shows relayed peers distinctly, including the post-ratchet
+stranded state ("key rotation pending direct connection", §1.4), with
+the relay-path metadata cost disclosed in PRIVACY.md. The v1 ECDH relay
+crypto and the plaintext compatibility path are deleted. UI degrades
+honestly ("direct connection needed for files").
 
 ### 3.7 Message authorization
 
@@ -236,6 +505,16 @@ to all served history.
   messages + blobs.
 - Quota: `navigator.storage.estimate()` before accepting media; refuse at
   <2× incoming size headroom. `persist()` requested at key creation (§1.2).
+- `k_storage` is link-static and does **not** ratchet with §1.4: at-rest
+  protection targets device theft/forensics, and the §1.4 forward-secrecy
+  claim explicitly excludes it (a leaked link plus a copy of a member
+  device's IndexedDB pages still decrypts them). At-rest generation
+  re-keying (derive `k_storage(g)`, re-encrypt pages through the
+  serialized per-room op queue on ratchet) is deferred: the
+  partial-failure surface — a crash between deleting old-key pages and
+  committing new ones — needs its own design pass, and the marginal
+  adversary (link holder who also exfiltrated the ciphertext database
+  but not the browser's key storage) is narrow. Named in CLAIMS.md.
 
 ## 5. Media transfer
 
@@ -313,10 +592,10 @@ AAD   = lp(transferId, str(chunkIndex))
 | Adversary                  | What they get                                                  |
 | -------------------------- | -------------------------------------------------------------- |
 | Network observer           | Traffic shape only (DTLS/WSS everywhere)                       |
-| Signaling operator         | Room IDs, deviceIds, presence times, ciphertext when relaying. No content, no names. Cannot inject (HMAC) or read relayed content (no key) |
+| Signaling operator         | Room IDs, deviceIds, presence times, ciphertext when relaying. No content, no names. Cannot inject (HMAC) or read relayed content (no key). Archived relay ciphertext of generations ≥ 1 stays unreadable even given a later-leaked link (§1.4) |
 | TURN operator              | Encrypted SCTP/DTLS packets, peer IPs                           |
-| Link-holder (intended or leaked) | Everything: history sync + live room. The link is the key — share sheet says so |
-| Past participant           | Keeps everything already synced; static room key (no rotation in v1, documented) |
+| Link-holder (intended or leaked) | Entry + history-by-sync, as a visible peer (§1.1, §1.4). Passive + later leak: relay-archived ciphertext of generations ≥1 stays unreadable (grants never relay); residual — a grant captured *at an endpoint* (log/extension/forensics) is readable, since `k_hs` is link-derived (§1.4 residual 4) |
+| Past participant           | Keeps everything already synced, and the link (can rejoin visibly). Loses passive read of post-departure traffic once the leave-triggered ratchet lands (§1.4) |
 | Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, delete, or react as others (signatures + §3.7 authorization); can misrepresent history it serves to a syncing device (§3.5) |
 | Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB |
 | XSS / malicious extension  | Game over (can use keys in place). Mitigation: strict CSP, zero third-party runtime origins, self-hosted fonts |
@@ -329,15 +608,30 @@ unless the user's browser sync is E2E-encrypted.
 
 Claims forbidden until true, everywhere in README/PRIVACY/UI: "messages
 never leave your devices" (false when relaying: ciphertext transits the
-server), "no metadata" (server sees rendezvous metadata), "forward secrecy"
-(none in v1).
+server), "no metadata" (server sees rendezvous metadata). "Forward
+secrecy" may be claimed only in the §1.4-scoped form — wire-capture
+forward secrecy with capability-URL membership — never as an
+unqualified property; at-rest and active-join exclusions must ride any
+user-facing statement of it.
 
 ## 7. Test contract
 
 Unit (vitest): HKDF subkey derivation + cross-room independence; AAD
-context binding (room/sender/class swaps rejected); nonce uniqueness;
-(epoch, seq) replay rejection incl. reorder window, reload-epoch
-acceptance, and persisted high-water; signature verify/forge; edit/delete
+context binding (version/room/sender/class/**generation** swaps
+rejected); nonce uniqueness; (epoch, seq) replay rejection incl. reorder
+window, the K-epoch multi-tab window (interleaved epochs accepted,
+evicted-epoch rejection, delivered envelopes never re-accepted);
+**monotonic device high-water** (epoch never regresses across reload,
+clock-correction, or burn → never self-censored, with no peer-side
+reset); generation machinery: `rk_g` subkey derivation + cross-generation
+isolation, `gid = H(rk_g)`, chained grant-certificate verify/forge
+(forged `minter` rejected; unchained `prevGid` rejected; far-ahead `g`
+not adopted without a verified ancestor chain; multi-generation catch-up
+via requested ancestors accepted), same-`g` tie-break by lower `gid`
+bounded by the convergence window, trial-decrypt across retained
+`(g,gid)` keys, can't-grant → mint-next liveness, unknown-generation
+drop, `hs`-class body-type restriction both directions; signature
+verify/forge; edit/delete
 authorization; reaction membership transitions (verified-device keyed,
 §3.7); sync page reconciliation (edit LWW, reaction maps); media
 frame round-trip + reorder/corruption rejection + salt-distinct reuse;
@@ -352,4 +646,8 @@ chat/eph/media channels); unverified-joiner lockout (no fragment → no sync,
 "knocking" state); two-browser file transfer with SHA-256 equality; photo
 EXIF/GPS stripped **and** orientation preserved for a rotation-tagged JPEG;
 cross-engine voice-note playback (record Chromium → play WebKit); reload →
-keys from IndexedDB → history opens without fragment.
+keys from IndexedDB → history opens without fragment; ratchet E2E:
+newcomer join triggers a generation bump, both sides converge on g and
+keep chatting; two-tab same-room concurrent send (no replay
+self-censorship); relay-only pair shows the stranded-rotation state
+after a third member ratchets.
