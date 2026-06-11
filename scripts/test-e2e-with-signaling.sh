@@ -30,16 +30,27 @@ normalize_playwright_args() {
   done
 }
 
+signaling_port_from_health_url() {
+  local port
+  port="$(printf '%s' "$SIGNALING_HEALTH_URL" | sed -E 's#.*://[^:/]+:([0-9]+).*#\1#')"
+  case "$port" in
+    ''|*[!0-9]*) port=3000 ;;
+  esac
+  printf '%s' "$port"
+}
+
 fail_if_stale_local_signaling_port() {
   if ! command -v lsof >/dev/null 2>&1; then
     return
   fi
 
-  local stale_pids
-  stale_pids="$(lsof -tiTCP:3000 -sTCP:LISTEN 2>/dev/null || true)"
+  local port stale_pids
+  port="$(signaling_port_from_health_url)"
+  stale_pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
   if [ -n "$stale_pids" ]; then
-    echo "Refusing to start signaling server: port 3000 is already in use by PID(s): $(echo "$stale_pids" | tr '\n' ' ')" >&2
-    echo "Stop the stale process or re-run with SKIP_SIGNALING_START=1 for remote mode." >&2
+    echo "Refusing to start signaling server: port $port is already in use by PID(s): $(echo "$stale_pids" | tr '\n' ' ')" >&2
+    echo "Stop the stale process, or pick a free port via SIGNALING_HEALTH_URL +" >&2
+    echo "SIGNALING_START_CMD + VITE_SIGNALING_PORT, or re-run with SKIP_SIGNALING_START=1 for remote mode." >&2
     exit 1
   fi
 }
