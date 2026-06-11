@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { userId } from '$lib/stores';
+	import { getSessionDeviceId } from '$lib/p2p';
 
 	interface ReactionData {
 		users: string[];
@@ -15,13 +15,15 @@
 
 	let { reactions, onToggleReaction, isMe }: Props = $props();
 
+	// Reaction membership is keyed by deviceId (PROTOCOL.md §3.5); the id
+	// is stable for the whole session, so a plain read is reactive enough.
 	const reactionList = $derived(
 		Object.entries(reactions)
 			.filter(([_, data]) => data.count > 0)
 			.map(([emoji, data]) => ({
 				emoji,
 				count: data.count,
-				hasReacted: data.users.includes($userId)
+				hasReacted: data.users.includes(getSessionDeviceId() ?? '')
 			}))
 	);
 </script>

@@ -6,7 +6,7 @@
 	import { currentRoomId, currentRoomMessages, messages, user, drafts, mediaConsent } from '$lib/stores';
 	import { clearRoomMessages, loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
 	import { burnRoomData } from '$lib/storage/burn';
-	import { initializeP2P, disconnectP2P, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError, sendMediaMessage, acceptMediaTransfer, declineMediaTransfer } from '$lib/p2p';
+	import { initializeP2P, disconnectP2P, applyReaction, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError, sendMediaMessage, acceptMediaTransfer, declineMediaTransfer } from '$lib/p2p';
 	import type { Message } from '$lib/types/message';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -284,31 +284,14 @@
 		const message = messages.getMessage(roomId, messageId);
 		if (!message) return;
 
-		const reactions = { ...message.reactions };
-		const reactionData = reactions[emoji] || { users: [], count: 0 };
+		// Reactions are keyed by deviceId, the same identity peers verify
+		// on our envelopes (PROTOCOL.md §3.5) — never the local user UUID.
+		const deviceId = getSessionDeviceId();
+		if (!deviceId) return;
 
-		// Toggle reaction
-		const userId = $user.id;
-		const hasReacted = reactionData.users.includes(userId);
-		let action: 'add' | 'remove';
-
-		if (hasReacted) {
-			// Remove reaction
-			reactionData.users = reactionData.users.filter((u) => u !== userId);
-			reactionData.count = reactionData.users.length;
-			action = 'remove';
-			if (reactionData.count === 0) {
-				delete reactions[emoji];
-			} else {
-				reactions[emoji] = reactionData;
-			}
-		} else {
-			// Add reaction
-			reactionData.users.push(userId);
-			reactionData.count = reactionData.users.length;
-			reactions[emoji] = reactionData;
-			action = 'add';
-		}
+		const hasReacted = (message.reactions[emoji]?.users ?? []).includes(deviceId);
+		const action: 'add' | 'remove' = hasReacted ? 'remove' : 'add';
+		const reactions = applyReaction(message.reactions, emoji, deviceId, action);
 
 		// Update local message
 		messages.updateMessage(roomId, messageId, { reactions });

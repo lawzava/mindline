@@ -445,7 +445,9 @@ export function broadcastReaction(messageId: string, reaction: string, action: '
 		messageId,
 		roomId,
 		reaction,
-		senderId: userState.id,
+		// Display/compat hint only: receivers key membership by the
+		// envelope-verified deviceId (PROTOCOL.md §3.5).
+		senderId: cryptoSession?.deviceId ?? userState.id,
 		senderName: userState.name,
 		action,
 		timestamp: Date.now()
