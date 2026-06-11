@@ -7,6 +7,8 @@
  * reused; the AAD binds each chunk to its transfer and position.
  */
 
+import { lp } from '$lib/crypto/lp';
+
 const INDEX_BYTES = 4;
 const NONCE_BYTES = 12;
 const GCM_TAG_BYTES = 16;
@@ -16,21 +18,6 @@ export const FRAME_OVERHEAD = INDEX_BYTES + NONCE_BYTES + GCM_TAG_BYTES;
 
 /** 15,360 B keeps frames under the conservative 16 KiB floor. */
 export const CHUNK_SIZE = 15360;
-
-const textEncoder = new TextEncoder();
-
-function lp(...fields: string[]): Uint8Array<ArrayBuffer> {
-	const encoded = fields.map((f) => textEncoder.encode(f));
-	const out = new Uint8Array(encoded.reduce((sum, f) => sum + 4 + f.length, 0));
-	const view = new DataView(out.buffer);
-	let offset = 0;
-	for (const f of encoded) {
-		view.setUint32(offset, f.length);
-		out.set(f, offset + 4);
-		offset += 4 + f.length;
-	}
-	return out;
-}
 
 function buildNonce(chunkIndex: number, nonceSalt: Uint8Array): Uint8Array<ArrayBuffer> {
 	if (nonceSalt.length !== 8) throw new Error('nonceSalt must be 8 bytes');

@@ -8,6 +8,7 @@
 
 import { fromB64url, toB64url } from '$lib/crypto/b64';
 import { openEnvelope, sealEnvelope, type Envelope } from '$lib/crypto/envelope';
+import { lp } from '$lib/crypto/lp';
 import {
 	createDeviceIdentity,
 	deviceIdFromSpki,
@@ -38,21 +39,6 @@ interface HelloBody {
 export interface PeerInfo {
 	deviceId: string;
 	name: string;
-}
-
-const textEncoder = new TextEncoder();
-
-function lp(...fields: string[]): Uint8Array<ArrayBuffer> {
-	const encoded = fields.map((f) => textEncoder.encode(f));
-	const out = new Uint8Array(encoded.reduce((sum, f) => sum + 4 + f.length, 0));
-	const view = new DataView(out.buffer);
-	let offset = 0;
-	for (const f of encoded) {
-		view.setUint32(offset, f.length);
-		out.set(f, offset + 4);
-		offset += 4 + f.length;
-	}
-	return out;
 }
 
 function epochStorageKey(deviceId: string): string {

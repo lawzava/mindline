@@ -8,6 +8,7 @@
  */
 
 import type { RoomKeys } from '$lib/crypto/keys';
+import { lp } from '$lib/crypto/lp';
 
 const DB_NAME = 'mindline-blobs';
 const DB_VERSION = 1;
@@ -19,21 +20,6 @@ interface StoredBlob {
 	mime: string;
 	size: number;
 	storedAt: number;
-}
-
-const textEncoder = new TextEncoder();
-
-function lp(...fields: string[]): Uint8Array<ArrayBuffer> {
-	const encoded = fields.map((f) => textEncoder.encode(f));
-	const out = new Uint8Array(encoded.reduce((sum, f) => sum + 4 + f.length, 0));
-	const view = new DataView(out.buffer);
-	let offset = 0;
-	for (const f of encoded) {
-		view.setUint32(offset, f.length);
-		out.set(f, offset + 4);
-		offset += 4 + f.length;
-	}
-	return out;
 }
 
 function slotKey(roomId: string, transferId: string): string {
