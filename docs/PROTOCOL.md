@@ -177,7 +177,10 @@ Cursor-paginated over the `chat` DataChannel **only — sync never relays**;
 relay-only sessions get live messages without history, and the UI says so.
 `sync-request {since, cursor}` → `sync-response {messages[≤40],
 nextCursor?}` with page plaintext capped at 32 KB (wire envelope ≈ 44 KB
-after base64, safely under the 64 KiB SDP-default maxMessageSize). Edits
+after base64, safely under the 64 KiB SDP-default maxMessageSize). A
+single history item whose serialized size exceeds the page cap is
+excluded from sync entirely — it stays local and live-delivered only,
+so no page can break the cap. Edits
 reconcile by `(messageId, editTimestamp)` last-writer-wins; reaction state
 syncs as the full per-message reaction map (fixes removal resurrection).
 Only to key-confirmed peers.

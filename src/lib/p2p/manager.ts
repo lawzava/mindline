@@ -612,11 +612,18 @@ export async function sendMediaMessage(
 		throw new Error('media transfer requires an active room connection');
 	}
 
+	// Media never relays (§3.6): offering to relay-only peers would show
+	// the attachment as sent while the bytes can never arrive.
+	const directPeers = p2pConnection.getDirectPeers();
+	if (directPeers.length === 0 && p2pConnection.getConnectedPeers().length > 0) {
+		throw new Error('Direct connection needed for files — the relay cannot carry media.');
+	}
+
 	const messageId = crypto.randomUUID();
 	const offer = await mediaEngine.offer(
 		data,
 		meta,
-		p2pConnection.getConnectedPeers(),
+		directPeers,
 		{ id: userState.id, name: userState.name },
 		messageId
 	);
