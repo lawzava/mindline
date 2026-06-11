@@ -36,12 +36,21 @@ one of them is a bug.
   account without E2E sync enabled) gets full access, including history.
 - **No forward secrecy in v1.** The room key is static for the room's life.
 - **Rendezvous metadata exists.** The signaling server sees room IDs, device
-  identifiers, IP addresses, and timing — not content, not names.
+  identifiers, IP addresses, and timing — not content, not names. Peers
+  connect directly, so room members see each other's IP addresses; on the
+  relay path the operator additionally sees the sending device id and the
+  size and timing of each ciphertext. Cloudflare fronts the app and the
+  signaling host and sees the same connection metadata.
 - **Presence-centric.** Both peers online is the normal mode; media
   transfers require a direct or TURN connection (the relay can't carry
   them).
 - **Safari storage eviction.** Without the "persist" permission, Safari can
   evict keys and history after 7 days of inactivity.
+- **You re-trust the served code on every load.** Like any web app, each
+  page load runs whatever JavaScript the server and CDN deliver. The
+  encryption stops the infrastructure from reading your messages; it
+  cannot stop a malicious build of the app itself. An installed, signed
+  client would raise this ceiling; bundle verification is future work.
 
 ## Architecture
 

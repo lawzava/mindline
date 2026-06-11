@@ -29,11 +29,28 @@ The signaling server introduces browsers to each other. It handles:
 - Room IDs (random identifiers; they grant no access without the link key)
 - Device identifiers (random per-device fingerprints, not names)
 - IP addresses and connection timing
+- The IP addresses inside the WebRTC connection offers it relays between
+  peers — that is what signaling is
 - Encrypted payloads when a direct connection cannot be established and
-  traffic must relay: ciphertext only, which it cannot decrypt or forge
+  traffic must relay: ciphertext only, which it cannot decrypt or forge.
+  On that path it also sees, per message, the sending device identifier
+  and the size and timing of each ciphertext. Live drafts, history sync,
+  and media never use this path, and the app shows you when the relay is
+  carrying your messages.
 
 It stores none of this. There is no database. Logs, if enabled by the
 operator, contain at most the metadata listed above.
+
+## What other parties see
+
+- **Peers see each other's IP addresses.** Connections are direct
+  browser-to-browser (no TURN relay is configured), so anyone in the room
+  learns your IP address, and you learn theirs. If that matters for who
+  you talk to, use a VPN.
+- **Cloudflare fronts both the app and the signaling server.** It sees the
+  same connection metadata the signaling server does — IP addresses,
+  timing, which room IDs rendezvous — plus ordinary web logs for page
+  loads. It never sees message content or the link key.
 
 ## What stays on your device
 
