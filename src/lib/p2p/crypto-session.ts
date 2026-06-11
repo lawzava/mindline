@@ -113,9 +113,13 @@ export class CryptoSession {
 		}
 
 		// Session epoch: persisted counter, incremented every session start.
-		let epoch = 0;
+		// An absent counter (first run, or after a burn) seeds from the clock
+		// so peers' persisted high-water replay state never censors this
+		// device (PROTOCOL.md §2).
+		let epoch: number;
 		try {
-			epoch = (Number(localStorage.getItem(epochStorageKey(identity.deviceId))) || 0) + 1;
+			const stored = Number(localStorage.getItem(epochStorageKey(identity.deviceId))) || 0;
+			epoch = stored > 0 ? stored + 1 : Date.now();
 			localStorage.setItem(epochStorageKey(identity.deviceId), String(epoch));
 		} catch {
 			epoch = Date.now(); // no localStorage: monotonic enough per device

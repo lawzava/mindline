@@ -46,8 +46,16 @@ async function withStore<T>(
 		return await new Promise<T>((resolve, reject) => {
 			const tx = db.transaction(store, mode);
 			const request = fn(tx.objectStore(store));
-			request.onsuccess = () => resolve(request.result);
+			let result: T;
+			request.onsuccess = () => {
+				result = request.result;
+			};
 			request.onerror = () => reject(request.error);
+			// Resolve only on durable commit: burn must not report key
+			// deletion that a late transaction abort then rolls back.
+			tx.oncomplete = () => resolve(result);
+			tx.onabort = () => reject(tx.error ?? request.error);
+			tx.onerror = () => reject(tx.error ?? request.error);
 		});
 	} finally {
 		db.close();

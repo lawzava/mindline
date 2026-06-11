@@ -230,11 +230,9 @@ export function saveRoomMessages(roomId: string, inMemory: Message[]): Promise<v
 export function clearRoomMessages(roomId: string): Promise<void> {
 	return serialize(roomId, async () => {
 		keyCache.delete(roomId);
-		try {
-			await withStore('readwrite', (s) => s.delete(roomId));
-		} catch {
-			/* best-effort */
-		}
+		// Failures propagate: burn must be able to report an incomplete
+		// deletion instead of claiming success.
+		await withStore('readwrite', (s) => s.delete(roomId));
 		removeLegacyPlaintext(roomId);
 	});
 }

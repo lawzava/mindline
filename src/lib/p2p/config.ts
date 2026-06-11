@@ -101,9 +101,11 @@ export function getSignalingConfig(): { server: string; useSSL: boolean } {
 		return { server: 'localhost:3000', useSSL: false };
 	}
 
-	// Development mode - use localhost
+	// Development mode - use localhost. VITE_SIGNALING_PORT lets the e2e
+	// harness run signaling on a free port when 3000 is taken.
 	if (dev) {
-		return { server: 'localhost:3000', useSSL: false };
+		const devPort = (import.meta.env.VITE_SIGNALING_PORT as string | undefined) || '3000';
+		return { server: `localhost:${devPort}`, useSSL: false };
 	}
 
 	const runtimeEnv = getRuntimeEnvConfig();
