@@ -70,6 +70,7 @@ export async function saveRoomKeys(roomId: string, keys: RoomKeys): Promise<void
 				eph: keys.eph,
 				storage: keys.storage,
 				auth: keys.auth,
+				hs: keys.hs,
 				mediaBase: keys.mediaBase
 			},
 			roomId
