@@ -139,7 +139,7 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 	const targetRoomId = roomId || get(currentRoomId);
 	if (targetRoomId) {
 		messages.addMessage(targetRoomId, messageObj);
-		saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+		void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 
 		// Send delivery acknowledgment back to sender
 		if (sendToPeerFn) {
@@ -202,7 +202,7 @@ function handleMediaOffer(offer: MediaOffer, peerId: string): void {
 		}
 	};
 	messages.addMessage(targetRoomId, messageObj);
-	saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 }
 
 /**
@@ -330,7 +330,7 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 	}
 
 	if (newCount > 0) {
-		saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+		void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 	}
 
 	// End sync with short delay for UI visibility
@@ -389,7 +389,7 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
 		original_content: existingMsg?.content || null
 	});
 
-	saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 }
 
 /**
@@ -421,7 +421,7 @@ function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
 		message_type: 'Deleted'
 	});
 
-	saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 }
 
 /**
@@ -465,7 +465,7 @@ function handleReactionMessage(message: ReactionMessage, peerId: string): void {
 
 	messages.updateMessage(targetRoomId, messageId, { reactions });
 
-	saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 }
 
 /**
