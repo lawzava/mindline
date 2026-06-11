@@ -201,8 +201,8 @@ test.describe('P2P Multi-User Messaging', () => {
 		// Wait for disconnect to propagate
 		await page.waitForTimeout(3000);
 
-		// User A should see waiting state
-		await expect(page.locator('[data-testid="peer-count"]')).toContainText('Waiting for peers');
+		// User A should see they are alone again
+		await expect(page.locator('[data-testid="peer-count"]')).toContainText('just you');
 
 		// A should still be able to send messages
 		await sendMessage(page, 'Still working');
