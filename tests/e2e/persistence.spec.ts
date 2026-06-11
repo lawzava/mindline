@@ -60,13 +60,15 @@ test.describe('User Data Persistence', () => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);
 
-		// Set a custom user name via the header input
+		// Set a custom user name via the room menu
+		await page.locator('[data-testid="room-menu-btn"]').click();
 		const nameInput = page.getByPlaceholder('Your name');
 		await nameInput.fill('TestUser123');
 		await nameInput.press('Enter');
 
 		// Wait for toast confirmation
 		await expect(page.getByText('Name updated!')).toBeVisible({ timeout: 3000 });
+		await page.keyboard.press('Escape');
 
 		// Reload the page
 		await page.reload();
@@ -77,6 +79,7 @@ test.describe('User Data Persistence', () => {
 		expect(nameAfterReload).toBe('TestUser123');
 
 		// Also verify it's displayed in the input
+		await page.locator('[data-testid="room-menu-btn"]').click();
 		await expect(page.getByPlaceholder('Your name')).toHaveValue('TestUser123');
 	});
 
@@ -87,8 +90,10 @@ test.describe('User Data Persistence', () => {
 		// Get initial theme state
 		const isDarkBefore = await page.evaluate(() => document.documentElement.classList.contains('dark'));
 
-		// Toggle theme - use role selector instead of getByLabel
-		await page.getByRole('button', { name: /toggle theme/i }).click();
+		// Toggle theme via the room menu
+		await page.locator('[data-testid="room-menu-btn"]').click();
+		await page.getByRole('button', { name: /(light|dark) theme/i }).click();
+		await page.keyboard.press('Escape');
 		await page.waitForTimeout(500);
 
 		// Verify theme changed

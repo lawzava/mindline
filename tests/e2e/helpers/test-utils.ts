@@ -303,7 +303,7 @@ export function handleUnavailableP2P(message: string): never {
 }
 
 /**
- * Check if a page has actual peer connections (not "Waiting for peers")
+ * Check if a page has actual peer connections (not "Connected · just you")
  */
 export async function isPeersActuallyConnected(page: Page): Promise<boolean> {
 	try {
@@ -311,8 +311,7 @@ export async function isPeersActuallyConnected(page: Page): Promise<boolean> {
 		const isVisible = await peerCount.isVisible({ timeout: 2000 });
 		if (isVisible) {
 			const text = await peerCount.textContent();
-			const hasActualPeers = text?.includes('peer') === true && !text?.includes('Waiting');
-			return hasActualPeers;
+			return /\d+ peer/.test(text ?? '');
 		}
 		return false;
 	} catch {

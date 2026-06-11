@@ -123,6 +123,11 @@ export function getSignalingConfig(): { server: string; useSSL: boolean } {
 	// Fallback: Use current hostname with signal subdomain or same-origin
 	// This assumes signaling server is deployed alongside the app
 	const host = window.location.host;
+	// Production build previewed locally (e.g. `pnpm preview`): the dev flag
+	// is off but signal.localhost doesn't exist; use the local server.
+	if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+		return { server: 'localhost:3000', useSSL: false };
+	}
 	// If on Cloudflare Pages, signaling might be on a different subdomain
 	if (host.includes('pages.dev')) {
 		// Production signaling (the old signal-mindline.fly.dev host is gone)
