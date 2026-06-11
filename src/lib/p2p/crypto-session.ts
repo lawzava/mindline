@@ -23,6 +23,7 @@ import {
 } from '$lib/crypto/identity';
 import { deriveMediaKey, deriveRoomKeys, importRoomKeyMaterial, type RoomKeys } from '$lib/crypto/keys';
 import {
+	allocateEpoch,
 	loadIdentity,
 	loadReplayState,
 	loadRoomKeys,
@@ -45,10 +46,6 @@ interface HelloBody {
 export interface PeerInfo {
 	deviceId: string;
 	name: string;
-}
-
-function epochStorageKey(deviceId: string): string {
-	return `mindline_epoch_${deviceId}`;
 }
 
 export class CryptoSession {
@@ -114,18 +111,11 @@ export class CryptoSession {
 			await saveIdentity(identity);
 		}
 
-		// Session epoch: persisted counter, incremented every session start.
-		// An absent counter (first run, or after a burn) seeds from the clock
-		// so peers' persisted high-water replay state never censors this
-		// device (PROTOCOL.md §2).
-		let epoch: number;
-		try {
-			const stored = Number(localStorage.getItem(epochStorageKey(identity.deviceId))) || 0;
-			epoch = stored > 0 ? stored + 1 : Date.now();
-			localStorage.setItem(epochStorageKey(identity.deviceId), String(epoch));
-		} catch {
-			epoch = Date.now(); // no localStorage: monotonic enough per device
-		}
+		// Session epoch from the device-identity-scoped monotonic high-water
+		// (PROTOCOL.md §2). It never regresses across reload, clock
+		// correction, or burn, so peers' persisted high-water replay state
+		// never censors this device, and concurrent tabs get distinct epochs.
+		const epoch = await allocateEpoch(identity.deviceId);
 
 		const replayState = await loadReplayState<import('$lib/crypto/replay').ReplayState>(roomId);
 		const guard = replayState ? ReplayGuard.hydrate(replayState) : new ReplayGuard();

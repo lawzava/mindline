@@ -107,6 +107,41 @@ export async function loadIdentity(): Promise<DeviceIdentity | null> {
 	};
 }
 
+/**
+ * Allocate the next device epoch (PROTOCOL.md §2). The high-water is
+ * scoped to the device identity and stored in the DEVICE object store, so
+ * a room burn (which clears ROOMS/REPLAY only) cannot reset it — the epoch
+ * line is monotonic across reload, clock correction, and burn, and a
+ * device is never censored by peers' persisted high-water.
+ *
+ * Read-increment-write runs in a single IndexedDB readwrite transaction.
+ * IDB serializes readwrite transactions on the same store, so concurrent
+ * tabs draw distinct, strictly increasing epochs without a separate lock.
+ */
+export async function allocateEpoch(deviceId: string): Promise<number> {
+	const db = await openDb();
+	try {
+		return await new Promise<number>((resolve, reject) => {
+			const tx = db.transaction(DEVICE, 'readwrite');
+			const store = tx.objectStore(DEVICE);
+			const recordKey = `epoch:${deviceId}`;
+			let epoch = 0;
+			const getReq = store.get(recordKey);
+			getReq.onsuccess = () => {
+				const highWater = Number(getReq.result) || 0;
+				epoch = Math.max(Date.now(), highWater + 1);
+				store.put(epoch, recordKey);
+			};
+			getReq.onerror = () => reject(getReq.error);
+			tx.oncomplete = () => resolve(epoch);
+			tx.onabort = () => reject(tx.error ?? getReq.error);
+			tx.onerror = () => reject(tx.error ?? getReq.error);
+		});
+	} finally {
+		db.close();
+	}
+}
+
 export async function saveReplayState(roomId: string, state: unknown): Promise<void> {
 	await withStore(REPLAY, 'readwrite', (s) => s.put(state, roomId));
 }
