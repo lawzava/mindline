@@ -16,18 +16,39 @@
 	interface Props {
 		message: Message;
 		isMe: boolean;
-		/** Suppress the byline when the previous message has the same sender. */
-		grouped?: boolean;
+		/** Previous message: same sender, within the grouping window. */
+		groupedAbove?: boolean;
+		/** Next message: same sender, within the grouping window. */
+		groupedBelow?: boolean;
+		/** Previous message is the same sender (any time gap). */
+		sameSenderAbove?: boolean;
+		/** This message latches in from a live draft (color cools in place). */
+		settle?: boolean;
+		/** Newly arrived: one-shot entry animation. */
+		animate?: boolean;
 		onEdit?: (messageId: string, newContent: string) => void;
 		onDelete?: (messageId: string) => void;
 		onReaction?: (messageId: string, emoji: string) => void;
 	}
 
-	let { message, isMe, grouped = false, onEdit, onDelete, onReaction }: Props = $props();
+	let {
+		message,
+		isMe,
+		groupedAbove = false,
+		groupedBelow = false,
+		sameSenderAbove = false,
+		settle = false,
+		animate = false,
+		onEdit,
+		onDelete,
+		onReaction
+	}: Props = $props();
 
 	let isEditing = $state(false);
 	let editContent = $state('');
 	let showLongPressMenu = $state(false);
+	let revealed = $state(false);
+	let revealTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Detect if device supports touch
 	const isTouchDevice = $derived(
@@ -38,6 +59,26 @@
 		const date = new Date(timestamp);
 		return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
+
+	/** Per-message time is tap-to-reveal; phones have no hover. */
+	function toggleReveal() {
+		if (revealTimer) clearTimeout(revealTimer);
+		revealed = true;
+		revealTimer = setTimeout(() => (revealed = false), 3000);
+	}
+
+	function revealKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			toggleReveal();
+		}
+	}
+
+	$effect(() => {
+		return () => {
+			if (revealTimer) clearTimeout(revealTimer);
+		};
+	});
 
 	function startEdit() {
 		editContent = message.content;
@@ -84,7 +125,6 @@
 	);
 
 	// Delivery status for own messages, reactive to the live store
-	// (the previous get()-based read froze at mount; audit finding).
 	const deliveryStatus = $derived.by(() => {
 		if (!isMe) return null;
 		const state = $delivery.get(message.id);
@@ -99,28 +139,71 @@
 	const isPartiallyDelivered = $derived(
 		deliveryStatus && deliveryStatus.delivered > 0 && deliveryStatus.delivered < deliveryStatus.total
 	);
+
+	// Corner-radius arithmetic: within a group the corners facing an adjacent
+	// same-group bubble tighten; the asymmetry carries direction without tails.
+	const corners = $derived.by(() => {
+		if (isMe) {
+			return cn(
+				groupedAbove ? 'rounded-tr-md' : 'rounded-tr-[1.125rem]',
+				groupedBelow ? 'rounded-br-md' : 'rounded-br-[1.125rem]',
+				'rounded-tl-[1.125rem] rounded-bl-[1.125rem]'
+			);
+		}
+		return cn(
+			groupedAbove ? 'rounded-tl-md' : 'rounded-tl-[1.125rem]',
+			groupedBelow ? 'rounded-bl-md' : 'rounded-bl-[1.125rem]',
+			'rounded-tr-[1.125rem] rounded-br-[1.125rem]'
+		);
+	});
+
+	// The meta row always shows on the last message of a group; mid-group it
+	// appears only when it carries information (edited/failed) or on tap.
+	const showMeta = $derived(
+		!groupedBelow || message.edited || message.status === 'Failed' || revealed
+	);
+
+	// Tap-to-reveal only applies to plain text bubbles: while editing or on
+	// attachments the bubble must not swallow clicks from inner controls.
+	const revealable = $derived(!isEditing && !message.attachment);
 </script>
 
 <div
-	class={cn('group flex flex-col gap-0.5', isMe ? 'items-end' : 'items-start', grouped ? 'mt-0.5' : 'mt-3')}
+	class={cn(
+		'group flex flex-col gap-1',
+		isMe ? 'items-end' : 'items-start',
+		groupedAbove ? 'mt-0.5' : sameSenderAbove ? 'mt-3' : 'mt-4'
+	)}
 	data-testid="message-bubble"
 >
 	<!-- Byline (others only, first message of a group) -->
-	{#if !isMe && !grouped}
-		<span class="max-w-[200px] truncate text-xs font-semibold text-muted-foreground">
+	{#if !isMe && !groupedAbove}
+		<span class="ml-1 max-w-[200px] truncate text-sm font-medium text-muted-foreground">
 			{message.sender_name}
 		</span>
 	{/if}
 
-	<!-- Message block with actions -->
-	<div class={cn('flex max-w-full items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
-		<!-- Message content: received is ink on paper, sent gets a faint wash -->
+	<!-- Message block with actions. The width cap lives on this row (its
+	     containing block is the full-width column) — a percentage max-width
+	     on the bubble itself resolves against this shrink-to-fit row and
+	     collapses to ~2ch on touch devices, where the row has no buttons. -->
+	<div class={cn('flex max-w-[min(78%,36rem)] items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
+		<!-- Bubble: fill alone defines it; no borders, no shadows. -->
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -- role is 'button' exactly when tabindex is 0 (revealable) -->
 		<div
 			use:longPress={{ duration: 400, onLongPress: handleLongPress }}
+			onclick={revealable ? toggleReveal : undefined}
+			onkeydown={revealable ? revealKeydown : undefined}
+			role={revealable ? 'button' : undefined}
+			tabindex={revealable ? 0 : undefined}
+			aria-label={revealable ? 'Show message time' : undefined}
 			class={cn(
-				'max-w-[min(80%,42rem)] break-words',
-				isMe ? 'rounded-lg bg-wash-sent px-3 py-1.5' : 'py-0.5',
-				isDeleted && 'italic text-muted-foreground'
+				'min-w-0 break-words px-3.5 py-2.5',
+				corners,
+				message.attachment ? 'max-w-full' : '',
+				isMe ? 'bg-wash-sent' : 'bg-wash-peer',
+				settle ? 'settle' : animate ? 'msg-in' : '',
+				isDeleted && 'text-muted-foreground'
 			)}
 		>
 			{#if isEditing}
@@ -143,7 +226,7 @@
 			{:else if message.attachment}
 				<MediaAttachment attachment={message.attachment} roomId={message.room_id} />
 			{:else}
-				<p class="prose-ink whitespace-pre-wrap break-words">{message.content}</p>
+				<p class="whitespace-pre-wrap break-words text-base leading-[1.45]">{message.content}</p>
 			{/if}
 		</div>
 
@@ -176,46 +259,48 @@
 		<ReactionPills reactions={message.reactions} onToggleReaction={handleReaction} {isMe} />
 	{/if}
 
-	<!-- Timestamp and delivery status (always visible) -->
-	<span
-		class={cn(
-			'flex items-center gap-1 text-xs tabular-nums text-muted-foreground',
-			isMe ? 'justify-end' : 'justify-start'
-		)}
-	>
-		{formatTime(message.timestamp)}
-		{#if message.edited}
-			<span class="italic">(edited)</span>
-		{/if}
-		{#if message.status === 'Failed'}
-			<span class="text-destructive">(failed)</span>
-		{:else if isMe && deliveryStatus}
-			<Tooltip.Provider>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<span class="inline-flex cursor-help items-center">
-							{#if isFullyDelivered}
-								<CheckCheck class="h-3 w-3 text-primary" />
-							{:else if isPartiallyDelivered}
-								<CheckCheck class="h-3 w-3 text-muted-foreground" />
+	<!-- Timestamp and delivery: last-of-group, info-bearing, or tap-revealed -->
+	{#if showMeta}
+		<span
+			class={cn(
+				'flex items-center gap-1 px-1 text-xs tabular-nums text-muted-foreground',
+				isMe ? 'justify-end' : 'justify-start'
+			)}
+		>
+			{formatTime(message.timestamp)}
+			{#if message.edited}
+				<span>(edited)</span>
+			{/if}
+			{#if message.status === 'Failed'}
+				<span class="text-destructive">(failed)</span>
+			{:else if isMe && deliveryStatus}
+				<Tooltip.Provider>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							<span class="inline-flex cursor-help items-center">
+								{#if isFullyDelivered}
+									<CheckCheck class="h-3 w-3 text-primary" />
+								{:else if isPartiallyDelivered}
+									<CheckCheck class="h-3 w-3 text-muted-foreground" />
+								{:else}
+									<Check class="h-3 w-3 text-muted-foreground" />
+								{/if}
+							</span>
+						</Tooltip.Trigger>
+						<Tooltip.Content>
+							{#if deliveryStatus.total === 0}
+								<p>Sent (no peers connected)</p>
 							{:else}
-								<Check class="h-3 w-3 text-muted-foreground" />
+								<p>
+									Delivered to {deliveryStatus.delivered}/{deliveryStatus.total} peer{deliveryStatus.total !== 1 ? 's' : ''}
+								</p>
 							{/if}
-						</span>
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						{#if deliveryStatus.total === 0}
-							<p>Sent (no peers connected)</p>
-						{:else}
-							<p>
-								Delivered to {deliveryStatus.delivered}/{deliveryStatus.total} peer{deliveryStatus.total !== 1 ? 's' : ''}
-							</p>
-						{/if}
-					</Tooltip.Content>
-				</Tooltip.Root>
-			</Tooltip.Provider>
-		{:else if isMe}
-			<Check class="h-3 w-3 text-muted-foreground" />
-		{/if}
-	</span>
+						</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
+			{:else if isMe}
+				<Check class="h-3 w-3 text-muted-foreground" />
+			{/if}
+		</span>
+	{/if}
 </div>

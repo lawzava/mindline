@@ -39,7 +39,7 @@ async function waitForConnectedStatus(
 test.describe('Peer List Component', () => {
 	test.describe.configure({ mode: 'serial' });
 
-	test('should show "Waiting for peers..." when alone in room', async ({ page }) => {
+	test('should show "just you" when alone in room', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);
 
@@ -53,7 +53,7 @@ test.describe('Peer List Component', () => {
 
 		const peerCount = page.locator('[data-testid="peer-count"]');
 		await expect(peerCount).toBeVisible({ timeout: 10000 });
-		await expect(peerCount).toContainText('Waiting for peers');
+		await expect(peerCount).toContainText('just you');
 	});
 
 	test('should open peer list popover on click', async ({ page }) => {
@@ -104,10 +104,12 @@ test.describe('Peer List Component', () => {
 	test('should show peer name in popover', async ({ page, browser }) => {
 		const { pageA, pageB, contextB } = await setupTwoUsers(browser, page);
 
-		// Set a name for user B
+		// Set a name for user B via the room menu
+		await pageB.locator('[data-testid="room-menu-btn"]').click();
 		const nameInput = pageB.getByPlaceholder('Your name');
 		await nameInput.fill('BobTest');
 		await nameInput.press('Enter');
+		await pageB.keyboard.press('Escape');
 
 		// Wait for name update to propagate
 		await waitForP2PSync(2000);
@@ -172,9 +174,9 @@ test.describe('Peer List Component', () => {
 		// Wait for disconnect to propagate
 		await pageA.waitForTimeout(3000);
 
-		// Page A should now show "Waiting for peers..." or 0 peers
+		// Page A should now show it is alone again
 		const peerCountA = pageA.locator('[data-testid="peer-count"]');
-		await expect(peerCountA).toContainText('Waiting for peers');
+		await expect(peerCountA).toContainText('just you');
 	});
 
 	test('should show correct count with multiple peers', async ({ page, browser }) => {
