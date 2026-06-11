@@ -223,6 +223,34 @@ describe('encrypted message storage', () => {
 		expect(localStorage.getItem(`chatHistory_${roomId}`)).toBeNull();
 	});
 
+	test('an in-flight save cannot resurrect a page deleted by clearRoomMessages', async () => {
+		const roomId = uniqueRoom();
+		await seedKeys(roomId);
+		// Fire-and-forget save still in flight when the burn starts: the
+		// burn must win, whatever the interleaving.
+		const savePromise = saveRoomMessages(roomId, [makeMessage({ room_id: roomId })]);
+		const clearPromise = clearRoomMessages(roomId);
+		await Promise.all([savePromise, clearPromise]);
+		expect(await rawPage(roomId)).toBeUndefined();
+	});
+
+	test('concurrent saves apply in call order: the newest snapshot wins', async () => {
+		const roomId = uniqueRoom();
+		await seedKeys(roomId);
+		const original = makeMessage({ id: 'm1', content: 'original', room_id: roomId });
+		const deleted = {
+			...original,
+			content: '[Message deleted]',
+			message_type: 'Deleted' as const
+		};
+		const p1 = saveRoomMessages(roomId, [original]);
+		const p2 = saveRoomMessages(roomId, [deleted]);
+		await Promise.all([p1, p2]);
+		const loaded = await loadRoomMessages(roomId);
+		expect(loaded).toHaveLength(1);
+		expect(loaded[0].message_type).toBe('Deleted');
+	});
+
 	test('a late empty save after clearRoomMessages does not resurrect the page', async () => {
 		const roomId = uniqueRoom();
 		await seedKeys(roomId);
