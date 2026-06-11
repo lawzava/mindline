@@ -221,12 +221,11 @@
 	async function leaveRoom(burn: boolean) {
 		showLeaveDialog = false;
 		const id = roomId;
-		const deviceId = getSessionDeviceId();
 		if (burn && id) {
 			// Disconnect first so no handler persists anything mid-burn.
 			disconnectP2P();
 			try {
-				await burnRoomData(id, deviceId);
+				await burnRoomData(id);
 			} catch (error) {
 				// Stay in the room: navigating away would hide the failure
 				// while data remains on the device.
