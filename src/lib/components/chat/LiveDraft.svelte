@@ -17,6 +17,7 @@
 	const lastContent: Record<string, string> = {};
 
 	$effect(() => {
+		const present = new Set($draftsList.map((d) => d.peerId));
 		for (const draft of $draftsList) {
 			if (lastContent[draft.peerId] !== draft.content) {
 				lastContent[draft.peerId] = draft.content;
@@ -25,6 +26,16 @@
 				timers[draft.peerId] = setTimeout(() => {
 					active[draft.peerId] = false;
 				}, 1000);
+			}
+		}
+		// Evict state for peers whose drafts are gone, so a fresh draft with
+		// identical text still reads as activity.
+		for (const peerId of Object.keys(lastContent)) {
+			if (!present.has(peerId)) {
+				clearTimeout(timers[peerId]);
+				delete timers[peerId];
+				delete lastContent[peerId];
+				delete active[peerId];
 			}
 		}
 	});

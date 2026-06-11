@@ -29,8 +29,8 @@ export async function shareInvite(): Promise<void> {
 		// Modern clipboard API failed - try legacy fallback
 	}
 
+	const textArea = document.createElement('textarea');
 	try {
-		const textArea = document.createElement('textarea');
 		textArea.value = url;
 		textArea.style.position = 'fixed';
 		textArea.style.left = '-9999px';
@@ -39,7 +39,6 @@ export async function shareInvite(): Promise<void> {
 		textArea.focus();
 		textArea.select();
 		const success = document.execCommand('copy');
-		document.body.removeChild(textArea);
 		if (success) {
 			toast.success('Invite link copied! Anyone with this link can read the room.');
 		} else {
@@ -47,5 +46,7 @@ export async function shareInvite(): Promise<void> {
 		}
 	} catch {
 		toast.error('Failed to copy link');
+	} finally {
+		textArea.parentNode?.removeChild(textArea);
 	}
 }

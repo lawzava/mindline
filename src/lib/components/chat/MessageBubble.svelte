@@ -67,6 +67,19 @@
 		revealTimer = setTimeout(() => (revealed = false), 3000);
 	}
 
+	function revealKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			toggleReveal();
+		}
+	}
+
+	$effect(() => {
+		return () => {
+			if (revealTimer) clearTimeout(revealTimer);
+		};
+	});
+
 	function startEdit() {
 		editContent = message.content;
 		isEditing = true;
@@ -149,6 +162,10 @@
 	const showMeta = $derived(
 		!groupedBelow || message.edited || message.status === 'Failed' || revealed
 	);
+
+	// Tap-to-reveal only applies to plain text bubbles: while editing or on
+	// attachments the bubble must not swallow clicks from inner controls.
+	const revealable = $derived(!isEditing && !message.attachment);
 </script>
 
 <div
@@ -172,9 +189,14 @@
 	     collapses to ~2ch on touch devices, where the row has no buttons. -->
 	<div class={cn('flex max-w-[min(78%,36rem)] items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
 		<!-- Bubble: fill alone defines it; no borders, no shadows. -->
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -- role is 'button' exactly when tabindex is 0 (revealable) -->
 		<div
 			use:longPress={{ duration: 400, onLongPress: handleLongPress }}
-			onclick={toggleReveal}
+			onclick={revealable ? toggleReveal : undefined}
+			onkeydown={revealable ? revealKeydown : undefined}
+			role={revealable ? 'button' : undefined}
+			tabindex={revealable ? 0 : undefined}
+			aria-label={revealable ? 'Show message time' : undefined}
 			class={cn(
 				'min-w-0 break-words px-3.5 py-2.5',
 				corners,
@@ -183,7 +205,6 @@
 				settle ? 'settle' : animate ? 'msg-in' : '',
 				isDeleted && 'text-muted-foreground'
 			)}
-			role="presentation"
 		>
 			{#if isEditing}
 				<div class="flex items-center gap-2">
