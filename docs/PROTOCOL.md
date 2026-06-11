@@ -199,6 +199,20 @@ PRIVACY.md. The v1 ECDH relay crypto and the plaintext compatibility
 path are deleted. UI degrades honestly ("direct connection needed for
 files").
 
+### 3.7 Message authorization
+
+Mutations of existing messages are authorized against the
+envelope-verified sender deviceId (§2/§3.4) — never against ids carried
+inside bodies, which any member can mint freely. For reactions:
+membership in a reaction is the set of verified deviceIds that added it;
+a device can only add or remove itself. Body fields (`senderId`,
+`senderName`) are display hints only.
+
+Reaction state arriving via sync (§3.5) is the serving member's asserted
+full map: a malicious member can misrepresent past reaction state (and
+deleted-state) to a device that syncs from it — the same trust extended
+to all served history.
+
 ## 4. Storage at rest
 
 - `mindline-messages` (IndexedDB): per room, AES-GCM blobs of message pages
@@ -299,7 +313,7 @@ AAD   = lp(transferId, str(chunkIndex))
 | TURN operator              | Encrypted SCTP/DTLS packets, peer IPs                           |
 | Link-holder (intended or leaked) | Everything: history sync + live room. The link is the key — share sheet says so |
 | Past participant           | Keeps everything already synced; static room key (no rotation in v1, documented) |
-| Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, or delete others' messages (signatures) |
+| Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, delete, or react as others (signatures + §3.7 authorization); can misrepresent history it serves to a syncing device (§3.5) |
 | Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB |
 | XSS / malicious extension  | Game over (can use keys in place). Mitigation: strict CSP, zero third-party runtime origins, self-hosted fonts |
 
@@ -320,7 +334,8 @@ Unit (vitest): HKDF subkey derivation + cross-room independence; AAD
 context binding (room/sender/class swaps rejected); nonce uniqueness;
 (epoch, seq) replay rejection incl. reorder window, reload-epoch
 acceptance, and persisted high-water; signature verify/forge; edit/delete
-authorization; sync page reconciliation (edit LWW, reaction maps); media
+authorization; reaction membership transitions (verified-device keyed,
+§3.7); sync page reconciliation (edit LWW, reaction maps); media
 frame round-trip + reorder/corruption rejection + salt-distinct reuse;
 storage encrypt/decrypt + v1 plaintext migration; IndexedDB CryptoKey
 persistence round-trip.

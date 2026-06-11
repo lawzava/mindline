@@ -76,5 +76,8 @@ export { CryptoSession } from './crypto-session';
 // Handler utilities
 export { emitToast } from './handlers';
 
+// Pure reaction-state transitions (PROTOCOL.md §3.5)
+export { applyReaction, type ReactionMap } from './reactions';
+
 // Configuration utilities
 export { getP2PConfig, getSignalingConfig, isMobileDevice, isMobileNetwork, getDevConfig, getTestConfig, isTestMode, isStrictDirectMode } from './config';
