@@ -22,6 +22,7 @@ import { connection } from '$lib/stores/connection';
 import { delivery } from '$lib/stores/delivery';
 import { user } from '$lib/stores/user';
 import { saveRoomMessages } from '$lib/storage/messages';
+import { paginateSyncMessages } from './sync';
 import type { Message } from '$lib/types/message';
 import type { MediaAbort, MediaAccept, MediaOffer } from '$lib/media/transfer';
 import { get } from 'svelte/store';
@@ -238,15 +239,9 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 	}
 
 	try {
-		// Get messages from store
 		const roomMessages = messages.getRoomMessages(roomId);
-
-		// Paginate (PROTOCOL.md §3.5): pages of 40 keep each wire envelope
-		// far below DataChannel message-size floors. Sync never relays.
-		const PAGE_SIZE = 40;
 		if (sendToPeerFn) {
-			for (let start = 0; start < roomMessages.length || start === 0; start += PAGE_SIZE) {
-				const page = roomMessages.slice(start, start + PAGE_SIZE);
+			for (const page of paginateSyncMessages(roomMessages)) {
 				const syncResponse: SyncResponseMessage = {
 					type: 'sync-response',
 					roomId,
@@ -254,7 +249,6 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 					timestamp: Date.now()
 				};
 				sendToPeerFn(peerId, syncResponse);
-				if (roomMessages.length === 0) break;
 			}
 		}
 	} catch (error) {
