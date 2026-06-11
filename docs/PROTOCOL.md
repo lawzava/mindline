@@ -203,10 +203,14 @@ files").
 
 Mutations of existing messages are authorized against the
 envelope-verified sender deviceId (§2/§3.4) — never against ids carried
-inside bodies, which any member can mint freely. For reactions:
-membership in a reaction is the set of verified deviceIds that added it;
-a device can only add or remove itself. Body fields (`senderId`,
-`senderName`) are display hints only.
+inside bodies, which any member can mint freely. For edit/delete: the
+stored message's `sender_device` must equal the verified sender; a
+message stored without `sender_device` (pre-v2.1 storage) is remotely
+immutable — fail closed, no body-asserted fallback — though its owner
+can still modify the local copy. For reactions: membership in a reaction
+is the set of verified deviceIds that added it; a device can only add or
+remove itself. Body fields (`senderId`, `senderName`) are display hints
+only.
 
 Reaction state arriving via sync (§3.5) is the serving member's asserted
 full map: a malicious member can misrepresent past reaction state (and
