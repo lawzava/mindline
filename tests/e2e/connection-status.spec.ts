@@ -47,7 +47,7 @@ test.describe('Connection Status', () => {
 		// Should be in a stable state - extract just the base status
 		const statusText = await statusBadge.textContent();
 		// Remove peer count and reconnect attempt numbers
-		const baseStatus = statusText?.replace(/\s*\(\d+\/\d+\)/, '').replace(/\d+ peer.*/, '').trim() || '';
+		const baseStatus = statusText?.split('\u00b7')[0].replace(/\s*\(\d+\/\d+\)/, '').replace(/\.+\s*$/, '').trim() || '';
 		expect(['Connected', 'Local', 'Connecting', 'Reconnecting']).toContainEqual(baseStatus);
 	});
 

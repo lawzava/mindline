@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { user } from '$lib/stores';
+	import { cn } from '$lib/utils';
 	import { onMount } from 'svelte';
 	import { createRoomKey, toKeyFragment } from '$lib/crypto/keys';
 	import { Plus, ArrowRight } from 'lucide-svelte';
@@ -85,6 +86,7 @@
 			dried = true;
 			return;
 		}
+		// Type, latch into a sent bubble, hold, repeat.
 		let i = 0;
 		const tick = () => {
 			i++;
@@ -92,7 +94,15 @@
 			if (i < SPECIMEN.length) {
 				timer = setTimeout(tick, 28 + Math.random() * 60);
 			} else {
-				timer = setTimeout(() => (dried = true), 700);
+				timer = setTimeout(() => {
+					dried = true;
+					timer = setTimeout(() => {
+						dried = false;
+						i = 0;
+						typed = '';
+						timer = setTimeout(tick, 900);
+					}, 3500);
+				}, 700);
 			}
 		};
 		let timer = setTimeout(tick, 600);
@@ -104,24 +114,39 @@
 	<title>Mindline</title>
 </svelte:head>
 
-<div class="flex flex-1 items-start justify-center overflow-y-auto p-6 pt-[18vh] sm:items-center sm:pt-6">
-	<div class="w-full max-w-md space-y-10">
-		<!-- The promise as a live specimen -->
+<div class="flex flex-1 items-start justify-center overflow-y-auto p-6 pt-[14vh] sm:items-center sm:pt-6">
+	<div class="w-full max-w-md space-y-8">
+		<!-- The promise, stated then demonstrated -->
 		<div class="space-y-3">
-			<h2 class="text-3xl font-semibold tracking-tight sm:text-4xl">Talk on a live wire.</h2>
-			<p class="prose-ink min-h-[1.6em] text-lg" aria-label="See messages as they are typed">
-				{#if dried}
-					<span class="ink-dry">{SPECIMEN}</span>
-				{:else}
-					<span class="italic text-draft">{typed}</span><span
-						class="ml-0.5 inline-block h-[1.1em] w-px translate-y-[0.2em] bg-draft breathe"
-					></span>
-				{/if}
+			<h2 class="text-[1.424rem] font-semibold tracking-[-0.01em] sm:text-[2.027rem]">
+				Talk on a live wire.
+			</h2>
+			<p class="text-lg text-muted-foreground">
+				A private line for two or a few people. You see each other's words as they're typed.
 			</p>
-			<p class="text-sm text-muted-foreground">
-				Private rooms, end-to-end encrypted, nothing stored on servers. The invite link is the
-				key.
-			</p>
+		</div>
+
+		<!-- The specimen: the product demos its own hero -->
+		<div
+			class="rounded-[1.25rem] border border-border bg-card p-4"
+			aria-label="See messages as they are typed"
+		>
+			<span class="mb-1 ml-1 flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+				them
+				<span class={cn('h-1.5 w-1.5 rounded-full bg-draft', !dried && 'breathe')}></span>
+			</span>
+			<div
+				class={cn(
+					'inline-block max-w-[90%] rounded-[1.125rem] px-3.5 py-2.5 text-base leading-[1.45]',
+					dried ? 'settle bg-wash-peer text-foreground' : 'bg-wash-draft text-draft'
+				)}
+			>
+				<p class="min-h-[1.45em] whitespace-pre-wrap break-words">
+					{typed}{#if !dried}<span
+							class="ml-0.5 inline-block h-[1.15em] w-0.5 translate-y-[0.2em] rounded-full bg-draft"
+						></span>{/if}
+				</p>
+			</div>
 		</div>
 
 		<!-- One action -->
@@ -129,7 +154,7 @@
 			<Button
 				onclick={createRoom}
 				disabled={!ready}
-				class="h-12 w-full text-base"
+				class="h-12 w-full rounded-[0.875rem] text-base"
 				size="lg"
 				data-testid="create-room-btn"
 			>
@@ -137,9 +162,9 @@
 				Start a room
 			</Button>
 
-			<div class="flex items-center gap-3 text-xs uppercase tracking-[0.06em] text-muted-foreground">
+			<div class="flex items-center gap-3 text-xs text-muted-foreground">
 				<span class="h-px flex-1 bg-border"></span>
-				or join existing
+				or join with an invite
 				<span class="h-px flex-1 bg-border"></span>
 			</div>
 
@@ -149,14 +174,14 @@
 					placeholder="Paste an invite link..."
 					bind:value={joinRoomId}
 					onkeydown={handleKeydown}
-					class="h-11 flex-1"
+					class="h-11 flex-1 rounded-[0.875rem]"
 					data-testid="join-room-input"
 				/>
 				<Button
 					onclick={joinRoom}
 					disabled={!ready || !extractRoomId(joinRoomId)}
 					size="icon"
-					class="h-11 w-11"
+					class="h-11 w-11 rounded-[0.875rem]"
 					data-testid="join-room-btn"
 				>
 					<ArrowRight class="h-4 w-4" />
@@ -164,5 +189,10 @@
 				</Button>
 			</div>
 		</div>
+
+		<p class="text-sm leading-relaxed text-muted-foreground">
+			Messages travel device to device, end-to-end encrypted. No accounts. Nothing is stored on
+			a server.
+		</p>
 	</div>
 </div>
