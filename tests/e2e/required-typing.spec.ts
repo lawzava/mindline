@@ -114,12 +114,19 @@ test.describe('Required Live Typing + Wire Encryption', () => {
 		);
 		expect(leaked).toEqual([]);
 
-		// Both channels carried v2 envelopes (nonce + ciphertext, no content field).
+		// Both channels carried v3 envelopes (nonce + ciphertext + generation,
+		// no content field).
 		const chatEnvelopes = frames.filter((f) => {
 			if (f.label !== 'chat' || f.kind !== 'string') return false;
 			try {
 				const env = JSON.parse(f.text);
-				return env.v === 2 && typeof env.c === 'string' && typeof env.n === 'string' && env.sig;
+				return (
+					env.v === 3 &&
+					typeof env.g === 'number' &&
+					typeof env.c === 'string' &&
+					typeof env.n === 'string' &&
+					env.sig
+				);
 			} catch {
 				return false;
 			}
@@ -128,7 +135,7 @@ test.describe('Required Live Typing + Wire Encryption', () => {
 			if (f.label !== 'eph' || f.kind !== 'string') return false;
 			try {
 				const env = JSON.parse(f.text);
-				return env.v === 2 && typeof env.c === 'string';
+				return env.v === 3 && typeof env.c === 'string';
 			} catch {
 				return false;
 			}
