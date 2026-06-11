@@ -100,7 +100,11 @@ interface Envelope {
   residual: any room member can spoof another member's draft or presence
   ping (not their chat messages).
 - **Replay**: senders maintain `(epoch, seq)` — `epoch` is a persisted
-  per-device counter incremented each session start; `seq` restarts at 0
+  per-device counter incremented each session start; when no counter is
+  persisted (first run, or after a burn) it seeds from the wall clock,
+  which exceeds any prior increment count and any earlier clock seed
+  (barring clock regression), so a device that cleared local state is
+  not censored by peers' persisted high-water state; `seq` restarts at 0
   per session. Receivers persist per `(roomId, senderDeviceId)` high-water
   `(epoch, seq)` in IndexedDB and accept only `epoch > last` or
   `epoch == last && seq > seqHigh` (eph: within a 64-entry reorder window,
@@ -173,18 +177,27 @@ Cursor-paginated over the `chat` DataChannel **only — sync never relays**;
 relay-only sessions get live messages without history, and the UI says so.
 `sync-request {since, cursor}` → `sync-response {messages[≤40],
 nextCursor?}` with page plaintext capped at 32 KB (wire envelope ≈ 44 KB
-after base64, safely under the 64 KiB SDP-default maxMessageSize). Edits
+after base64, safely under the 64 KiB SDP-default maxMessageSize). A
+single history item whose serialized size exceeds the page cap is
+excluded from sync entirely — it stays local and live-delivered only,
+so no page can break the cap. Edits
 reconcile by `(messageId, editTimestamp)` last-writer-wins; reaction state
 syncs as the full per-message reaction map (fixes removal resurrection).
 Only to key-confirmed peers.
 
 ### 3.6 Relay of last resort
 
-If ICE fails (no direct, no TURN), `msg` envelopes (only) may transit the
-signaling relay, same bytes as the DataChannel would carry, after a
-relay-hello (§3.4). The v1 ECDH relay crypto and the plaintext
-compatibility path are deleted. Media and sync never relay (16 KB server
-cap); UI degrades honestly ("direct connection needed for files").
+If ICE fails (no direct, no TURN), live `msg` envelopes —
+chat/edit/delete/reaction/delivery-ack/user-connected, plus the
+relay-hello — may transit the signaling relay, same bytes as the
+DataChannel would carry, after a relay-hello (§3.4). Each relayed frame
+is size-guarded below the server's 16 KB `maxPayload` (oversized
+envelopes are dropped instead of killing the socket). Drafts/presence
+(`eph`), sync, and media never relay; the connection indicator shows
+relayed peers distinctly, with the relay-path metadata cost disclosed in
+PRIVACY.md. The v1 ECDH relay crypto and the plaintext compatibility
+path are deleted. UI degrades honestly ("direct connection needed for
+files").
 
 ## 4. Storage at rest
 

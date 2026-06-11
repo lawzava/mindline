@@ -42,7 +42,9 @@ operator, contain at most the metadata listed above.
 - Room keys (non-extractable browser CryptoKeys) and your device keypair
 
 Leaving a room with "burn" removes the keys, history, and media for that
-room from your device. Other participants keep their copies.
+room from your device. Other participants keep their copies. Burning is
+per-room: it does not reset your device keypair, which is per-device,
+not per-room.
 
 ## Honest caveats
 
