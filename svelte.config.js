@@ -1,6 +1,15 @@
 import adapter from '@sveltejs/adapter-cloudflare';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
+// CSP connect-src is pinned to the signaling origin at build time. The
+// host comes from VITE_SIGNALING_SERVER (a host, or a full ws(s):// origin)
+// and defaults to the canonical deploy. Self-hosted deploys set it and
+// rebuild — a runtime MINDLINE_ENV.SIGNALING_SERVER override to a
+// different host is now blocked by CSP by design (it was an open
+// any-host WebSocket exfil channel for any script that ran).
+const signalingEnv = process.env.VITE_SIGNALING_SERVER || 'signal.mindline.chat';
+const signalingOrigin = signalingEnv.includes('://') ? signalingEnv : `wss://${signalingEnv}`;
+
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	preprocess: vitePreprocess(),
@@ -33,10 +42,11 @@ const config = {
 							'font-src': ['self'],
 							'img-src': ['self', 'data:', 'blob:'],
 							'media-src': ['self', 'blob:'],
-							// scheme-wide ws allowance is deliberate: the signaling
-							// host is runtime-configurable per deploy (MINDLINE_ENV),
-							// so a concrete origin cannot be pinned at build time
-							'connect-src': ['self', 'wss:', 'ws:'],
+							// Pinned to self + the build-time signaling origin
+							// (above). No scheme-wide ws: — that allowed any script
+							// to open a WebSocket to any host (exfil). Self-hosters
+							// rebuild with VITE_SIGNALING_SERVER.
+							'connect-src': ['self', signalingOrigin],
 							'object-src': ['none'],
 							'base-uri': ['self'],
 							'form-action': ['self'],
