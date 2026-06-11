@@ -96,3 +96,56 @@ describe('CryptoSession', () => {
 		expect(await CryptoSession.create('unknown-room', null)).toBeNull();
 	});
 });
+
+class MemoryStorage implements Storage {
+	private map = new Map<string, string>();
+	get length() {
+		return this.map.size;
+	}
+	clear() {
+		this.map.clear();
+	}
+	getItem(k: string) {
+		return this.map.get(k) ?? null;
+	}
+	key(i: number) {
+		return [...this.map.keys()][i] ?? null;
+	}
+	removeItem(k: string) {
+		this.map.delete(k);
+	}
+	setItem(k: string, v: string) {
+		this.map.set(k, v);
+	}
+}
+
+describe('session epoch (PROTOCOL.md §2)', () => {
+	beforeEach(() => {
+		globalThis.localStorage = new MemoryStorage();
+	});
+
+	test('seeds from the clock when no counter is persisted (post-burn safety)', async () => {
+		// A burned device restarting at epoch 1 would be censored forever by
+		// peers holding a higher persisted high-water epoch.
+		const before = Date.now();
+		const { a, b } = await twoSessions();
+		await b.acceptHello(await a.makeHello('A', 'bind'), 'bind');
+		const body = await b.openMessage(
+			JSON.parse(await a.sealMessage({ type: 'chat', content: 'x' }))
+		);
+		expect(Number(body.epoch)).toBeGreaterThanOrEqual(before);
+	});
+
+	test('increments the persisted counter when present', async () => {
+		const key = createRoomKey();
+		const receiver = await CryptoSession.create('room-epoch', key);
+		localStorage.setItem(`mindline_epoch_${receiver!.deviceId}`, '41');
+		const sender = await CryptoSession.create('room-epoch', key);
+		expect(localStorage.getItem(`mindline_epoch_${sender!.deviceId}`)).toBe('42');
+		await receiver!.acceptHello(await sender!.makeHello('A', 'bind'), 'bind');
+		const body = await receiver!.openMessage(
+			JSON.parse(await sender!.sealMessage({ type: 'chat', content: 'x' }))
+		);
+		expect(Number(body.epoch)).toBe(42);
+	});
+});

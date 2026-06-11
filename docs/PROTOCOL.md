@@ -100,7 +100,11 @@ interface Envelope {
   residual: any room member can spoof another member's draft or presence
   ping (not their chat messages).
 - **Replay**: senders maintain `(epoch, seq)` — `epoch` is a persisted
-  per-device counter incremented each session start; `seq` restarts at 0
+  per-device counter incremented each session start; when no counter is
+  persisted (first run, or after a burn) it seeds from the wall clock,
+  which exceeds any prior increment count and any earlier clock seed
+  (barring clock regression), so a device that cleared local state is
+  not censored by peers' persisted high-water state; `seq` restarts at 0
   per session. Receivers persist per `(roomId, senderDeviceId)` high-water
   `(epoch, seq)` in IndexedDB and accept only `epoch > last` or
   `epoch == last && seq > seqHigh` (eph: within a 64-entry reorder window,
