@@ -16,7 +16,7 @@ import {
 	type DeviceIdentity,
 	type KemIdentity
 } from '$lib/crypto/identity';
-import { KEM_PUBLIC_KEY_BYTES, unwrapSecret, wrapSecret } from '$lib/crypto/kem';
+import { isUsableKemPublicKey, unwrapSecret, wrapSecret } from '$lib/crypto/kem';
 import {
 	deriveGenerationKeys,
 	deriveMediaKey,
@@ -72,6 +72,9 @@ export interface PeerInfo {
 
 /** Body types that ride the `hs` class — and only the `hs` class (§2). */
 const HS_BODY_TYPES = new Set(['hello', 'rekey-grant', 'rekey-request']);
+
+/** Display-name cap in hellos (§3.4) — keeps relay hellos frame-bounded. */
+export const HELLO_NAME_MAX = 64;
 
 /**
  * Channel binding for the hello proof (§3.4): a domain label plus the
@@ -238,6 +241,9 @@ export class CryptoSession {
 
 	/** Key-confirmation hello (§3.4), serialized for the wire. */
 	async makeHello(name: string, binding: HelloBinding): Promise<string> {
+		// Names are display hints (§3.7); the clamp bounds the hello so the
+		// relay variant always fits the §3.6 frame budget (review V4-PQ-03).
+		name = name.slice(0, HELLO_NAME_MAX);
 		const kemB64 = toB64url(this.kem.publicKey);
 		// The proof covers the KEM key: a stripped or substituted key fails
 		// the HMAC even before the envelope signature is considered.
@@ -291,9 +297,11 @@ export class CryptoSession {
 			}
 			if (!Number.isInteger(body.g) || body.g < 0 || typeof body.gid !== 'string') return null;
 
-			// The KEM key is mandatory in v4 — fail closed on absence or shape.
+			// The KEM key is mandatory in v4 — fail closed on absence, shape,
+			// or an encapsulation-invalid key (it would strand its presenter
+			// from every future grant; reject at the door instead).
 			const kemBytes = typeof body.kem === 'string' ? fromB64url(body.kem) : null;
-			if (!kemBytes || kemBytes.length !== KEM_PUBLIC_KEY_BYTES) return null;
+			if (!kemBytes || !isUsableKemPublicKey(kemBytes)) return null;
 
 			// TOFU: a known deviceId must present the same keys (both of them)
 			const known = this.peers.get(body.deviceId);
