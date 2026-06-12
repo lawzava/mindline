@@ -36,17 +36,19 @@ describe('room key lifecycle', () => {
 	test('derived subkeys are non-extractable and domain-separated', async () => {
 		const material = await importRoomKeyMaterial(createRoomKey());
 		const keys = await deriveRoomKeys(material);
-		for (const k of [keys.msg, keys.eph, keys.storage]) {
+		// Link-static set (§1.2): storage, auth, hs, mediaBase — msg/eph are
+		// generation-keyed (deriveGenerationKeys) and live on the ratchet.
+		for (const k of [keys.storage, keys.hs]) {
 			expect(k.extractable).toBe(false);
 			expect(k.algorithm.name).toBe('AES-GCM');
 		}
 		expect(keys.auth.algorithm.name).toBe('HMAC');
 
-		// Domain separation: same plaintext+nonce under msg vs eph keys must differ
+		// Domain separation: same plaintext+nonce under storage vs hs must differ
 		const nonce = new Uint8Array(12);
 		const data = new TextEncoder().encode('same input');
-		const c1 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, keys.msg, data);
-		const c2 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, keys.eph, data);
+		const c1 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, keys.storage, data);
+		const c2 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, keys.hs, data);
 		expect(Buffer.from(c1).equals(Buffer.from(c2))).toBe(false);
 	});
 
@@ -57,8 +59,8 @@ describe('room key lifecycle', () => {
 		const k2 = await deriveRoomKeys(m2);
 		const nonce = new Uint8Array(12);
 		const data = new TextEncoder().encode('x');
-		const c1 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, k1.msg, data);
-		const c2 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, k2.msg, data);
+		const c1 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, k1.storage, data);
+		const c2 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, k2.storage, data);
 		expect(Buffer.from(c1).equals(Buffer.from(c2))).toBe(false);
 	});
 });
