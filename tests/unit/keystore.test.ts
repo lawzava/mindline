@@ -235,3 +235,88 @@ describe('keystore', () => {
 		expect(await loadKemIdentity()).not.toBeNull();
 	});
 });
+
+describe('DB v4 migration (stale v2 keys, dead replay shapes)', () => {
+	function openAt(version: number): Promise<IDBDatabase> {
+		return new Promise((resolve, reject) => {
+			const req = indexedDB.open('mindline-keys', version);
+			req.onupgradeneeded = () => {
+				for (const name of ['rooms', 'device', 'replay', 'generations']) {
+					if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name);
+				}
+			};
+			req.onsuccess = () => resolve(req.result);
+			req.onerror = () => reject(req.error);
+		});
+	}
+
+	function put(db: IDBDatabase, store: string, key: string, value: unknown): Promise<void> {
+		return new Promise((resolve, reject) => {
+			const tx = db.transaction(store, 'readwrite');
+			tx.objectStore(store).put(value, key);
+			tx.oncomplete = () => resolve();
+			tx.onerror = () => reject(tx.error);
+		});
+	}
+
+	function get(db: IDBDatabase, store: string, key: string): Promise<unknown> {
+		return new Promise((resolve, reject) => {
+			const req = db.transaction(store, 'readonly').objectStore(store).get(key);
+			req.onsuccess = () => resolve(req.result);
+			req.onerror = () => reject(req.error);
+		});
+	}
+
+	test('strips v2 msg/eph keys from ROOMS, drops legacy replay senders, leaves DEVICE alone', async () => {
+		const keys = await deriveRoomKeys(await importRoomKeyMaterial(createRoomKey()));
+		const gen = await deriveGenerationKeys(createRoomKey());
+		const v3 = await openAt(3);
+		await put(v3, 'rooms', 'room-legacy', { ...keys, msg: gen.msg, eph: gen.eph });
+		await put(v3, 'replay', 'room-legacy', {
+			'sender-legacy': { msgEpoch: 1, msgHigh: 2, ephEpoch: 1, ephHigh: 0, ephSeen: [] },
+			'sender-live': { msg: [{ epoch: 1, high: 2, seen: [] }], eph: [] }
+		});
+		await put(v3, 'device', 'epoch:dev-x', 42);
+		v3.close();
+
+		const migrated = await loadRoomKeys('room-legacy'); // opens at v4 → runs the migration
+		expect(migrated).not.toBeNull();
+		expect('msg' in (migrated as object)).toBe(false);
+		expect('eph' in (migrated as object)).toBe(false);
+
+		// The surviving static keys still work after the record rewrite.
+		const nonce = crypto.getRandomValues(new Uint8Array(12));
+		const ct = await crypto.subtle.encrypt(
+			{ name: 'AES-GCM', iv: nonce },
+			migrated!.storage,
+			new TextEncoder().encode('probe')
+		);
+		await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, migrated!.storage, ct);
+
+		const v4 = await openAt(4);
+		const replay = (await get(v4, 'replay', 'room-legacy')) as Record<string, unknown>;
+		expect(replay['sender-legacy']).toBeUndefined();
+		expect(Array.isArray((replay['sender-live'] as { msg: unknown[] }).msg)).toBe(true);
+		expect(await get(v4, 'device', 'epoch:dev-x')).toBe(42);
+		v4.close();
+	});
+
+	test('a replay record with only legacy senders is deleted outright', async () => {
+		const v3 = await openAt(3);
+		await put(v3, 'replay', 'room-dead', {
+			'sender-legacy': { msgEpoch: 1, msgHigh: 2, ephEpoch: 1, ephHigh: 0, ephSeen: [] }
+		});
+		v3.close();
+		await loadRoomKeys('room-any'); // any keystore call opens at v4
+		const v4 = await openAt(4);
+		expect(await get(v4, 'replay', 'room-dead')).toBeUndefined();
+		v4.close();
+	});
+
+	test('a fresh database (oldVersion 0) gets stores and no migration side effects', async () => {
+		expect(await loadRoomKeys('room-none')).toBeNull();
+		const keys = await deriveRoomKeys(await importRoomKeyMaterial(createRoomKey()));
+		await saveRoomKeys('room-new', keys);
+		expect(await loadRoomKeys('room-new')).not.toBeNull();
+	});
+});
