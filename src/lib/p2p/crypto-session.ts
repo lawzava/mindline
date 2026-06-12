@@ -13,8 +13,10 @@ import {
 	createDeviceIdentity,
 	deviceIdFromSpki,
 	importPeerPublicKey,
-	type DeviceIdentity
+	type DeviceIdentity,
+	type KemIdentity
 } from '$lib/crypto/identity';
+import { isUsableKemPublicKey, unwrapSecret, wrapSecret } from '$lib/crypto/kem';
 import {
 	deriveGenerationKeys,
 	deriveMediaKey,
@@ -24,6 +26,7 @@ import {
 } from '$lib/crypto/keys';
 import {
 	allocateEpoch,
+	getOrCreateKemIdentity,
 	loadIdentity,
 	loadRatchetState,
 	loadReplayState,
@@ -35,11 +38,15 @@ import {
 } from '$lib/crypto/keystore';
 import { ReplayGuard } from '$lib/crypto/replay';
 import {
+	certOf,
 	GenerationRatchet,
 	MAX_CHAIN,
+	verifyCert,
 	type AdoptOutcome,
+	type RekeyGrant,
 	type RekeyGrantBody,
-	type RekeyRequestBody
+	type RekeyRequestBody,
+	type WrappedGrant
 } from './ratchet';
 
 interface HelloBody {
@@ -47,6 +54,7 @@ interface HelloBody {
 	deviceId: string;
 	name: string;
 	spki: string; // base64url
+	kem: string; // base64url X-Wing public key (§1.3/§1.4 v4)
 	proof: string; // base64url HMAC
 	g: number; // advertised key generation (§3.4)
 	gid: string;
@@ -65,14 +73,18 @@ export interface PeerInfo {
 /** Body types that ride the `hs` class — and only the `hs` class (§2). */
 const HS_BODY_TYPES = new Set(['hello', 'rekey-grant', 'rekey-request']);
 
+/** Display-name cap in hellos (§3.4) — keeps relay hellos frame-bounded. */
+export const HELLO_NAME_MAX = 64;
+
 /**
  * Channel binding for the hello proof (§3.4): a domain label plus the
  * binding fields, fed to lp() as separate fields (§0 — no delimiter
- * joining). Direct: ('hello-v3', [fpLow, fpHigh]); relay:
- * ('hello-relay-v3', [clientIdLow, clientIdHigh, roomId]).
+ * joining). Direct: ('hello-v4', [fpLow, fpHigh]); relay:
+ * ('hello-relay-v4', [clientIdLow, clientIdHigh, roomId]). The proof also
+ * covers the sender's KEM public key (between deviceId and the fields).
  */
 export interface HelloBinding {
-	label: 'hello-v3' | 'hello-relay-v3';
+	label: 'hello-v4' | 'hello-relay-v4';
 	fields: string[];
 }
 
@@ -82,8 +94,12 @@ export class CryptoSession {
 
 	private keys: RoomKeys;
 	private identity: DeviceIdentity;
+	private kem: KemIdentity;
 	private ratchet: GenerationRatchet;
-	private peers = new Map<string, { publicKey: CryptoKey; spki: string; name: string }>();
+	private peers = new Map<
+		string,
+		{ publicKey: CryptoKey; spki: string; kem: string; name: string }
+	>();
 	private guard: ReplayGuard;
 	private epoch: number;
 	private seq = 0;
@@ -94,6 +110,7 @@ export class CryptoSession {
 		roomId: string,
 		keys: RoomKeys,
 		identity: DeviceIdentity,
+		kem: KemIdentity,
 		ratchet: GenerationRatchet,
 		guard: ReplayGuard,
 		epoch: number
@@ -101,6 +118,7 @@ export class CryptoSession {
 		this.roomId = roomId;
 		this.keys = keys;
 		this.identity = identity;
+		this.kem = kem;
 		this.ratchet = ratchet;
 		this.guard = guard;
 		this.epoch = epoch;
@@ -147,6 +165,10 @@ export class CryptoSession {
 			await saveIdentity(identity);
 		}
 
+		// Device KEM identity (§1.3 v4): receives the hybrid grant wraps.
+		// Atomic get-or-create — concurrent tabs must converge on one seed.
+		const kem = await getOrCreateKemIdentity();
+
 		// Session epoch from the device-identity-scoped monotonic high-water
 		// (PROTOCOL.md §2). It never regresses across reload, clock
 		// correction, or burn, so peers' persisted high-water replay state
@@ -156,7 +178,7 @@ export class CryptoSession {
 		const replayState = await loadReplayState<import('$lib/crypto/replay').ReplayState>(roomId);
 		const guard = replayState ? ReplayGuard.hydrate(replayState) : new ReplayGuard();
 
-		return new CryptoSession(roomId, keys, identity, ratchet, guard, epoch);
+		return new CryptoSession(roomId, keys, identity, kem, ratchet, guard, epoch);
 	}
 
 	get roomKeys(): RoomKeys {
@@ -219,16 +241,23 @@ export class CryptoSession {
 
 	/** Key-confirmation hello (§3.4), serialized for the wire. */
 	async makeHello(name: string, binding: HelloBinding): Promise<string> {
+		// Names are display hints (§3.7); the clamp bounds the hello so the
+		// relay variant always fits the §3.6 frame budget (review V4-PQ-03).
+		name = name.slice(0, HELLO_NAME_MAX);
+		const kemB64 = toB64url(this.kem.publicKey);
+		// The proof covers the KEM key: a stripped or substituted key fails
+		// the HMAC even before the envelope signature is considered.
 		const proof = await crypto.subtle.sign(
 			'HMAC',
 			this.keys.auth,
-			lp(binding.label, this.deviceId, ...binding.fields)
+			lp(binding.label, this.deviceId, kemB64, ...binding.fields)
 		);
 		const body: HelloBody = {
 			type: 'hello',
 			deviceId: this.deviceId,
 			name,
 			spki: toB64url(this.identity.spki),
+			kem: kemB64,
 			proof: toB64url(new Uint8Array(proof)),
 			// Advertise our generation (§3.4) — receivers grant or request
 			// off this, but never move their own generation from it.
@@ -268,9 +297,15 @@ export class CryptoSession {
 			}
 			if (!Number.isInteger(body.g) || body.g < 0 || typeof body.gid !== 'string') return null;
 
-			// TOFU: a known deviceId must present the same key
+			// The KEM key is mandatory in v4 — fail closed on absence, shape,
+			// or an encapsulation-invalid key (it would strand its presenter
+			// from every future grant; reject at the door instead).
+			const kemBytes = typeof body.kem === 'string' ? fromB64url(body.kem) : null;
+			if (!kemBytes || !isUsableKemPublicKey(kemBytes)) return null;
+
+			// TOFU: a known deviceId must present the same keys (both of them)
 			const known = this.peers.get(body.deviceId);
-			if (known && known.spki !== body.spki) return null;
+			if (known && (known.spki !== body.spki || known.kem !== body.kem)) return null;
 
 			// Channel binding proof, recomputed from our own view (§3.4)
 			const proof = fromB64url(body.proof);
@@ -279,7 +314,7 @@ export class CryptoSession {
 				'HMAC',
 				this.keys.auth,
 				proof,
-				lp(binding.label, body.deviceId, ...binding.fields)
+				lp(binding.label, body.deviceId, body.kem, ...binding.fields)
 			);
 			if (!valid) return null;
 
@@ -287,7 +322,12 @@ export class CryptoSession {
 			this.schedulePersist();
 
 			const publicKey = await importPeerPublicKey(spki);
-			this.peers.set(body.deviceId, { publicKey, spki: body.spki, name: body.name });
+			this.peers.set(body.deviceId, {
+				publicKey,
+				spki: body.spki,
+				kem: body.kem,
+				name: body.name
+			});
 			return { deviceId: body.deviceId, name: body.name, g: body.g, gid: body.gid };
 		} catch {
 			return null;
@@ -425,28 +465,51 @@ export class CryptoSession {
 		this.generationCb?.(this.ratchet.g, this.ratchet.gid);
 	}
 
-	/** Mint the next generation; returns the grant wire for broadcast. */
-	async mintGeneration(): Promise<string> {
-		const grant = await this.ratchet.mintNext(this.identity);
+	/** Mint the next generation; grants flow per recipient (grantWireFor). */
+	async mintGeneration(): Promise<void> {
+		await this.ratchet.mintNext(this.identity);
 		await this.ratchetChanged();
-		const body: RekeyGrantBody = { type: 'rekey-grant', grant };
-		return this.sealHs(body as unknown as Record<string, unknown>);
 	}
 
 	/**
-	 * A grant wire for a peer at `peerG`, with the chain it needs to verify
-	 * the gap. When the peer's stated gid is off our line (a losing
-	 * sibling / fork), the chain starts one generation earlier so it
+	 * Wrap the current generation secret for one verified recipient
+	 * (§1.4 v4): X-Wing encapsulate against the hello-pinned KEM key, the
+	 * wrap AAD-bound to room, generation, and recipient. Fails closed for
+	 * unknown recipients — a grant can only ever address a verified peer.
+	 */
+	private async wrapCurrentGrantFor(recipientDeviceId: string): Promise<WrappedGrant> {
+		const grant = this.ratchet.currentGrant()!;
+		const peer = this.peers.get(recipientDeviceId);
+		if (!peer) throw new Error(`no pinned KEM key for ${recipientDeviceId}`);
+		const recipientKem = fromB64url(peer.kem);
+		const rk = fromB64url(grant.rk);
+		if (!recipientKem || !rk) throw new Error('malformed grant wrap inputs');
+		const wrap = await wrapSecret(recipientKem, rk, {
+			roomId: this.roomId,
+			g: grant.g,
+			gid: grant.gid,
+			recipientDeviceId
+		});
+		return {
+			...certOf(grant),
+			wrap: { ct: toB64url(wrap.ct), n: toB64url(wrap.n), wrapped: toB64url(wrap.wrapped) }
+		};
+	}
+
+	/**
+	 * A grant wire for a verified peer at `peerG`, with the chain it needs
+	 * to verify the gap. When the peer's stated gid is off our line (a
+	 * losing sibling / fork), the chain starts one generation earlier so it
 	 * carries our cert AT the fork — the receiver's heal rule anchors at
 	 * the shared parent (§1.4 "tailor the chain"). Mints first when this
 	 * session cannot grant (§1.4 liveness).
 	 */
-	async grantWireFor(peerG: number, peerGid?: string): Promise<string> {
+	async grantWireFor(peerDeviceId: string, peerG: number, peerGid?: string): Promise<string> {
 		if (!this.ratchet.canGrant()) {
 			await this.ratchet.mintNext(this.identity);
 			await this.ratchetChanged();
 		}
-		const grant = this.ratchet.currentGrant()!;
+		const grant = await this.wrapCurrentGrantFor(peerDeviceId);
 		let fromG = Math.max(0, peerG);
 		if (peerGid !== undefined && fromG >= 1 && !this.ratchet.onLine(fromG, peerGid)) {
 			fromG -= 1;
@@ -456,9 +519,29 @@ export class CryptoSession {
 		return this.sealHs(body as unknown as Record<string, unknown>);
 	}
 
-	/** Run a received grant through §1.4 convergence. */
+	/**
+	 * Run a received grant through §1.4 convergence: unwrap the recipient
+	 * wrap first (fail-closed — a wrap addressed to another device, or
+	 * with any swapped context, yields nothing), then adopt on the engine,
+	 * whose gid == H(rk) check ties the unwrapped secret to the signed cert.
+	 */
 	async handleRekeyGrant(body: RekeyGrantBody): Promise<AdoptOutcome> {
-		const outcome = await this.ratchet.adopt(body.grant, body.chain ?? []);
+		const { wrap, ...cert } = body.grant;
+		// §1.4 order: the cert is verified before the (more expensive) KEM
+		// decapsulation runs; adopt() re-verifies as part of convergence.
+		if (!(await verifyCert(cert, this.roomId))) throw new Error('invalid grant certificate');
+		const ct = wrap && fromB64url(wrap.ct);
+		const n = wrap && fromB64url(wrap.n);
+		const wrapped = wrap && fromB64url(wrap.wrapped);
+		if (!ct || !n || !wrapped) throw new Error('malformed grant wrap');
+		const rk = await unwrapSecret(
+			this.kem.seed,
+			{ ct, n, wrapped },
+			{ roomId: this.roomId, g: cert.g, gid: cert.gid, recipientDeviceId: this.deviceId }
+		);
+		if (!rk) throw new Error('grant unwrap failed (not wrapped for this device?)');
+		const grant: RekeyGrant = { ...cert, rk: toB64url(rk) };
+		const outcome = await this.ratchet.adopt(grant, body.chain ?? []);
 		if (outcome === 'adopted' || outcome === 'sibling-retained') await this.ratchetChanged();
 		return outcome;
 	}
@@ -476,10 +559,10 @@ export class CryptoSession {
 	}
 
 	/** Answer a rekey-request: grant, minting if necessary (liveness). */
-	async handleRekeyRequest(body: RekeyRequestBody): Promise<string> {
+	async handleRekeyRequest(body: RekeyRequestBody, requesterDeviceId: string): Promise<string> {
 		const haveG = Number.isInteger(body.haveG) && body.haveG >= 0 ? body.haveG : 0;
 		const haveGid = typeof body.haveGid === 'string' ? body.haveGid : undefined;
-		return this.grantWireFor(haveG, haveGid);
+		return this.grantWireFor(requesterDeviceId, haveG, haveGid);
 	}
 
 	/**

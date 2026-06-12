@@ -9,14 +9,17 @@ import {
 } from '$lib/crypto/keys';
 import {
 	burnRoom,
+	getOrCreateKemIdentity,
 	loadIdentity,
+	loadKemIdentity,
 	loadRatchetState,
 	loadRoomKeys,
 	saveIdentity,
+	saveKemIdentity,
 	saveRatchetState,
 	saveRoomKeys
 } from '$lib/crypto/keystore';
-import { createDeviceIdentity } from '$lib/crypto/identity';
+import { createDeviceIdentity, createKemIdentity } from '$lib/crypto/identity';
 import { GenerationRatchet } from '$lib/p2p/ratchet';
 
 beforeEach(() => {
@@ -135,5 +138,67 @@ describe('keystore', () => {
 		await burnRoom('room-1');
 		expect(await loadRoomKeys('room-1')).toBeNull();
 		expect(await loadRoomKeys('room-2')).not.toBeNull();
+	});
+
+	test('KEM identity round-trips: reload yields the same public key and seed', async () => {
+		const kem = await createKemIdentity();
+		await saveKemIdentity(kem);
+		const loaded = await loadKemIdentity();
+		expect(loaded).not.toBeNull();
+		expect(Buffer.from(loaded!.publicKey).equals(Buffer.from(kem.publicKey))).toBe(true);
+		expect(Buffer.from(loaded!.seed).equals(Buffer.from(kem.seed))).toBe(true);
+	});
+
+	test('loadKemIdentity returns null when none saved', async () => {
+		expect(await loadKemIdentity()).toBeNull();
+	});
+
+	test('the stored KEM record never contains the raw seed (§1.3 wrapped-at-rest)', async () => {
+		const kem = await createKemIdentity();
+		await saveKemIdentity(kem);
+		const record = await new Promise<Record<string, unknown>>((resolve, reject) => {
+			const open = indexedDB.open('mindline-keys');
+			open.onerror = () => reject(open.error);
+			open.onsuccess = () => {
+				const get = open.result.transaction('device').objectStore('device').get('kem-identity');
+				get.onsuccess = () => {
+					open.result.close();
+					resolve(get.result);
+				};
+				get.onerror = () => reject(get.error);
+			};
+		});
+		expect(record).toBeDefined();
+		const seed = Buffer.from(kem.seed);
+		for (const value of Object.values(record)) {
+			if (value instanceof Uint8Array) {
+				expect(Buffer.from(value).includes(seed)).toBe(false);
+			}
+		}
+	});
+
+	test('concurrent first-launch sessions converge on one KEM identity (atomic get-or-create)', async () => {
+		// Two tabs racing the v4 upgrade (identity present, kem absent) must
+		// not diverge to different seeds under the same deviceId (review F1).
+		const [k1, k2] = await Promise.all([getOrCreateKemIdentity(), getOrCreateKemIdentity()]);
+		expect(Buffer.from(k1.publicKey).equals(Buffer.from(k2.publicKey))).toBe(true);
+		expect(Buffer.from(k1.seed).equals(Buffer.from(k2.seed))).toBe(true);
+		const persisted = await loadKemIdentity();
+		expect(Buffer.from(persisted!.publicKey).equals(Buffer.from(k1.publicKey))).toBe(true);
+	});
+
+	test('getOrCreateKemIdentity returns the already-persisted identity', async () => {
+		const first = await getOrCreateKemIdentity();
+		const second = await getOrCreateKemIdentity();
+		expect(Buffer.from(second.publicKey).equals(Buffer.from(first.publicKey))).toBe(true);
+	});
+
+	test('a room burn leaves the device-scoped KEM identity intact', async () => {
+		const kem = await createKemIdentity();
+		await saveKemIdentity(kem);
+		const keys = await deriveRoomKeys(await importRoomKeyMaterial(createRoomKey()));
+		await saveRoomKeys('room-1', keys);
+		await burnRoom('room-1');
+		expect(await loadKemIdentity()).not.toBeNull();
 	});
 });
