@@ -107,6 +107,8 @@ export class P2PConnection {
 		| null = null;
 	/** Per-peer rekey-request rate limit (decrypt-failure path, §1.4). */
 	private lastRekeyRequest = new Map<string, number>();
+	/** Per-peer rate limit for fork-heal replies to rejected grants. */
+	private lastForkReply = new Map<string, number>();
 
 	constructor(session: CryptoSession, config: Partial<P2PConfig> = {}, displayName: () => string) {
 		this.session = session;
@@ -757,7 +759,7 @@ export class P2PConnection {
 				return;
 			}
 			if (peerG < mine.g || !this.session.hasGeneration(peerG, peerGid)) {
-				const wire = await this.session.grantWireFor(peerG);
+				const wire = await this.session.grantWireFor(peerG, peerGid);
 				if (peer.chat.readyState === 'open') peer.chat.send(wire);
 				// A peer still at the link generation is a newcomer (§1.4
 				// trigger a): grant it the current generation for immediate
@@ -804,6 +806,20 @@ export class P2PConnection {
 			const grant = (body as { grant?: { g?: number; gid?: string } }).grant;
 			if (grant && Number.isInteger(grant.g)) {
 				await this.requestGenerationFrom(peer, grant.g!, grant.gid);
+			}
+		} else if (outcome === 'rejected') {
+			// Their line lost a fork tie-break (§1.4): the winning side
+			// converges the room by answering with its own chained grant so
+			// the heal applies in the other direction. Rate-limited; an
+			// already-converged sender drops the reply as 'stale'.
+			const last = this.lastForkReply.get(peer.clientId) ?? 0;
+			if (Date.now() - last >= 5000 && peer.chat.readyState === 'open') {
+				this.lastForkReply.set(peer.clientId, Date.now());
+				try {
+					peer.chat.send(await this.session.grantWireFor(0));
+				} catch (error) {
+					console.warn('[P2P] fork-heal reply failed:', error);
+				}
 			}
 		}
 	}
