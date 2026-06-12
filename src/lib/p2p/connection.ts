@@ -8,7 +8,7 @@
  * tears down healthy DataChannels.
  */
 
-import type { CryptoSession } from './crypto-session';
+import type { CryptoSession, HelloBinding } from './crypto-session';
 import type { Envelope } from '$lib/crypto/envelope';
 import type {
 	MessageCallback,
@@ -671,12 +671,15 @@ export class P2PConnection {
 		}
 	}
 
-	/** Sorted DTLS fingerprint pair from the negotiated SDP (§3.4). */
-	private channelBinding(pc: RTCPeerConnection): string {
+	/**
+	 * Sorted DTLS fingerprint pair from the negotiated SDP (§3.4), as
+	 * separate lp() fields (§0 — no delimiter joining).
+	 */
+	private channelBinding(pc: RTCPeerConnection): HelloBinding {
 		const extract = (sdp: string | undefined): string =>
 			[...(sdp ?? '').matchAll(/^a=fingerprint:\S+\s+(\S+)\s*$/gim)].map((m) => m[1])[0] ?? '';
 		const pair = [extract(pc.localDescription?.sdp), extract(pc.remoteDescription?.sdp)].sort();
-		return pair.join('::');
+		return { label: 'hello-v3', fields: pair };
 	}
 
 	private async handleChannelMessage(peer: Peer, raw: unknown): Promise<void> {
@@ -854,10 +857,12 @@ export class P2PConnection {
 		this.sendSignaling({ type: 'relay', targetId: clientId, data: { hello } as never });
 	}
 
-	private relayBinding(peerClientId: string): string {
-		// Sorted so both ends compute the same binding (§3.4 relay variant).
+	private relayBinding(peerClientId: string): HelloBinding {
+		// Sorted so both ends compute the same binding (§3.4 relay variant);
+		// distinct label and lp() fields (§0) — a relay hello can never be
+		// replayed as a direct one or vice versa.
 		const pair = [this.myClientId ?? '', peerClientId].sort();
-		return `relay::${pair[0]}::${pair[1]}::${this.roomId}`;
+		return { label: 'hello-relay-v3', fields: [pair[0], pair[1], this.roomId] };
 	}
 
 	private async handleRelay(fromId: string, payload: AuthedPayload): Promise<void> {

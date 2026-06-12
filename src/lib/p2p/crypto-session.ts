@@ -65,6 +65,17 @@ export interface PeerInfo {
 /** Body types that ride the `hs` class — and only the `hs` class (§2). */
 const HS_BODY_TYPES = new Set(['hello', 'rekey-grant', 'rekey-request']);
 
+/**
+ * Channel binding for the hello proof (§3.4): a domain label plus the
+ * binding fields, fed to lp() as separate fields (§0 — no delimiter
+ * joining). Direct: ('hello-v3', [fpLow, fpHigh]); relay:
+ * ('hello-relay-v3', [clientIdLow, clientIdHigh, roomId]).
+ */
+export interface HelloBinding {
+	label: 'hello-v3' | 'hello-relay-v3';
+	fields: string[];
+}
+
 export class CryptoSession {
 	readonly roomId: string;
 	readonly deviceId: string;
@@ -207,11 +218,11 @@ export class CryptoSession {
 	}
 
 	/** Key-confirmation hello (§3.4), serialized for the wire. */
-	async makeHello(name: string, channelBinding: string): Promise<string> {
+	async makeHello(name: string, binding: HelloBinding): Promise<string> {
 		const proof = await crypto.subtle.sign(
 			'HMAC',
 			this.keys.auth,
-			lp('hello-v3', this.deviceId, channelBinding)
+			lp(binding.label, this.deviceId, ...binding.fields)
 		);
 		const body: HelloBody = {
 			type: 'hello',
@@ -235,7 +246,7 @@ export class CryptoSession {
 	 * Verify an incoming hello against this side's view of the channel
 	 * binding. Registers the peer (TOFU) on success; null on any failure.
 	 */
-	async acceptHello(wire: string | Envelope, channelBinding: string): Promise<PeerInfo | null> {
+	async acceptHello(wire: string | Envelope, binding: HelloBinding): Promise<PeerInfo | null> {
 		try {
 			const envelope: Envelope = typeof wire === 'string' ? JSON.parse(wire) : wire;
 			if (envelope.t !== 'hs' || !envelope.sig) return null;
@@ -261,14 +272,14 @@ export class CryptoSession {
 			const known = this.peers.get(body.deviceId);
 			if (known && known.spki !== body.spki) return null;
 
-			// Channel binding proof
+			// Channel binding proof, recomputed from our own view (§3.4)
 			const proof = fromB64url(body.proof);
 			if (!proof) return null;
 			const valid = await crypto.subtle.verify(
 				'HMAC',
 				this.keys.auth,
 				proof,
-				lp('hello-v3', body.deviceId, channelBinding)
+				lp(binding.label, body.deviceId, ...binding.fields)
 			);
 			if (!valid) return null;
 

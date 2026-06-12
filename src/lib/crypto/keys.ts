@@ -7,6 +7,7 @@
  */
 
 import { fromB64url, toB64url } from './b64';
+import { lp } from './lp';
 
 const HKDF_SALT = new TextEncoder().encode('mindline-v2');
 
@@ -121,14 +122,11 @@ export async function generationId(rkG: Uint8Array): Promise<string> {
 
 /**
  * Per-transfer media subkey (PROTOCOL.md §5.2):
- * AES-256-GCM key from HMAC(mediaBase, 'media|' + transferId).
+ * AES-256-GCM key from HMAC(mediaBase, lp('media', transferId)) — §0
+ * length-prefixed fields, no delimiter games.
  */
 export async function deriveMediaKey(keys: RoomKeys, transferId: string): Promise<CryptoKey> {
-	const bytes = await crypto.subtle.sign(
-		'HMAC',
-		keys.mediaBase,
-		new TextEncoder().encode(`media|${transferId}`)
-	);
+	const bytes = await crypto.subtle.sign('HMAC', keys.mediaBase, lp('media', transferId));
 	return crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM', length: 256 }, false, [
 		'encrypt',
 		'decrypt'

@@ -478,8 +478,10 @@ lower `g` prompts a `rekey-grant`; a higher advertised `g` prompts a
 only a verified, sequential grant does (§1.4, F1).
 
 Relay variant (§3.6): no DTLS exists, so
-`proof = HMAC(k_auth, lp('hello-relay-v3', deviceId, clientId_self,
-clientId_peer, roomId))`. Weaker binding (clientIds are server-assigned),
+`proof = HMAC(k_auth, lp('hello-relay-v3', deviceId, clientIdLow,
+clientIdHigh, roomId))` with the clientId pair sorted lexicographically
+so both ends compute the same binding. Weaker (clientIds are
+server-assigned),
 acceptable because envelope signatures + the monotonic replay high-water
 (§2) still hold; the operator can replay a stale hello but cannot mint
 traffic with it — and, because the relay hello carries no rekey material
