@@ -8,7 +8,8 @@
 		isReconnecting as isReconnectingStore,
 		reconnectionState,
 		isSyncing,
-		relayedPeers
+		relayedPeers,
+		rotationStranded
 	} from '$lib/stores';
 	import { reconnectP2P } from '$lib/p2p';
 	import { Loader2, User } from 'lucide-svelte';
@@ -135,6 +136,13 @@
 								Relayed peers get live messages only — history and files need a direct
 								connection. Encrypted messages pass through the signaling server.
 							</p>
+							{#if $rotationStranded}
+								<!-- §1.4/§3.6 honesty: room keys never transit the relay -->
+								<p class="text-xs text-muted-foreground" data-testid="rotation-stranded">
+									Key rotation pending direct connection — relayed peers can't receive the
+									room's newer keys and won't see messages sent under them.
+								</p>
+							{/if}
 						{/if}
 					{:else}
 						<div class="py-4 text-center text-sm text-muted-foreground">
