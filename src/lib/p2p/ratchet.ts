@@ -212,6 +212,10 @@ export class GenerationRatchet {
 	private retained = new Map<string, RetainedGeneration>(); // `${g}|${gid}`
 	private log = new Map<number, GrantCert>(); // our line, by g
 	private firstSeen = new Map<number, number>(); // g → when it became current
+	/** Mutation queue: adopt/mint decide on state across awaits, so they
+	 *  serialize — concurrent grants must not race the sibling cap or the
+	 *  convergence checks against stale state. */
+	private op: Promise<unknown> = Promise.resolve();
 
 	private constructor(roomId: string, state: PersistedRatchet, opts: RatchetOpts) {
 		this.roomId = roomId;
@@ -306,8 +310,19 @@ export class GenerationRatchet {
 		};
 	}
 
+	/** Run a state mutation exclusively, in arrival order. */
+	private locked<T>(fn: () => Promise<T>): Promise<T> {
+		const next = this.op.then(fn, fn);
+		this.op = next.catch(() => undefined);
+		return next;
+	}
+
 	/** Mint a fresh generation off the current one (§1.4: always possible). */
-	async mintNext(identity: DeviceIdentity): Promise<RekeyGrant> {
+	mintNext(identity: DeviceIdentity): Promise<RekeyGrant> {
+		return this.locked(() => this.mintNextLocked(identity));
+	}
+
+	private async mintNextLocked(identity: DeviceIdentity): Promise<RekeyGrant> {
 		const g = this.curG + 1;
 		if (g >= MAX_GENERATION) throw new Error('generation space exhausted');
 		const rk = crypto.getRandomValues(new Uint8Array(32));
@@ -322,7 +337,11 @@ export class GenerationRatchet {
 	 * outcome: 'adopted' → persist + gossip; 'behind' → rekey-request;
 	 * 'stale'/'sibling-retained'/'rejected' → nothing to propagate.
 	 */
-	async adopt(grant: RekeyGrant, chain: GrantCert[] = []): Promise<AdoptOutcome> {
+	adopt(grant: RekeyGrant, chain: GrantCert[] = []): Promise<AdoptOutcome> {
+		return this.locked(() => this.adoptLocked(grant, chain));
+	}
+
+	private async adoptLocked(grant: RekeyGrant, chain: GrantCert[]): Promise<AdoptOutcome> {
 		const verified = await verifyGrant(grant, this.roomId);
 		if (!verified) return 'rejected';
 		const tipCert = certOf(grant);
