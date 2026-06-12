@@ -9,6 +9,7 @@ import {
 } from '$lib/crypto/keys';
 import {
 	burnRoom,
+	getOrCreateIdentity,
 	getOrCreateKemIdentity,
 	loadIdentity,
 	loadKemIdentity,
@@ -191,6 +192,38 @@ describe('keystore', () => {
 		const first = await getOrCreateKemIdentity();
 		const second = await getOrCreateKemIdentity();
 		expect(Buffer.from(second.publicKey).equals(Buffer.from(first.publicKey))).toBe(true);
+	});
+
+	test('concurrent first-launch sessions converge on one device identity (atomic get-or-create)', async () => {
+		// Two first tabs on a fresh device must not diverge to two deviceIds:
+		// the loser's hello would be TOFU-rejected by peers that pinned the
+		// winner (same race class as the KEM identity above, pre-existing).
+		const [a, b] = await Promise.all([getOrCreateIdentity(), getOrCreateIdentity()]);
+		expect(a.deviceId).toBe(b.deviceId);
+		expect(Buffer.from(a.spki).equals(Buffer.from(b.spki))).toBe(true);
+		const persisted = await loadIdentity();
+		expect(persisted!.deviceId).toBe(a.deviceId);
+	});
+
+	test('getOrCreateIdentity adopts the persisted identity on later calls', async () => {
+		const first = await getOrCreateIdentity();
+		const second = await getOrCreateIdentity();
+		expect(second.deviceId).toBe(first.deviceId);
+		expect(Buffer.from(second.spki).equals(Buffer.from(first.spki))).toBe(true);
+	});
+
+	test('an adopted identity signs envelopes the persisted public key verifies', async () => {
+		const first = await getOrCreateIdentity();
+		const again = await getOrCreateIdentity();
+		const data = new TextEncoder().encode('probe');
+		const sig = await crypto.subtle.sign(
+			{ name: 'ECDSA', hash: 'SHA-256' },
+			again.privateKey,
+			data
+		);
+		expect(
+			await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, first.publicKey, sig, data)
+		).toBe(true);
 	});
 
 	test('a room burn leaves the device-scoped KEM identity intact', async () => {

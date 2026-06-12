@@ -110,7 +110,11 @@ identity. That eviction risk is documented user-facing (§6).
 
 - Per-device ECDSA P-256 keypair, generated non-extractable, stored in
   IndexedDB. (P-256 over Ed25519 for installed-base reach: Ed25519 WebCrypto
-  is Baseline only since mid-2025.)
+  is Baseline only since mid-2025.) Identity creation is an **atomic
+  get-or-create** (get + conditional put in one IndexedDB transaction,
+  the same allocator pattern as the §2 epoch high-water and the KEM
+  identity below): concurrent first tabs on a fresh device converge on
+  one keypair/deviceId instead of racing onto two.
 - `deviceId` = base64url(SHA-256(raw SPKI pubkey))[0..16). Stable across
   reloads; names remain self-asserted and bind to deviceId via TOFU.
 - Per-device **X-Wing KEM keypair** (X25519 + ML-KEM-768,

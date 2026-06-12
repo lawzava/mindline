@@ -10,7 +10,6 @@ import { fromB64url, toB64url } from '$lib/crypto/b64';
 import { ENVELOPE_VERSION, openEnvelope, sealEnvelope, type Envelope } from '$lib/crypto/envelope';
 import { lp } from '$lib/crypto/lp';
 import {
-	createDeviceIdentity,
 	deviceIdFromSpki,
 	importPeerPublicKey,
 	type DeviceIdentity,
@@ -26,12 +25,11 @@ import {
 } from '$lib/crypto/keys';
 import {
 	allocateEpoch,
+	getOrCreateIdentity,
 	getOrCreateKemIdentity,
-	loadIdentity,
 	loadRatchetState,
 	loadReplayState,
 	loadRoomKeys,
-	saveIdentity,
 	saveRatchetState,
 	saveReplayState,
 	saveRoomKeys
@@ -159,11 +157,10 @@ export class CryptoSession {
 		}
 		if (!keys) return null;
 
-		let identity = await loadIdentity();
-		if (!identity) {
-			identity = await createDeviceIdentity();
-			await saveIdentity(identity);
-		}
+		// Atomic get-or-create (§1.3): concurrent first tabs must converge on
+		// one deviceId — a plain load-then-save races them onto divergent
+		// identities and peers TOFU-reject the loser.
+		const identity = await getOrCreateIdentity();
 
 		// Device KEM identity (§1.3 v4): receives the hybrid grant wraps.
 		// Atomic get-or-create — concurrent tabs must converge on one seed.
