@@ -324,6 +324,52 @@ describe('GenerationRatchet — fork heal (§1.4 partitions)', () => {
 		expect(await winner.adopt(losingTip, losingChain)).toBe('rejected');
 	});
 
+	it('a fork deeper than the chain cap does not heal in-protocol (re-entry via link)', async () => {
+		// §1.4 depth bound: the heal needs the fork cert inside one
+		// admissible run, and runs end at the tip — so once the winning
+		// line's tip is more than maxChain past the fork, every exchange
+		// stays 'behind'/'rejected' and the loser re-enters via the link
+		// (bootstrap), which is the documented recovery.
+		const a = await freshEngine({ maxChain: 2 });
+		const b = await freshEngine({ maxChain: 2 });
+		const g1 = await a.mintNext(alice);
+		await b.adopt(g1);
+		for (let i = 0; i < 4; i++) {
+			await a.mintNext(alice); // fork at g=2, tips at g=5
+			await b.mintNext(bob);
+		}
+		clock += 120_000;
+		// Modeling the wire: the responder serves at most maxChain certs
+		// ending at its tip (chainTail sliced), so the fork cert at g=2
+		// can never ride an admissible run.
+		const served = a.chainTail(1).slice(-2);
+		const outcome = await b.adopt(a.currentGrant()!, served);
+		expect(outcome).not.toBe('adopted');
+		expect(b.g).toBe(5);
+		// The documented recovery works: a fresh link-generation engine
+		// (rejoin) bootstraps straight onto the winning line.
+		const rejoined = await freshEngine({ maxChain: 2 });
+		expect(await rejoined.adopt(a.currentGrant()!, served)).toBe('adopted');
+		expect(rejoined.gid).toBe(a.gid);
+	});
+
+	it('serializes concurrent adopts so the sibling cap cannot be raced', async () => {
+		const a = await freshEngine({ maxSiblings: 2 });
+		const b = await freshEngine({ maxSiblings: 2 });
+		const c = await freshEngine({ maxSiblings: 2 });
+		const d = await freshEngine({ maxSiblings: 2 });
+		const g1 = await a.mintNext(alice);
+		for (const e of [b, c, d]) await e.adopt(g1);
+		const carol = await createDeviceIdentity();
+		await d.adopt(await a.mintNext(alice)); // d current at g2 (1 instance)
+		const s2 = await b.mintNext(bob);
+		const s3 = await c.mintNext(carol);
+		// Two sibling grants arrive concurrently: without internal
+		// serialization both pass the cap check against stale state.
+		await Promise.all([d.adopt(s2), d.adopt(s3)]);
+		expect(d.keysFor(2).length).toBeLessThanOrEqual(2);
+	});
+
 	it('a shorter winning line converges after its side extends past the fork', async () => {
 		const a = await freshEngine();
 		const b = await freshEngine();

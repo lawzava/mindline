@@ -246,7 +246,15 @@ lower, the receiver adopts the incoming line's tip (even when that tip's
 otherwise it rejects, and the *winning* side converges the room by
 minting past the loser's tip so the heal applies in the other direction
 (a lone post-window sibling never heals — that is the flood bound; a
-line must extend past the fork to claim it). Forks are **availability**
+line must extend past the fork to claim it). **Depth bound** (same
+`MAX_CHAIN` bound as catch-up, and for the same reason): the heal needs
+the fork cert inside one admissible run, and runs end at the tip — so a
+fork heals in-protocol only while the *winning* line's tip is within
+`MAX_CHAIN` of `g_f`. A partition that ratchets deeper than that past
+the fork (32+ membership changes while split) is recovered the same way
+as a deeper-than-`MAX_CHAIN` gap: the losing side **re-enters through
+the link** (leave + rejoin → bootstrap onto the winning line; identity
+persists, history re-syncs §3.5). Availability-only, like every fork. Forks are **availability**
 events, not confidentiality events — every line is minted by a member
 and granted only to members — so a deterministic symmetric tie-break is
 sufficient; a member abusing heal to repeatedly re-root the room (each
