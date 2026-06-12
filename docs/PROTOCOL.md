@@ -1,8 +1,9 @@
-# Mindline Protocol v3
+# Mindline Protocol v4
 
 This is the portable, implementation-defining spec for Mindline's E2E
-encryption, P2P wire protocol, and media transfer. TypeScript + WebCrypto
-only. If code and this document disagree, one of them is a bug.
+encryption, P2P wire protocol, and media transfer. TypeScript + WebCrypto,
+plus exactly one pure-JS post-quantum library (§1.3) — no WASM. If code
+and this document disagree, one of them is a bug.
 
 Revision 2: incorporates adversarial review (docs/analysis/
 protocol-verification.json) — media nonce-salt fix, seq epochs, defined
@@ -17,6 +18,16 @@ window (§2); canonical `lp()` in every binding and media-key derivation
 (§0 violations removed). v3 is a hard wire cutover from v2 — pre-launch,
 no install base: deployed v2 sessions stop interoperating and must
 reload. v3 receivers drop `v: 2` envelopes.
+
+Revision 4 (owner-decided, 2026-06-12): per-device **hybrid post-quantum
+wrapping of generation secrets**. Every device adds an X-Wing
+(X25519 + ML-KEM-768) KEM keypair beside its ECDSA identity (§1.3),
+advertised and TOFU-pinned in the hello (§3.4); a rekey-grant carries
+`rk_g` only wrapped to one recipient's KEM key (§1.4). This closes the
+former residual 4 (endpoint-captured grants were link-readable) and the
+one genuine harvest-now-decrypt-later path to content. Same hard-cutover
+rule as v3→v2: envelope `v: 4`, hello labels `hello-v4`/`hello-relay-v4`,
+v4 receivers drop `v: 3` envelopes; pre-launch, no install base.
 
 ## 0. Canonical encoding
 
@@ -73,10 +84,13 @@ members regardless of how far the room has ratcheted past the joiner.
 Note the consequence: `k_hs` is derivable from the link, so it provides
 no confidentiality against a link holder. For hellos that is fine (they
 carry identity metadata a link holder could learn by joining). For
-rekey-grants — which carry `rk_g` itself — confidentiality against a
-leaked link rests **entirely on the carrier**: grants travel only over
-direct DTLS channels whose operator-MITM is detectable via the §3.4
-binding, and never relay (§1.4, §3.6).
+rekey-grants, `k_hs` is only the **outer membership gate**: the secret
+inside is additionally wrapped to the recipient device's KEM key
+(§1.4 v4), so a captured grant is unreadable to a link holder. The
+carrier restriction — grants travel only over direct DTLS channels whose
+operator-MITM is detectable via the §3.4 binding, and never relay (§1.4,
+§3.6) — remains as defense in depth and metadata hygiene, no longer as
+the sole confidentiality boundary.
 
 Per-transfer media keys are `importKey(HMAC(k_mediaBase, lp('media',
 transferId)))` as AES-256-GCM — an HMAC-based KDF rather than direct HKDF
@@ -99,8 +113,62 @@ identity. That eviction risk is documented user-facing (§6).
   is Baseline only since mid-2025.)
 - `deviceId` = base64url(SHA-256(raw SPKI pubkey))[0..16). Stable across
   reloads; names remain self-asserted and bind to deviceId via TOFU.
+- Per-device **X-Wing KEM keypair** (X25519 + ML-KEM-768,
+  draft-connolly-cfrg-xwing-kem-10; implementation `@noble/post-quantum`
+  0.6.1, exact-pinned, pure JS — **not independently audited**, the caveat
+  is named in CLAIMS.md). It receives the hybrid grant wraps of §1.4. The
+  keypair is deterministic from a 32-byte seed; because no native WebCrypto
+  PQC exists, the seed cannot be a non-extractable CryptoKey — it is
+  persisted only AES-256-GCM-wrapped under a non-extractable wrapping key
+  stored beside it (the same at-rest protection class as the WebCrypto
+  keys; no raw key bytes in any record), and the public key is re-derived
+  from the seed on load. The public key rides the hello beside the ECDSA
+  SPKI and is TOFU-pinned with it (§3.4); `deviceId` remains a fingerprint
+  of the ECDSA SPKI alone.
 - Residual limit (documented, inherent to capability URLs): a key-holder can
   mint new identities; they cannot impersonate an existing deviceId.
+
+**Quantum-signature posture (Phase-2 item 9, owner-decided 2026-06-12).**
+Signatures stay classical ECDSA P-256, deliberately. The reasoning, in
+full, because it bounds what a quantum adversary gets:
+
+- Against **non-members**, authentication never rested on ECDSA. Envelope
+  validity requires the symmetric room/generation keys (AES-256-GCM with
+  bound AAD, §2), membership proof is the symmetric `k_auth` HMAC (§3.4)
+  — both quantum-adequate. An outsider with a CRQC and a recovered device
+  key still cannot mint a single valid envelope.
+- ECDSA defends **attribution against link holders**: member↔member
+  non-impersonation (§2 signatures, §3.7 authorization), the §3.4
+  defense against a link-holding operator MITM, and grant-cert minter
+  authenticity (§1.4). Against a link holder, confidentiality is already
+  conceded by the capability model — what signatures protect is who said
+  what, and forging that requires a **live CRQC at message time**. There
+  is nothing to harvest: a recorded signature does not become a forgery
+  later; recorded *content* is what harvest-now-decrypt-later threatens,
+  and that is symmetric (plus hybrid-wrapped grants, §1.4 v4).
+- Device keys are rotatable: TOFU re-pin, and the project has already
+  executed two hard wire cutovers. A signature-algorithm migration before
+  CRQCs exist loses nothing.
+- Precedent and guidance: every production E2EE messenger that deployed
+  post-quantum cryptography (Signal PQXDH/SPQR, iMessage PQ3, Tuta, the
+  MLS PQ ciphersuites draft) ships hybrid PQ key agreement with
+  **classical** signatures, for exactly this asymmetry; NIST IR 8547
+  (draft) deprecates ECDSA after 2030 and disallows it after 2035.
+- The cost side, measured against this protocol: hybrid ML-DSA-65 would
+  grow every signed envelope by ~4.4 KB (a typical chat envelope is
+  ~380 B), push a MAX_CHAIN grant chain past the 64 KiB DataChannel
+  budget, and put an unaudited PQC implementation on the *integrity*
+  path, where a bug forges rather than merely fails to add protection.
+
+**Named residual** (CLAIMS.md): a link-holding adversary with a live
+CRQC could impersonate existing members and minters until rotation —
+an attribution break, not a confidentiality one.
+
+**Rotation trigger**: hybridize signatures (LAMPS composite pattern —
+domain-separated payload naming the algorithm pair, both signatures
+must verify) when WebCrypto ML-DSA reaches cross-engine availability,
+or earlier on credible CRQC acceleration. Until then this section is
+re-evaluated whenever the threat model is revisited.
 
 ### 1.4 Key generations (wire forward secrecy)
 
@@ -128,19 +196,20 @@ under static `k_storage` (§4): link + a copy of a member device's
 IndexedDB still decrypts stored pages. At-rest generation re-keying is
 explicitly deferred (§4). (3) Members hold the current generation by
 definition; forward secrecy is about *captures*, not about revoking
-members. (4) **Endpoint capture, not just relay.** Grant ciphertext is
-sealed under static `k_hs`, which is link-derivable; so a grant captured
-*anywhere off the direct wire* — an endpoint debug log, a malicious
-browser extension, disk forensics of the `hs` envelope before it is
-discarded — is readable by a later link leak. The relay-archive claim
-above holds because grants never relay; it does **not** extend to
-endpoint captures. Closing this would require wrapping `rk_g` under
-per-device asymmetric keys instead of `k_hs` (see Quantum note) — an
-asymmetric-agreement change deferred to Phase 2 and reserved for owner
-decision (no-WASM stance vs ML-KEM). (5) An **active** adversary holding
-the link at grant time is simply a member (capability model) and reads
-the room live; the §3.4 binding detects a *keyless* operator MITM, not a
-link-holding one. The claim is passive-and-later-leak, never active.
+members. (4) **Recipient-device compromise.** Since v4, grant ciphertext
+captured anywhere — relay archive (never happens, grants never relay),
+endpoint debug log, browser extension, disk forensics, or a
+future-quantum decryption of recorded DTLS — is unreadable without the
+*recipient device's* KEM key: `rk_g` is wrapped per recipient (below),
+and the wrap is hybrid, so a quantum break of X25519 alone does not open
+it. What remains is the adversary who has the recipient device's KEM
+seed — i.e. its IndexedDB plus the wrapping key — and that adversary
+class already reads the device's at-rest history (§4/§6); the wrap
+cannot defend against the endpoint it terminates on. (5) An **active**
+adversary holding the link at grant time is simply a member (capability
+model) and reads the room live; the §3.4 binding detects a *keyless*
+operator MITM, not a link-holding one. The claim is
+passive-and-later-leak, never active.
 
 **Generation identity.** A generation is identified not by `g` alone but
 by `gid = base64url(SHA-256(rk_g))[0..16]`. `gid` is unforgeable without
@@ -154,11 +223,20 @@ the wire distinguishes them (below), which `g` alone cannot.
 where `prevGid` is the `gid` of the generation this one succeeds
 (`prevGid = ''` only for `g = 1` succeeding the link generation, whose
 `gid` is fixed `gid_0 = SHA-256(rk_0)[0..16]`). The grant body is
-`rekey-grant { g, minter, minterSpki, gid, prevGid, rk: base64url(rk_g), cert }`.
-A recipient verifies `SHA-256(minterSpki)==minter`, `H(rk)==gid`, and
-`cert` against `minterSpki` before considering the grant — so a forwarder
-cannot claim a forged low `minter` to win a tie-break (F2), nor substitute
-its own `rk` under an honest member's identity. The `prevGid` link makes
+`rekey-grant { g, minter, minterSpki, gid, prevGid, wrap, cert }` where
+`wrap = { ct, n, wrapped }` carries `rk_g` **wrapped to one recipient**
+(v4): `ct` is an X-Wing encapsulation against the recipient's
+hello-pinned KEM key (§1.3/§3.4), and `wrapped` is `rk_g` sealed
+AES-256-GCM under the encapsulated shared secret with fresh nonce `n`
+and AAD `lp('grant-wrap', roomId, str(g), gid, recipientDeviceId)` — a
+wrap cannot be replayed across rooms, generations, or recipients, and
+only the addressed device can open it. A recipient verifies
+`SHA-256(minterSpki)==minter` and `cert` against `minterSpki`, unwraps,
+and checks `H(rk)==gid` before considering the grant — so a forwarder
+cannot claim a forged low `minter` to win a tie-break (F2), nor
+substitute its own `rk` under an honest member's identity (the signed
+`gid` commits to the secret; the wrap layer cannot smuggle a different
+one past that check). The `prevGid` link makes
 the generation line a **hash chain**: minting generation `g` requires
 naming `gid_{g-1}`, which a member only knows if it actually held
 generation `g-1` (or was served its certificate, below — still members
@@ -172,14 +250,16 @@ does) and is what lets a member serve lineage to a behind peer long
 after the old generations' keys — and their raw secrets — are gone.
 
 **Distribution (rekey-grant).** The minter sends each verified **direct**
-peer the grant as a signed `hs` envelope (§2). A recipient that *adopts*
-re-grants the certificate **verbatim** (same `cert`, same `minter`) to
-its own verified direct peers — gossip, so meshes and partitions
+peer the grant as a signed `hs` envelope (§2), `rk_g` wrapped to that
+peer (above) — grants are inherently per-recipient wires. A recipient
+that *adopts* re-grants the certificate **verbatim** (same `cert`, same
+`minter`) to its own verified direct peers, **re-wrapping** the secret
+it now holds for each of them — gossip, so meshes and partitions
 converge without the minter reaching everyone. The transport `hs`
 envelope is re-signed by each forwarder (envelope `s` = forwarder); the
-inner `cert` is never re-signed. Grants never relay (§3.6) — see §1.2
-for why this carrier restriction, not detectability, is the security
-boundary. A member that sees an envelope it cannot decrypt at a known
+inner `cert` is never re-signed. Grants never relay (§3.6) — since v4 a
+defense-in-depth and metadata rule (§1.2), with the wrap as the
+confidentiality boundary. A member that sees an envelope it cannot decrypt at a known
 `g`, or a hello advertising a `gid` it lacks, sends
 `rekey-request { g, gid?, haveG, haveGid }` direct-only; the answer is a
 grant for the responder's **current** generation carrying the rk-free
@@ -317,14 +397,25 @@ explicitly (extends the §3.6 relay honesty: "key rotation pending direct
 connection"). Consistent with relay peers already having no sync and no
 media.
 
-**Quantum note.** No asymmetric agreement is introduced — grants are
-symmetric under `k_hs` over DTLS — so no harvest-now-decrypt-later
-surface is added and the §6 post-quantum content posture is unchanged.
-Moving grants to per-device asymmetric wrapping would *also* close the
-endpoint-capture residual (4) above, but it is the one change the brief
-reserves: it must be **hybrid ML-KEM-768 + X25519**, it pulls in a
-vetted WASM PQC dependency against the repo's no-WASM stance, and it is
-therefore a Phase-2, owner-decided item — never introduced silently.
+**Quantum note (v4).** Generation secrets are distributed under
+**hybrid** asymmetric wrapping — X-Wing per
+draft-connolly-cfrg-xwing-kem-10 (pin: rev 10; the wire format is frozen
+across recent revisions), secure while *either* X25519 *or* ML-KEM-768
+holds — so the wrap never weakens the protocol below its classical
+baseline and adds no harvestable surface. It closes the one genuine
+harvest-now-decrypt-later chain this protocol had: an on-path recorder
+of direct DTLS traffic + a future CRQC + a later link leak could have
+recovered a v3 grant (DTLS is classical ECDHE in most engines; Chrome
+142+ already hybrid-PQ-wraps WebRTC DTLS, other engines lag) and read
+`rk_g` through link-derived `k_hs`. In v4 that chain dead-ends at the
+recipient's KEM key. Content keys themselves remain symmetric-only
+(§1.1/§1.2): AES-256-GCM under link- or generation-derived keys, already
+quantum-adequate (Grover → ~128-bit effective, §6). The PQC
+implementation choice (pure JS, unaudited — no independently audited
+pure-JS PQC exists as of 2026-06; WASM alternatives are likewise
+unaudited and would loosen CSP) is an owner-accepted, CLAIMS-named
+caveat. ECDSA signatures remain classical (Phase-2 item 9: documented
+argument, §1.3 posture — landing in the same change series).
 
 ## 2. Envelope (everything on the wire)
 
@@ -333,7 +424,7 @@ envelope; there is no plaintext message path.
 
 ```ts
 interface Envelope {
-  v: 3;
+  v: 4;
   t: 'msg' | 'eph' | 'hs';   // which subkey class encrypted the body
   g: number;                  // key generation (§1.4); 0 for 'hs'
   s: string;                  // sender deviceId
@@ -462,31 +553,40 @@ On `chat` channel open, both sides send, as a signed `hs` envelope
 far the room has ratcheted past it):
 
 ```
-hello { deviceId, name, spki, g, gid, proof }
-proof = HMAC(k_auth, lp('hello-v3', deviceId, fpLow, fpHigh))
+hello { deviceId, name, spki, kem, g, gid, proof }
+proof = HMAC(k_auth, lp('hello-v4', deviceId, kem, fpLow, fpHigh))
 ```
 
-`fpLow`/`fpHigh` are the two `a=fingerprint` values from the negotiated
-SDP (local and remote), sorted lexicographically and fed to `lp()` as
-separate fields — no delimiter joining (§0). The receiver **recomputes**
-the binding from its own view of the connection and verifies the proof;
-a captured hello replayed onto any other connection fails. Because the
-hello is also ECDSA-signed under the device key (§2), the binding it
-asserts cannot be re-forged by anyone lacking that key even if they hold
-`k_auth` (a link holder): substituting fingerprints requires re-signing
-the body, which a link-holding operator MITM cannot do. The HMAC keeps a
-keyless operator out; the signature keeps a link-holding one from
-impersonating the device. A peer that cannot produce a valid
-envelope+proof is **unverified**: no sync, no messages accepted,
-surfaced as "knocking without the key". Only key-confirmed peers count
-as participants. `g`/`gid` advertise the sender's current generation
-(§1.4): a verified hello whose `gid` the receiver lacks at an equal or
-lower `g` prompts a `rekey-grant`; a higher advertised `g` prompts a
-`rekey-request`. The hello never moves the receiver's own generation —
-only a verified, sequential grant does (§1.4, F1).
+`kem` is the device's X-Wing public key (§1.3, base64url), TOFU-pinned
+together with the SPKI: a known deviceId presenting a changed SPKI *or*
+a changed KEM key is rejected. The proof covers `kem`, so stripping or
+substituting it fails the HMAC before the envelope signature is even
+considered. A key that is well-sized but encapsulation-invalid (ML-KEM
+modulus check) is rejected at the hello — accepting it would only
+strand its presenter from every future grant. The `name` is a display
+hint (§3.7) clamped to 64 characters in the hello, which bounds the
+relay-hello frame under the §3.6 budget. `fpLow`/`fpHigh` are the two `a=fingerprint` values from the
+negotiated SDP (local and remote), sorted lexicographically and fed to
+`lp()` as separate fields — no delimiter joining (§0). The receiver
+**recomputes** the binding from its own view of the connection and
+verifies the proof; a captured hello replayed onto any other connection
+fails. Because the hello is also ECDSA-signed under the device key (§2),
+the binding it asserts cannot be re-forged by anyone lacking that key
+even if they hold `k_auth` (a link holder): substituting fingerprints —
+or the KEM key — requires re-signing the body, which a link-holding
+operator MITM cannot do. The HMAC keeps a keyless operator out; the
+signature keeps a link-holding one from impersonating the device. A peer
+that cannot produce a valid envelope+proof is **unverified**: no sync,
+no messages accepted, surfaced as "knocking without the key". Only
+key-confirmed peers count as participants. `g`/`gid` advertise the
+sender's current generation (§1.4): a verified hello whose `gid` the
+receiver lacks at an equal or lower `g` prompts a `rekey-grant`; a
+higher advertised `g` prompts a `rekey-request`. The hello never moves
+the receiver's own generation — only a verified, sequential grant does
+(§1.4, F1).
 
 Relay variant (§3.6): no DTLS exists, so
-`proof = HMAC(k_auth, lp('hello-relay-v3', deviceId, clientIdLow,
+`proof = HMAC(k_auth, lp('hello-relay-v4', deviceId, kem, clientIdLow,
 clientIdHigh, roomId))` with the clientId pair sorted lexicographically
 so both ends compute the same binding. Weaker (clientIds are
 server-assigned),
@@ -524,9 +624,10 @@ DataChannel would carry, after a relay-hello (§3.4). Each relayed frame
 is size-guarded below the server's 16 KB `maxPayload` (oversized
 envelopes are dropped instead of killing the socket). Drafts/presence
 (`eph`), sync, media, and **rekey-grant/rekey-request** never relay —
-the grant restriction is a security boundary, not a bandwidth choice
-(§1.2, §1.4): a relayed grant would hand the operator ciphertext that a
-leaked link decrypts. Enforced outbound and inbound (a relayed `hs`
+since v4 the per-device wrap (§1.4) is the grant's confidentiality
+boundary, and the relay ban stands as defense in depth plus metadata
+hygiene (a relayed grant would hand the operator sender/size/timing for
+the room's key-rotation events). Enforced outbound and inbound (a relayed `hs`
 envelope other than the relay-hello is rejected). The connection
 indicator shows relayed peers distinctly, including the post-ratchet
 stranded state ("key rotation pending direct connection", §1.4), with
@@ -660,7 +761,7 @@ AAD   = lp(transferId, str(chunkIndex))
 | Network observer           | Traffic shape only (DTLS/WSS everywhere)                       |
 | Signaling operator         | Room IDs, deviceIds, presence times, ciphertext when relaying. No content, no names. Cannot inject (HMAC) or read relayed content (no key). Archived relay ciphertext of generations ≥ 1 stays unreadable even given a later-leaked link (§1.4) |
 | TURN operator              | Encrypted SCTP/DTLS packets, peer IPs                           |
-| Link-holder (intended or leaked) | Entry + history-by-sync, as a visible peer (§1.1, §1.4). Passive + later leak: relay-archived ciphertext of generations ≥1 stays unreadable (grants never relay); residual — a grant captured *at an endpoint* (log/extension/forensics) is readable, since `k_hs` is link-derived (§1.4 residual 4) |
+| Link-holder (intended or leaked) | Entry + history-by-sync, as a visible peer (§1.1, §1.4). Passive + later leak: captured grant ciphertext — relay-archived (never happens), endpoint-captured, or future-quantum-recovered from recorded DTLS — stays unreadable: `rk_g` is hybrid-wrapped (X-Wing) to the recipient device's KEM key (§1.4 v4); only compromise of that device's key store opens it |
 | Past participant           | Keeps everything already synced, and the link (can rejoin visibly). Loses passive read of post-departure traffic once the leave-triggered ratchet lands (§1.4) |
 | Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, delete, or react as others (signatures + §3.7 authorization); can misrepresent history it serves to a syncing device (§3.5); can grief the ratchet — fork a joiner, mint-flood, grind low gids to re-root lines (§1.4) — an availability nuisance, never a read of traffic it was not granted |
 | Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB |
@@ -709,7 +810,16 @@ authorization; reaction membership transitions (verified-device keyed,
 §3.7); sync page reconciliation (edit LWW, reaction maps); media
 frame round-trip + reorder/corruption rejection + salt-distinct reuse;
 storage encrypt/decrypt + v1 plaintext migration; IndexedDB CryptoKey
-persistence round-trip.
+persistence round-trip; **v4 KEM wrapping**: X-Wing wrap/unwrap
+round-trip with exact spec sizes, tampered-ciphertext and
+wrong-recipient failure, per-field wrap-AAD binding
+(room/generation/gid/recipient swaps all rejected), seed-deterministic
+keypair, KEM identity persistence round-trip with no raw seed in any
+stored record and burn-survival (device-scoped), hello KEM pinning
+(changed KEM key for a known deviceId rejected), wire grants carry a
+wrap and never raw `rk`, misdelivered grants (wrapped for another
+device) fail closed without moving the receiver's generation, granting
+to a peer with no pinned KEM key fails closed.
 
 E2E (Playwright, blocking tier): two-browser live-typing progressive
 assertion (substring grows across ≥3 snapshots before send); wire-level

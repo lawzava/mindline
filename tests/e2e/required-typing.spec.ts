@@ -121,7 +121,7 @@ test.describe('Required Live Typing + Wire Encryption', () => {
 			try {
 				const env = JSON.parse(f.text);
 				return (
-					env.v === 3 &&
+					env.v === 4 &&
 					typeof env.g === 'number' &&
 					typeof env.c === 'string' &&
 					typeof env.n === 'string' &&
@@ -135,7 +135,7 @@ test.describe('Required Live Typing + Wire Encryption', () => {
 			if (f.label !== 'eph' || f.kind !== 'string') return false;
 			try {
 				const env = JSON.parse(f.text);
-				return env.v === 3 && typeof env.c === 'string';
+				return env.v === 4 && typeof env.c === 'string';
 			} catch {
 				return false;
 			}
