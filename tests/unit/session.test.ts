@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { CryptoSession } from '$lib/p2p/crypto-session';
+import { MAX_CHAIN } from '$lib/p2p/ratchet';
 import { createRoomKey, deriveRoomKeys, importRoomKeyMaterial } from '$lib/crypto/keys';
 import { createDeviceIdentity } from '$lib/crypto/identity';
 import { sealEnvelope } from '$lib/crypto/envelope';
@@ -182,6 +183,32 @@ describe('session generations (PROTOCOL.md §1.4 — ratchet wiring)', () => {
 		await s2.acceptHello(await s1.makeHello('A', bind('bind')), bind('bind'));
 		await s2.grantWireFor(s1.deviceId, 0); // raw rk gone: must mint g2 to serve this
 		expect(s2.generation.g).toBe(2);
+	});
+
+	test('a fork at depth exactly MAX_CHAIN heals in-protocol (§1.4 depth bound, P2.0 F3)', async () => {
+		const { a, b } = await verifiedPair('room-deep-fork');
+		await a.mintGeneration();
+		const g1 = await b.openMessage(JSON.parse(await a.grantWireFor(b.deviceId, 0)));
+		await b.handleRekeyGrant(g1 as never);
+		await a.mintGeneration(); // a's sibling at g2 — the fork point
+		await b.mintGeneration(); // b's sibling at g2
+		const [winner, loser] = a.generation.gid < b.generation.gid ? [a, b] : [b, a];
+		// The winning line extends to tip = fork + MAX_CHAIN — the deepest
+		// fork the receiver's chain bound admits; the served chain must not
+		// waste a slot on the tip cert that already rides as the grant.
+		for (let i = 0; i < MAX_CHAIN; i++) await winner.mintGeneration();
+		const wire = await winner.handleRekeyRequest(
+			{
+				type: 'rekey-request',
+				g: winner.generation.g,
+				haveG: loser.generation.g,
+				haveGid: loser.generation.gid
+			},
+			loser.deviceId
+		);
+		const body = await loser.openMessage(JSON.parse(wire));
+		expect(await loser.handleRekeyGrant(body as never)).toBe('adopted');
+		expect(loser.generation).toEqual(winner.generation);
 	});
 
 	test('a losing sibling heals through a tailored rekey-request chain (§1.4)', async () => {

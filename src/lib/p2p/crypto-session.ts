@@ -514,7 +514,13 @@ export class CryptoSession {
 		if (peerGid !== undefined && fromG >= 1 && !this.ratchet.onLine(fromG, peerGid)) {
 			fromG -= 1;
 		}
-		const chain = this.ratchet.chainTail(fromG).slice(-MAX_CHAIN);
+		// The tip cert already rides as `grant`; serving it again in the
+		// chain would waste one of the MAX_CHAIN slots and push the fork
+		// cert out at exactly the spec's boundary depth (P2.0 review F3).
+		const chain = this.ratchet
+			.chainTail(fromG)
+			.filter((c) => c.g < grant.g)
+			.slice(-MAX_CHAIN);
 		const body: RekeyGrantBody = { type: 'rekey-grant', grant, chain };
 		return this.sealHs(body as unknown as Record<string, unknown>);
 	}
