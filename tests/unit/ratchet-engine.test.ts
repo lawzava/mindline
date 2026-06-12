@@ -197,6 +197,19 @@ describe('GenerationRatchet — same-g siblings (§1.4 review #3)', () => {
 		expect(d.gid).toBe(high.gid);
 	});
 
+	it('a reload does not re-open the sibling window (P2.0 review F2)', async () => {
+		// The window runs from first OBSERVING g (§1.4); a revived engine
+		// observed its g before the reload. Re-stamping at construction
+		// would hand a malicious member a fresh 30 s window after every
+		// peer reload to plant a winning-but-room-rejected sibling line.
+		const { d, low, high } = await siblings();
+		await d.adopt(high);
+		const revived = GenerationRatchet.fromPersisted(ROOM, d.state(), opts());
+		// Same instant — a fresh constructor stamp would leave this open.
+		expect(await revived.adopt(low)).toBe('rejected');
+		expect(revived.gid).toBe(high.gid);
+	});
+
 	it('caps retained sibling instances per generation', async () => {
 		const a = await freshEngine({ maxSiblings: 2 });
 		const b = await freshEngine({ maxSiblings: 2 });

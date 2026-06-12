@@ -244,7 +244,15 @@ export class GenerationRatchet {
 		this.bootstrapped = state.bootstrapped;
 		for (const r of state.retained) this.retained.set(`${r.g}|${r.gid}`, r);
 		for (const c of state.log) this.log.set(c.g, c);
-		this.firstSeen.set(this.curG, this.now());
+		// The sibling window runs from first OBSERVING g (§1.4), which for a
+		// constructed engine happened at or before whatever produced its
+		// state — never now(). Stamping now() here would hand any member a
+		// fresh window after every peer reload to plant a lone sibling that
+		// the rest of the room then rejects (sticky one-way split). Only
+		// advance() opens a window. Conservative cost: a legitimate
+		// concurrent-mint sibling missed across a reload converges later via
+		// the window-free fork heal once its line extends.
+		this.firstSeen.set(this.curG, 0);
 	}
 
 	/** A member that holds only the link: generation 0, chain anchor ''. */
@@ -426,7 +434,8 @@ export class GenerationRatchet {
 		if (grant.g === div.g) {
 			// Lone same-g sibling: windowed and capped (§1.4 review #3).
 			if (div.g !== this.curG) return 'rejected'; // stub of an old fork
-			const since = this.firstSeen.get(this.curG) ?? this.now();
+			// Absent stamp fails closed: an unknown window is an expired one.
+			const since = this.firstSeen.get(this.curG) ?? 0;
 			if (this.now() - since > this.siblingWindowMs) return 'rejected';
 			if (this.knownGidsAt(this.curG).size >= this.maxSiblings) return 'rejected';
 			if (div.gid < this.curGid) {

@@ -266,7 +266,7 @@ grant for the responder's **current** generation carrying the rk-free
 ancestor certificates linking it back to the requester's stated
 position. At most `MAX_CHAIN` ancestor certs ride one grant — the cap
 bounds per-message wire size and verification work. A member behind by
-more than `MAX_CHAIN` generations (the room rotated 32+ times while it
+more than `MAX_CHAIN` generations (the room rotated 33+ times while it
 was away) cannot chain-verify that far and **re-enters through the
 link** — leave and rejoin, which is the same members-only trust its
 position already implies (see Bootstrap below) and loses nothing:
@@ -299,7 +299,12 @@ integer `< 2³²`. Among admissible grants:
   connected partition and a later lone sibling is rejected (a
   genuinely-behind member instead requests the established generation).
   This stops a member from forcing unbounded ever-lower same-`g`
-  siblings to bloat retained keys and trial-decrypt (review #3).
+  siblings to bloat retained keys and trial-decrypt (review #3). The
+  window opens only when a generation *becomes* current (mint or adopt)
+  and is **never re-opened by a reload**: a revived engine treats its
+  current generation's window as closed — otherwise any member could
+  wait out a peer's reload and plant a lone sibling that the rest of
+  the room rejects, splitting that peer off (review P2.0-F2).
 
 **Bootstrap (newcomer).** A member still at the link generation that has
 never adopted or minted accepts its **first verified grant at any
@@ -330,8 +335,10 @@ line must extend past the fork to claim it). **Depth bound** (same
 `MAX_CHAIN` bound as catch-up, and for the same reason): the heal needs
 the fork cert inside one admissible run, and runs end at the tip — so a
 fork heals in-protocol only while the *winning* line's tip is within
-`MAX_CHAIN` of `g_f`. A partition that ratchets deeper than that past
-the fork (32+ membership changes while split) is recovered the same way
+`MAX_CHAIN` of `g_f` (the tip cert rides as the grant itself, so the
+chain budget is spent entirely on ancestors). A partition that ratchets
+deeper than that past
+the fork (33+ membership changes while split) is recovered the same way
 as a deeper-than-`MAX_CHAIN` gap: the losing side **re-enters through
 the link** (leave + rejoin → bootstrap onto the winning line; identity
 persists, history re-syncs §3.5). Availability-only, like every fork. Forks are **availability**
@@ -796,11 +803,13 @@ isolation, `gid = H(rk_g)`, chained grant-certificate verify/forge
 not adopted without a verified ancestor chain; multi-generation catch-up
 via rk-free ancestor certs accepted, holes and tampered links rejected,
 per-grant chain cap enforced), same-`g` tie-break by lower `gid` bounded
-by the convergence window and the per-`g` instance cap, line finality (a
+by the convergence window and the per-`g` instance cap (window closed
+across reload — a revived engine rejects a lone same-`g` sibling), line
+finality (a
 sibling-rooted `+1` not adopted), newcomer bootstrap (first verified
 grant at any `g`; normal rules thereafter), fork heal (window-free
 lower-`gid` at the fork for a line extending past it; lone post-window
-sibling stays rejected), trial-decrypt across retained `(g,gid)` keys,
+sibling stays rejected; heals at depth exactly `MAX_CHAIN`), trial-decrypt across retained `(g,gid)` keys,
 retention horizon (keys die two generations on), persisted ratchet state
 round-trip without raw secrets, can't-grant → mint-next liveness
 (including post-reload), unknown-generation drop, `hs`-class body-type
