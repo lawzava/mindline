@@ -9,12 +9,15 @@
 import type { DeviceIdentity } from './identity';
 import { deviceIdFromSpki } from './identity';
 import type { RoomKeys } from './keys';
+// Type-only: the runtime dependency goes the other way (p2p → keystore).
+import type { PersistedRatchet } from '$lib/p2p/ratchet';
 
 const DB_NAME = 'mindline-keys';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const ROOMS = 'rooms';
 const DEVICE = 'device';
 const REPLAY = 'replay';
+const GENERATIONS = 'generations';
 
 interface StoredIdentity {
 	publicKey: CryptoKey;
@@ -30,6 +33,7 @@ function openDb(): Promise<IDBDatabase> {
 			if (!db.objectStoreNames.contains(ROOMS)) db.createObjectStore(ROOMS);
 			if (!db.objectStoreNames.contains(DEVICE)) db.createObjectStore(DEVICE);
 			if (!db.objectStoreNames.contains(REPLAY)) db.createObjectStore(REPLAY);
+			if (!db.objectStoreNames.contains(GENERATIONS)) db.createObjectStore(GENERATIONS);
 		};
 		request.onsuccess = () => resolve(request.result);
 		request.onerror = () => reject(request.error);
@@ -66,8 +70,6 @@ export async function saveRoomKeys(roomId: string, keys: RoomKeys): Promise<void
 	await withStore(ROOMS, 'readwrite', (s) =>
 		s.put(
 			{
-				msg: keys.msg,
-				eph: keys.eph,
 				storage: keys.storage,
 				auth: keys.auth,
 				hs: keys.hs,
@@ -76,6 +78,22 @@ export async function saveRoomKeys(roomId: string, keys: RoomKeys): Promise<void
 			roomId
 		)
 	);
+}
+
+/**
+ * Persist the ratchet's generation state (PROTOCOL.md §1.4): derived
+ * non-extractable CryptoKeys plus the public cert log — never a raw
+ * generation secret, so a reloaded member reads/writes but cannot grant.
+ */
+export async function saveRatchetState(roomId: string, state: PersistedRatchet): Promise<void> {
+	await withStore(GENERATIONS, 'readwrite', (s) => s.put(state, roomId));
+}
+
+export async function loadRatchetState(roomId: string): Promise<PersistedRatchet | null> {
+	const stored = await withStore<PersistedRatchet | undefined>(GENERATIONS, 'readonly', (s) =>
+		s.get(roomId)
+	);
+	return stored ?? null;
 }
 
 export async function loadRoomKeys(roomId: string): Promise<RoomKeys | null> {
@@ -155,4 +173,5 @@ export async function loadReplayState<T>(roomId: string): Promise<T | null> {
 export async function burnRoom(roomId: string): Promise<void> {
 	await withStore(ROOMS, 'readwrite', (s) => s.delete(roomId));
 	await withStore(REPLAY, 'readwrite', (s) => s.delete(roomId));
+	await withStore(GENERATIONS, 'readwrite', (s) => s.delete(roomId));
 }

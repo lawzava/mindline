@@ -37,6 +37,25 @@ export interface RekeyGrant extends GrantCert {
 	rk: string; // base64url(rk_g)
 }
 
+/** `hs`-class wire body distributing a generation (§1.4). Direct-only. */
+export interface RekeyGrantBody {
+	type: 'rekey-grant';
+	grant: RekeyGrant;
+	/** rk-free ancestor certs for behind receivers (≤ MAX_CHAIN). */
+	chain?: GrantCert[];
+}
+
+/** `hs`-class wire body asking for a generation (§1.4). Direct-only. */
+export interface RekeyRequestBody {
+	type: 'rekey-request';
+	/** The generation the sender could not read / saw advertised. */
+	g: number;
+	gid?: string;
+	/** The sender's own position, so the responder can tailor the chain. */
+	haveG: number;
+	haveGid: string;
+}
+
 /** A grant whose certificate, minter binding, and gid commitment all hold. */
 export interface VerifiedGrant {
 	g: number;
@@ -250,6 +269,12 @@ export class GenerationRatchet {
 	/** The current generation's grant, verbatim, for re-granting (gossip). */
 	currentGrant(): RekeyGrant | null {
 		return this.curGrantMsg;
+	}
+
+	/** True when (g, gid) is the current generation or a retained sibling. */
+	hasInstance(g: number, gid: string): boolean {
+		if (g === this.curG && gid === this.curGid) return true;
+		return this.retained.has(`${g}|${gid}`);
 	}
 
 	/** All retained key sets at `g`, current first — the trial-decrypt set. */

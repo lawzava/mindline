@@ -181,13 +181,16 @@ inner `cert` is never re-signed. Grants never relay (§3.6) — see §1.2
 for why this carrier restriction, not detectability, is the security
 boundary. A member that sees an envelope it cannot decrypt at a known
 `g`, or a hello advertising a `gid` it lacks, sends
-`rekey-request { g, gid? }` direct-only; the answer is a grant for the
-responder's **current** generation carrying the rk-free ancestor
-certificates linking it back to the requester's generation. At most
-`MAX_CHAIN` ancestor certs ride one grant; a gap longer than that
-iterates request/response, each round advancing the requester along the
-verified chain — per-message work stays bounded without stranding a
-long-offline member.
+`rekey-request { g, gid?, haveG, haveGid }` direct-only; the answer is a
+grant for the responder's **current** generation carrying the rk-free
+ancestor certificates linking it back to the requester's stated
+position. At most `MAX_CHAIN` ancestor certs ride one grant — the cap
+bounds per-message wire size and verification work. A member behind by
+more than `MAX_CHAIN` generations (the room rotated 32+ times while it
+was away) cannot chain-verify that far and **re-enters through the
+link** — leave and rejoin, which is the same members-only trust its
+position already implies (see Bootstrap below) and loses nothing:
+identity persists and history re-syncs (§3.5).
 
 **Convergence (chained total order on `(g, gid)`).** A grant is
 *admissible* only if its `cert` verifies and `g` is a non-negative

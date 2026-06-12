@@ -18,7 +18,8 @@ export {
 	reconnectionState,
 	isSyncing,
 	syncState,
-	relayedPeers
+	relayedPeers,
+	rotationStranded
 } from './connection';
 export { delivery, fullyDeliveredMessages } from './delivery';
 export { transfers, mediaConsent } from './transfers';

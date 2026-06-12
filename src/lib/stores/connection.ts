@@ -30,6 +30,8 @@ function createConnectionStore() {
 		error: string | null;
 		reconnection: ReconnectionState;
 		sync: SyncState;
+		/** Current key generation (PROTOCOL.md §1.4). */
+		generation: { g: number; gid: string };
 	}>({
 		status: 'disconnected',
 		peers: new Set(),
@@ -47,7 +49,8 @@ function createConnectionStore() {
 			messagesReceived: 0,
 			totalMessages: null,
 			syncingWithPeer: null
-		}
+		},
+		generation: { g: 0, gid: '' }
 	});
 
 	return {
@@ -207,6 +210,13 @@ function createConnectionStore() {
 		},
 
 		/**
+		 * Record the room's current key generation (PROTOCOL.md §1.4)
+		 */
+		setGeneration: (g: number, gid: string) => {
+			update((state) => ({ ...state, generation: { g, gid } }));
+		},
+
+		/**
 		 * Reset to initial state
 		 */
 		reset: () => {
@@ -227,7 +237,8 @@ function createConnectionStore() {
 					messagesReceived: 0,
 					totalMessages: null,
 					syncingWithPeer: null
-				}
+				},
+				generation: { g: 0, gid: '' }
 			});
 		},
 
@@ -250,6 +261,17 @@ export const peerNames = derived(connection, ($conn) => $conn.peerNames);
 /** Peers reached via the signaling relay instead of a direct channel (§3.6). */
 export const relayedPeers = derived(connection, ($conn) =>
 	[...$conn.peerTransports].filter(([, transport]) => transport === 'relay').map(([id]) => id)
+);
+/**
+ * Relay-only peers are stranded by a ratchet (§1.4): grants never relay,
+ * so once the room has rotated past the link generation they cannot read
+ * newer traffic until a direct connection delivers a grant.
+ */
+export const rotationStranded = derived(
+	connection,
+	($conn) =>
+		$conn.generation.g > 0 &&
+		[...$conn.peerTransports.values()].some((transport) => transport === 'relay')
 );
 
 // Reconnection state

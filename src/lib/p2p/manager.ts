@@ -5,6 +5,7 @@
 
 import { P2PConnection } from './connection';
 import { CryptoSession } from './crypto-session';
+import { shouldMint } from './rekey-policy';
 import { parseKeyFragment } from '$lib/crypto/keys';
 import { routeP2PMessage, setMediaControlFn, setSendToPeerFn, emitToast } from './handlers';
 import { MediaTransferEngine, type MediaKind, type MediaOffer } from '$lib/media/transfer';
@@ -47,6 +48,69 @@ let isDisconnecting = false;
 let disconnectPromise: Promise<void> | null = null;
 let isInitializing = false;
 let currentInitRoomId: string | null = null;
+
+// Generation ratchet triggers (PROTOCOL.md §1.4): join/leave events are
+// debounced into one mint decision; the lowest-deviceId direct member
+// mints, everyone else arms a fallback in case the designated minter is
+// gone. Concurrent mints converge by (g, gid) regardless.
+let rekeyDebounce: ReturnType<typeof setTimeout> | null = null;
+let rekeyFallback: ReturnType<typeof setTimeout> | null = null;
+let rekeyBaseline: { g: number; gid: string } | null = null;
+let rekeyChannel: BroadcastChannel | null = null;
+const REKEY_DEBOUNCE_MS = 2000;
+const REKEY_FALLBACK_MS = 6000;
+
+function scheduleRekey(): void {
+	if (isDisconnecting || !cryptoSession || !p2pConnection) return;
+	rekeyBaseline ??= cryptoSession.generation;
+	if (rekeyDebounce) clearTimeout(rekeyDebounce);
+	rekeyDebounce = setTimeout(() => {
+		rekeyDebounce = null;
+		const session = cryptoSession;
+		const conn = p2pConnection;
+		const baseline = rekeyBaseline;
+		rekeyBaseline = null;
+		if (!session || !conn || !baseline) return;
+		// Someone already ratcheted past the trigger point: nothing to do.
+		if (session.generation.g !== baseline.g || session.generation.gid !== baseline.gid) return;
+		if (shouldMint(session.deviceId, conn.getDirectPeers())) {
+			void mintAndBroadcast();
+		} else if (!rekeyFallback) {
+			rekeyFallback = setTimeout(() => {
+				rekeyFallback = null;
+				const s = cryptoSession;
+				if (!s || isDisconnecting) return;
+				// The designated minter never delivered: mint ourselves.
+				if (s.generation.g === baseline.g && s.generation.gid === baseline.gid) {
+					void mintAndBroadcast();
+				}
+			}, REKEY_FALLBACK_MS);
+		}
+	}, REKEY_DEBOUNCE_MS);
+}
+
+async function mintAndBroadcast(): Promise<void> {
+	const session = cryptoSession;
+	const conn = p2pConnection;
+	if (!session || !conn) return;
+	try {
+		const wire = await session.mintGeneration();
+		conn.broadcastGrant(wire);
+		console.log('[P2P Manager] Ratcheted to generation', session.generation.g);
+	} catch (error) {
+		console.error('[P2P Manager] Mint failed:', error);
+	}
+}
+
+function clearRekeyState(): void {
+	if (rekeyDebounce) clearTimeout(rekeyDebounce);
+	if (rekeyFallback) clearTimeout(rekeyFallback);
+	rekeyDebounce = null;
+	rekeyFallback = null;
+	rekeyBaseline = null;
+	rekeyChannel?.close();
+	rekeyChannel = null;
+}
 
 /**
  * Initialize P2P connection for a room
@@ -97,6 +161,26 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		}
 	}
 
+	// Generation ratchet plumbing (§1.4): surface changes to the UI store,
+	// notify sibling tabs, and pick up their changes.
+	connection.setGeneration(cryptoSession.generation.g, cryptoSession.generation.gid);
+	cryptoSession.onGenerationChange((g, gid) => {
+		connection.setGeneration(g, gid);
+		try {
+			rekeyChannel?.postMessage({ roomId, g, gid });
+		} catch {
+			/* channel may be closed during teardown */
+		}
+	});
+	if (typeof BroadcastChannel !== 'undefined') {
+		rekeyChannel?.close();
+		rekeyChannel = new BroadcastChannel('mindline_rekey');
+		rekeyChannel.onmessage = (event: MessageEvent) => {
+			const data = event.data as { roomId?: string } | undefined;
+			if (data?.roomId === roomId) void cryptoSession?.refreshFromStore();
+		};
+	}
+
 	// Create connection
 	p2pConnection = new P2PConnection(cryptoSession, config, () => get(user).name);
 
@@ -145,11 +229,20 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		// Emit toast notification with name if available
 		const displayName = peerName || `Peer ${peerId.slice(0, 8)}...`;
 		emitToast('peer-left', `${displayName} left the room`);
+
+		// §1.4 trigger (b): a member left — rotate the generation so a
+		// departed device's retained keys stop reading future captures.
+		scheduleRekey();
 	});
 
 	p2pConnection.onKnocking((clientId) => {
 		console.warn('[P2P Manager] Peer without the room key knocked:', clientId);
 	});
+
+	// §1.4 trigger (a): a verified newcomer joined over direct — ratchet,
+	// debounced, with minter selection. Relay-only joins never trigger
+	// (grants cannot reach them; ratcheting would only strand them).
+	p2pConnection.onNewcomer(() => scheduleRekey());
 
 	// Media transfers (PROTOCOL.md §5)
 	const conn = p2pConnection;
@@ -246,6 +339,7 @@ export function disconnectP2P(): void {
 
 	// Mark as disconnecting
 	isDisconnecting = true;
+	clearRekeyState();
 
 	if (reconnectInterval) {
 		clearInterval(reconnectInterval);
