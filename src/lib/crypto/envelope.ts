@@ -1,5 +1,5 @@
 /**
- * Wire envelope (PROTOCOL.md §2, v3). Every byte that leaves the device is
+ * Wire envelope (PROTOCOL.md §2, v4). Every byte that leaves the device is
  * one of these; there is no plaintext message path.
  *
  * AAD binds ciphertext to its external context — protocol version, room,
@@ -20,12 +20,12 @@ import { fromB64url, toB64url } from './b64';
 import type { DeviceIdentity } from './identity';
 import { lp } from './lp';
 
-export const ENVELOPE_VERSION = 3;
+export const ENVELOPE_VERSION = 4;
 
 export type EnvelopeClass = 'msg' | 'eph' | 'hs';
 
 export interface Envelope {
-	v: 3;
+	v: 4;
 	t: EnvelopeClass;
 	g: number; // key generation (§1.4); 0 for 'hs'
 	s: string;

@@ -32,15 +32,30 @@ export interface GrantCert {
 	cert: string; // base64url ECDSA over the bound payload
 }
 
-/** A wire `rekey-grant` body (`hs` class): a cert plus the secret itself. */
+/**
+ * Engine-side grant: a cert plus the raw secret. Never serialized to the
+ * wire as-is (v4): the session strips `rk` and wraps it per recipient.
+ */
 export interface RekeyGrant extends GrantCert {
 	rk: string; // base64url(rk_g)
+}
+
+/** Per-recipient hybrid wrap of `rk_g` (§1.4 v4), all fields base64url. */
+export interface GrantWrap {
+	ct: string; // X-Wing encapsulation ciphertext
+	n: string; // AES-GCM nonce
+	wrapped: string; // AES-256-GCM sealed rk_g
+}
+
+/** The wire form of a grant: the signed cert plus the recipient's wrap. */
+export interface WrappedGrant extends GrantCert {
+	wrap: GrantWrap;
 }
 
 /** `hs`-class wire body distributing a generation (§1.4). Direct-only. */
 export interface RekeyGrantBody {
 	type: 'rekey-grant';
-	grant: RekeyGrant;
+	grant: WrappedGrant;
 	/** rk-free ancestor certs for behind receivers (≤ MAX_CHAIN). */
 	chain?: GrantCert[];
 }
