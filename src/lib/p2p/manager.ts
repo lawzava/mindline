@@ -6,6 +6,7 @@
 import { P2PConnection } from './connection';
 import { CryptoSession } from './crypto-session';
 import { shouldMint } from './rekey-policy';
+import { RekeyScheduler } from './rekey-scheduler';
 import { parseKeyFragment } from '$lib/crypto/keys';
 import { routeP2PMessage, setMediaControlFn, setSendToPeerFn, emitToast } from './handlers';
 import { MediaTransferEngine, type MediaKind, type MediaOffer } from '$lib/media/transfer';
@@ -52,41 +53,28 @@ let currentInitRoomId: string | null = null;
 // Generation ratchet triggers (PROTOCOL.md §1.4): join/leave events are
 // debounced into one mint decision; the lowest-deviceId direct member
 // mints, everyone else arms a fallback in case the designated minter is
-// gone. Concurrent mints converge by (g, gid) regardless.
-let rekeyDebounce: ReturnType<typeof setTimeout> | null = null;
-let rekeyFallback: ReturnType<typeof setTimeout> | null = null;
-let rekeyBaseline: { g: number; gid: string } | null = null;
+// gone. Concurrent mints converge by (g, gid) regardless. The timer state
+// machine lives in RekeyScheduler so its hygiene is testable; its deps
+// read the module state at fire time, which is safe only because BOTH
+// disconnect paths call clearRekeyState().
 let rekeyChannel: BroadcastChannel | null = null;
 const REKEY_DEBOUNCE_MS = 2000;
 const REKEY_FALLBACK_MS = 6000;
+const rekeyScheduler = new RekeyScheduler(REKEY_DEBOUNCE_MS, REKEY_FALLBACK_MS);
 
 function scheduleRekey(): void {
 	if (isDisconnecting || !cryptoSession || !p2pConnection) return;
-	rekeyBaseline ??= cryptoSession.generation;
-	if (rekeyDebounce) clearTimeout(rekeyDebounce);
-	rekeyDebounce = setTimeout(() => {
-		rekeyDebounce = null;
-		const session = cryptoSession;
-		const conn = p2pConnection;
-		const baseline = rekeyBaseline;
-		rekeyBaseline = null;
-		if (!session || !conn || !baseline) return;
-		// Someone already ratcheted past the trigger point: nothing to do.
-		if (session.generation.g !== baseline.g || session.generation.gid !== baseline.gid) return;
-		if (shouldMint(session.deviceId, conn.getDirectPeers())) {
-			void mintAndBroadcast();
-		} else if (!rekeyFallback) {
-			rekeyFallback = setTimeout(() => {
-				rekeyFallback = null;
-				const s = cryptoSession;
-				if (!s || isDisconnecting) return;
-				// The designated minter never delivered: mint ourselves.
-				if (s.generation.g === baseline.g && s.generation.gid === baseline.gid) {
-					void mintAndBroadcast();
-				}
-			}, REKEY_FALLBACK_MS);
+	rekeyScheduler.schedule({
+		generation: () => cryptoSession?.generation ?? { g: -1, gid: '' },
+		shouldMint: () =>
+			!isDisconnecting &&
+			cryptoSession !== null &&
+			p2pConnection !== null &&
+			shouldMint(cryptoSession.deviceId, p2pConnection.getDirectPeers()),
+		mint: () => {
+			if (!isDisconnecting) void mintAndBroadcast();
 		}
-	}, REKEY_DEBOUNCE_MS);
+	});
 }
 
 async function mintAndBroadcast(): Promise<void> {
@@ -103,11 +91,7 @@ async function mintAndBroadcast(): Promise<void> {
 }
 
 function clearRekeyState(): void {
-	if (rekeyDebounce) clearTimeout(rekeyDebounce);
-	if (rekeyFallback) clearTimeout(rekeyFallback);
-	rekeyDebounce = null;
-	rekeyFallback = null;
-	rekeyBaseline = null;
+	rekeyScheduler.clear();
 	rekeyChannel?.close();
 	rekeyChannel = null;
 }
@@ -379,6 +363,11 @@ async function disconnectP2PAsync(): Promise<void> {
 	isDisconnecting = true;
 
 	disconnectPromise = new Promise<void>((resolve) => {
+		// Without this, a pending rekey debounce/fallback (and its baseline)
+		// from the room being left survives the switch and suppresses the
+		// next room's rekey (stale baseline + occupied fallback slot).
+		clearRekeyState();
+
 		if (reconnectInterval) {
 			clearInterval(reconnectInterval);
 			reconnectInterval = null;
