@@ -263,6 +263,21 @@ describe('per-device KEM grant wrapping (PROTOCOL.md §1.4 v4)', () => {
 		expect(typeof wrap.wrapped).toBe('string');
 	});
 
+	test('a grant with a tampered certificate is rejected before unwrapping (§1.4 order)', async () => {
+		const key = createRoomKey();
+		const a = await isolatedDevice('room-kem-cert', key);
+		const b = await isolatedDevice('room-kem-cert', key);
+		await a.acceptHello(await b.makeHello('B', bind('bind')), bind('bind'));
+		await b.acceptHello(await a.makeHello('A', bind('bind')), bind('bind'));
+		await a.mintGeneration();
+		const body = (await b.openMessage(
+			JSON.parse(await a.grantWireFor(b.deviceId, 0))
+		)) as Record<string, Record<string, string>>;
+		body.grant.cert = body.grant.cert.slice(0, -4) + (body.grant.cert.endsWith('AAAA') ? 'BBBB' : 'AAAA');
+		await expect(b.handleRekeyGrant(body as never)).rejects.toThrow(/cert/i);
+		expect(b.generation.g).toBe(0);
+	});
+
 	test('granting to a peer with no pinned KEM key fails closed', async () => {
 		const key = createRoomKey();
 		const a = await isolatedDevice('room-kem-unknown', key);

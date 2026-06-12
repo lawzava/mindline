@@ -11,7 +11,6 @@ import { ENVELOPE_VERSION, openEnvelope, sealEnvelope, type Envelope } from '$li
 import { lp } from '$lib/crypto/lp';
 import {
 	createDeviceIdentity,
-	createKemIdentity,
 	deviceIdFromSpki,
 	importPeerPublicKey,
 	type DeviceIdentity,
@@ -27,13 +26,12 @@ import {
 } from '$lib/crypto/keys';
 import {
 	allocateEpoch,
+	getOrCreateKemIdentity,
 	loadIdentity,
-	loadKemIdentity,
 	loadRatchetState,
 	loadReplayState,
 	loadRoomKeys,
 	saveIdentity,
-	saveKemIdentity,
 	saveRatchetState,
 	saveReplayState,
 	saveRoomKeys
@@ -43,6 +41,7 @@ import {
 	certOf,
 	GenerationRatchet,
 	MAX_CHAIN,
+	verifyCert,
 	type AdoptOutcome,
 	type RekeyGrant,
 	type RekeyGrantBody,
@@ -164,11 +163,8 @@ export class CryptoSession {
 		}
 
 		// Device KEM identity (§1.3 v4): receives the hybrid grant wraps.
-		let kem = await loadKemIdentity();
-		if (!kem) {
-			kem = createKemIdentity();
-			await saveKemIdentity(kem);
-		}
+		// Atomic get-or-create — concurrent tabs must converge on one seed.
+		const kem = await getOrCreateKemIdentity();
 
 		// Session epoch from the device-identity-scoped monotonic high-water
 		// (PROTOCOL.md §2). It never regresses across reload, clock
@@ -523,6 +519,9 @@ export class CryptoSession {
 	 */
 	async handleRekeyGrant(body: RekeyGrantBody): Promise<AdoptOutcome> {
 		const { wrap, ...cert } = body.grant;
+		// §1.4 order: the cert is verified before the (more expensive) KEM
+		// decapsulation runs; adopt() re-verifies as part of convergence.
+		if (!(await verifyCert(cert, this.roomId))) throw new Error('invalid grant certificate');
 		const ct = wrap && fromB64url(wrap.ct);
 		const n = wrap && fromB64url(wrap.n);
 		const wrapped = wrap && fromB64url(wrap.wrapped);

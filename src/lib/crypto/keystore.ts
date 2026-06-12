@@ -7,7 +7,7 @@
  */
 
 import type { DeviceIdentity, KemIdentity } from './identity';
-import { deviceIdFromSpki } from './identity';
+import { createKemIdentity, deviceIdFromSpki } from './identity';
 import { kemKeypair } from './kem';
 import type { RoomKeys } from './keys';
 import { lp } from './lp';
@@ -159,14 +159,15 @@ interface StoredKemIdentity {
 const KEM_SEED_AAD = lp('kem-seed');
 
 /**
- * Persist the device KEM identity (PROTOCOL.md §1.3). The X-Wing seed
- * cannot be a WebCrypto key (the implementation is JS), so it is stored
- * only AES-256-GCM-wrapped under a non-extractable key persisted beside
- * it — the same at-rest protection class as the WebCrypto keys, no raw
- * key bytes in any record. The public key is re-derived from the seed on
- * load (deterministic), so the record carries no redundant state.
+ * Persistence shape for the device KEM identity (PROTOCOL.md §1.3). The
+ * X-Wing seed cannot be a WebCrypto key (the implementation is JS), so it
+ * is stored only AES-256-GCM-wrapped under a non-extractable key
+ * persisted beside it — the same at-rest protection class as the
+ * WebCrypto keys, no raw key bytes in any record. The public key is
+ * re-derived from the seed on load (deterministic), so the record
+ * carries no redundant state.
  */
-export async function saveKemIdentity(kem: KemIdentity): Promise<void> {
+async function sealKemRecord(kem: KemIdentity): Promise<StoredKemIdentity> {
 	const wrapKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
 		'encrypt',
 		'decrypt'
@@ -179,15 +180,10 @@ export async function saveKemIdentity(kem: KemIdentity): Promise<void> {
 			kem.seed as BufferSource
 		)
 	);
-	const record: StoredKemIdentity = { wrapKey, wrappedSeed, nonce };
-	await withStore(DEVICE, 'readwrite', (s) => s.put(record, 'kem-identity'));
+	return { wrapKey, wrappedSeed, nonce };
 }
 
-export async function loadKemIdentity(): Promise<KemIdentity | null> {
-	const stored = await withStore<StoredKemIdentity | undefined>(DEVICE, 'readonly', (s) =>
-		s.get('kem-identity')
-	);
-	if (!stored) return null;
+async function openKemRecord(stored: StoredKemIdentity): Promise<KemIdentity> {
 	const seed = new Uint8Array(
 		await crypto.subtle.decrypt(
 			{ name: 'AES-GCM', iv: stored.nonce as BufferSource, additionalData: KEM_SEED_AAD as BufferSource },
@@ -196,6 +192,57 @@ export async function loadKemIdentity(): Promise<KemIdentity | null> {
 		)
 	);
 	return { publicKey: kemKeypair(seed).publicKey, seed };
+}
+
+export async function saveKemIdentity(kem: KemIdentity): Promise<void> {
+	const record = await sealKemRecord(kem);
+	await withStore(DEVICE, 'readwrite', (s) => s.put(record, 'kem-identity'));
+}
+
+export async function loadKemIdentity(): Promise<KemIdentity | null> {
+	const stored = await withStore<StoredKemIdentity | undefined>(DEVICE, 'readonly', (s) =>
+		s.get('kem-identity')
+	);
+	if (!stored) return null;
+	return openKemRecord(stored);
+}
+
+/**
+ * Atomic get-or-create of the device KEM identity (review F1): a plain
+ * load-then-save races two first-launch tabs onto divergent seeds under
+ * the same deviceId — the losing tab's hellos are then TOFU-rejected by
+ * every peer that pinned the winner. Same cure as the §2 epoch
+ * allocator: the get and the conditional put share one IndexedDB
+ * readwrite transaction (the crypto runs *before* the transaction —
+ * IDB transactions auto-commit when the event loop turns on non-IDB
+ * work). The losing candidate is discarded and the winner's record
+ * decrypted instead.
+ */
+export async function getOrCreateKemIdentity(): Promise<KemIdentity> {
+	const candidate = createKemIdentity();
+	const candidateRecord = await sealKemRecord(candidate);
+	const db = await openDb();
+	let winner: StoredKemIdentity;
+	try {
+		winner = await new Promise<StoredKemIdentity>((resolve, reject) => {
+			const tx = db.transaction(DEVICE, 'readwrite');
+			const store = tx.objectStore(DEVICE);
+			let result = candidateRecord;
+			const getReq = store.get('kem-identity');
+			getReq.onsuccess = () => {
+				if (getReq.result) result = getReq.result as StoredKemIdentity;
+				else store.put(candidateRecord, 'kem-identity');
+			};
+			getReq.onerror = () => reject(getReq.error);
+			tx.oncomplete = () => resolve(result);
+			tx.onabort = () => reject(tx.error ?? getReq.error);
+			tx.onerror = () => reject(tx.error ?? getReq.error);
+		});
+	} finally {
+		db.close();
+	}
+	if (winner === candidateRecord) return candidate;
+	return openKemRecord(winner);
 }
 
 /**
