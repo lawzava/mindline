@@ -34,7 +34,13 @@ one of them is a bug.
 - **The link is a bearer capability.** Anyone who obtains it (including via
   a leaked chat where it was shared, or browser history sync to a cloud
   account without E2E sync enabled) gets full access, including history.
-- **No forward secrecy in v1.** The room key is static for the room's life.
+- **Forward secrecy is scoped, not absolute.** Room keys rotate on joins
+  and leaves (fresh random generations, PROTOCOL.md §1.4), so ciphertext
+  the signaling operator archived while relaying stays unreadable even if
+  the link later leaks. What rotation does *not* change: the link itself
+  still grants entry and history-by-sync to whoever holds it, history at
+  rest on your device stays under a link-derived key, and peers stuck on
+  the relay can't receive rotations (the UI says so).
 - **Rendezvous metadata exists.** The signaling server sees room IDs, device
   identifiers, IP addresses, and timing — not content, not names. Peers
   connect directly, so room members see each other's IP addresses; on the

@@ -9,12 +9,15 @@
 import type { DeviceIdentity } from './identity';
 import { deviceIdFromSpki } from './identity';
 import type { RoomKeys } from './keys';
+// Type-only: the runtime dependency goes the other way (p2p → keystore).
+import type { PersistedRatchet } from '$lib/p2p/ratchet';
 
 const DB_NAME = 'mindline-keys';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const ROOMS = 'rooms';
 const DEVICE = 'device';
 const REPLAY = 'replay';
+const GENERATIONS = 'generations';
 
 interface StoredIdentity {
 	publicKey: CryptoKey;
@@ -30,6 +33,7 @@ function openDb(): Promise<IDBDatabase> {
 			if (!db.objectStoreNames.contains(ROOMS)) db.createObjectStore(ROOMS);
 			if (!db.objectStoreNames.contains(DEVICE)) db.createObjectStore(DEVICE);
 			if (!db.objectStoreNames.contains(REPLAY)) db.createObjectStore(REPLAY);
+			if (!db.objectStoreNames.contains(GENERATIONS)) db.createObjectStore(GENERATIONS);
 		};
 		request.onsuccess = () => resolve(request.result);
 		request.onerror = () => reject(request.error);
@@ -66,15 +70,52 @@ export async function saveRoomKeys(roomId: string, keys: RoomKeys): Promise<void
 	await withStore(ROOMS, 'readwrite', (s) =>
 		s.put(
 			{
-				msg: keys.msg,
-				eph: keys.eph,
 				storage: keys.storage,
 				auth: keys.auth,
+				hs: keys.hs,
 				mediaBase: keys.mediaBase
 			},
 			roomId
 		)
 	);
+}
+
+/**
+ * Persist the ratchet's generation state (PROTOCOL.md §1.4): derived
+ * non-extractable CryptoKeys plus the public cert log — never a raw
+ * generation secret, so a reloaded member reads/writes but cannot grant.
+ *
+ * Fails closed when the room's keys are gone (§4): a mint/adopt landing
+ * after a burn — same tab in flight, or a sibling tab that has not yet
+ * processed the burn broadcast — must not resurrect decrypt-capable key
+ * material into a store the burn just cleared. The existence check and
+ * the put share one transaction; burnRoom deletes ROOMS before
+ * GENERATIONS, so both race directions end with the record absent.
+ */
+export async function saveRatchetState(roomId: string, state: PersistedRatchet): Promise<void> {
+	const db = await openDb();
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const tx = db.transaction([ROOMS, GENERATIONS], 'readwrite');
+			const probe = tx.objectStore(ROOMS).get(roomId);
+			probe.onsuccess = () => {
+				if (probe.result !== undefined) tx.objectStore(GENERATIONS).put(state, roomId);
+			};
+			probe.onerror = () => reject(probe.error);
+			tx.oncomplete = () => resolve();
+			tx.onabort = () => reject(tx.error ?? probe.error);
+			tx.onerror = () => reject(tx.error ?? probe.error);
+		});
+	} finally {
+		db.close();
+	}
+}
+
+export async function loadRatchetState(roomId: string): Promise<PersistedRatchet | null> {
+	const stored = await withStore<PersistedRatchet | undefined>(GENERATIONS, 'readonly', (s) =>
+		s.get(roomId)
+	);
+	return stored ?? null;
 }
 
 export async function loadRoomKeys(roomId: string): Promise<RoomKeys | null> {
@@ -106,6 +147,41 @@ export async function loadIdentity(): Promise<DeviceIdentity | null> {
 	};
 }
 
+/**
+ * Allocate the next device epoch (PROTOCOL.md §2). The high-water is
+ * scoped to the device identity and stored in the DEVICE object store, so
+ * a room burn (which clears ROOMS/REPLAY only) cannot reset it — the epoch
+ * line is monotonic across reload, clock correction, and burn, and a
+ * device is never censored by peers' persisted high-water.
+ *
+ * Read-increment-write runs in a single IndexedDB readwrite transaction.
+ * IDB serializes readwrite transactions on the same store, so concurrent
+ * tabs draw distinct, strictly increasing epochs without a separate lock.
+ */
+export async function allocateEpoch(deviceId: string): Promise<number> {
+	const db = await openDb();
+	try {
+		return await new Promise<number>((resolve, reject) => {
+			const tx = db.transaction(DEVICE, 'readwrite');
+			const store = tx.objectStore(DEVICE);
+			const recordKey = `epoch:${deviceId}`;
+			let epoch = 0;
+			const getReq = store.get(recordKey);
+			getReq.onsuccess = () => {
+				const highWater = Number(getReq.result) || 0;
+				epoch = Math.max(Date.now(), highWater + 1);
+				store.put(epoch, recordKey);
+			};
+			getReq.onerror = () => reject(getReq.error);
+			tx.oncomplete = () => resolve(epoch);
+			tx.onabort = () => reject(tx.error ?? getReq.error);
+			tx.onerror = () => reject(tx.error ?? getReq.error);
+		});
+	} finally {
+		db.close();
+	}
+}
+
 export async function saveReplayState(roomId: string, state: unknown): Promise<void> {
 	await withStore(REPLAY, 'readwrite', (s) => s.put(state, roomId));
 }
@@ -119,4 +195,5 @@ export async function loadReplayState<T>(roomId: string): Promise<T | null> {
 export async function burnRoom(roomId: string): Promise<void> {
 	await withStore(ROOMS, 'readwrite', (s) => s.delete(roomId));
 	await withStore(REPLAY, 'readwrite', (s) => s.delete(roomId));
+	await withStore(GENERATIONS, 'readwrite', (s) => s.delete(roomId));
 }

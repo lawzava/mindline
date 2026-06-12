@@ -66,16 +66,14 @@ beforeEach(() => {
 describe('burnRoomData (PROTOCOL.md §4, PRIVACY.md)', () => {
 	test('removes keys, replay state, history, blobs, and local markers', async () => {
 		const roomId = `room-${crypto.randomUUID()}`;
-		const deviceId = 'device-1';
 		const keys = await deriveRoomKeys(await importRoomKeyMaterial(createRoomKey()));
 		await saveRoomKeys(roomId, keys);
 		await saveReplayState(roomId, { entries: [1, 2, 3] });
 		await saveRoomMessages(roomId, [makeMessage({ room_id: roomId })]);
 		await putBlob(keys, roomId, 'transfer-1', new TextEncoder().encode('img'), 'image/webp');
 		localStorage.setItem(`chatHistory_${roomId}`, '{"messages":[]}');
-		localStorage.setItem(`mindline_epoch_${deviceId}`, '7');
 
-		await burnRoomData(roomId, deviceId);
+		await burnRoomData(roomId);
 
 		expect(await loadRoomKeys(roomId)).toBeNull();
 		expect(await loadReplayState(roomId)).toBeNull();
@@ -85,7 +83,8 @@ describe('burnRoomData (PROTOCOL.md §4, PRIVACY.md)', () => {
 		await saveRoomKeys(roomId, keys);
 		expect(await loadRoomMessages(roomId)).toEqual([]);
 		expect(localStorage.getItem(`chatHistory_${roomId}`)).toBeNull();
-		expect(localStorage.getItem(`mindline_epoch_${deviceId}`)).toBeNull();
+		// The device epoch high-water is NOT burned (§2): it is device-scoped
+		// and must never regress, or peers would censor this device forever.
 	});
 
 	test('does not touch other rooms', async () => {
@@ -99,7 +98,7 @@ describe('burnRoomData (PROTOCOL.md §4, PRIVACY.md)', () => {
 		await saveRoomMessages(kept, [keptMessage]);
 		await putBlob(keysKept, kept, 't-kept', new TextEncoder().encode('img'), 'image/webp');
 
-		await burnRoomData(burned, null);
+		await burnRoomData(burned);
 
 		expect(await loadRoomKeys(kept)).not.toBeNull();
 		expect((await loadRoomMessages(kept)).map((m) => m.id)).toEqual([keptMessage.id]);
@@ -124,7 +123,7 @@ describe('burnRoomData (PROTOCOL.md §4, PRIVACY.md)', () => {
 			};
 		});
 
-		await burnRoomData(roomId, null);
+		await burnRoomData(roomId);
 		expect(await received).toEqual({ roomId });
 	});
 
@@ -142,7 +141,7 @@ describe('burnRoomData (PROTOCOL.md §4, PRIVACY.md)', () => {
 		const real = indexedDB;
 		indexedDB = broken;
 		try {
-			await expect(burnRoomData(roomId, null)).rejects.toThrow(/burn incomplete/i);
+			await expect(burnRoomData(roomId)).rejects.toThrow(/burn incomplete/i);
 		} finally {
 			indexedDB = real;
 		}

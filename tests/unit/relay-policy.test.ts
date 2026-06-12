@@ -9,7 +9,11 @@ describe('relayEligible (PROTOCOL.md §3.6)', () => {
 		'sync-response',
 		'media-offer',
 		'media-accept',
-		'media-abort'
+		'media-abort',
+		// §1.4/§3.6: a relayed grant would hand the operator ciphertext a
+		// leaked link decrypts — carrier restriction is the security boundary.
+		'rekey-grant',
+		'rekey-request'
 	];
 
 	test.each(allowed)('%s may relay', (type) => {

@@ -8,7 +8,7 @@
  * tears down healthy DataChannels.
  */
 
-import type { CryptoSession } from './crypto-session';
+import type { CryptoSession, HelloBinding } from './crypto-session';
 import type { Envelope } from '$lib/crypto/envelope';
 import type {
 	MessageCallback,
@@ -67,7 +67,13 @@ const RELAY_FORBIDDEN_TYPES = new Set([
 	'sync-response',
 	'media-offer',
 	'media-accept',
-	'media-abort'
+	'media-abort',
+	// §1.4/§3.6: grants never relay — a relayed grant would hand the
+	// operator ciphertext that a leaked link decrypts. Security boundary,
+	// not bandwidth. (Defence in depth: these ride 'hs' envelopes, which
+	// the relay paths already refuse wholesale.)
+	'rekey-grant',
+	'rekey-request'
 ]);
 export const MAX_RELAY_WIRE_BYTES = 14 * 1024;
 
@@ -95,9 +101,14 @@ export class P2PConnection {
 	private onPeerDisconnectedCallback: PeerDisconnectedCallback | null = null;
 	private onConnectionLostCallback: ConnectionLostCallback | null = null;
 	private onKnockingCallback: ((clientId: string) => void) | null = null;
+	private onNewcomerCallback: ((deviceId: string) => void) | null = null;
 	private onMediaChannelCallback:
 		| ((peerDeviceId: string, transferId: string, channel: RTCDataChannel) => void)
 		| null = null;
+	/** Per-peer rekey-request rate limit (decrypt-failure path, §1.4). */
+	private lastRekeyRequest = new Map<string, number>();
+	/** Per-peer rate limit for fork-heal replies to rejected grants. */
+	private lastForkReply = new Map<string, number>();
 
 	constructor(session: CryptoSession, config: Partial<P2PConfig> = {}, displayName: () => string) {
 		this.session = session;
@@ -191,6 +202,11 @@ export class P2PConnection {
 	/** A peer reached us but could not prove key knowledge. */
 	onKnocking(cb: (clientId: string) => void): void {
 		this.onKnockingCallback = cb;
+	}
+
+	/** A direct peer verified while at the link generation (§1.4 trigger a). */
+	onNewcomer(cb: (deviceId: string) => void): void {
+		this.onNewcomerCallback = cb;
 	}
 
 	/** An in-band media channel arrived from a verified peer (§5). */
@@ -657,12 +673,15 @@ export class P2PConnection {
 		}
 	}
 
-	/** Sorted DTLS fingerprint pair from the negotiated SDP (§3.4). */
-	private channelBinding(pc: RTCPeerConnection): string {
+	/**
+	 * Sorted DTLS fingerprint pair from the negotiated SDP (§3.4), as
+	 * separate lp() fields (§0 — no delimiter joining).
+	 */
+	private channelBinding(pc: RTCPeerConnection): HelloBinding {
 		const extract = (sdp: string | undefined): string =>
 			[...(sdp ?? '').matchAll(/^a=fingerprint:\S+\s+(\S+)\s*$/gim)].map((m) => m[1])[0] ?? '';
 		const pair = [extract(pc.localDescription?.sdp), extract(pc.remoteDescription?.sdp)].sort();
-		return pair.join('::');
+		return { label: 'hello-v3', fields: pair };
 	}
 
 	private async handleChannelMessage(peer: Peer, raw: unknown): Promise<void> {
@@ -687,6 +706,7 @@ export class P2PConnection {
 				this.relayPeers.delete(peer.clientId);
 				await this.sendHello(peer); // reciprocate if their hello came first
 				this.onPeerConnectedCallback?.(info.deviceId, 'direct');
+				await this.respondToAdvertisedGeneration(peer, info.g, info.gid);
 			} else {
 				this.onKnockingCallback?.(peer.clientId);
 			}
@@ -695,10 +715,146 @@ export class P2PConnection {
 
 		try {
 			const body = (await this.session.openMessage(envelope)) as unknown as TypedP2PMessage;
-			if ((body as { type?: string }).type === 'hello') return; // duplicate hello
+			const type = (body as { type?: string }).type;
+			if (type === 'hello') {
+				// Duplicate hello: identity already pinned, but the generation
+				// advertisement may have moved (§3.4).
+				const dup = body as unknown as { g?: number; gid?: string };
+				if (Number.isInteger(dup.g) && typeof dup.gid === 'string') {
+					await this.respondToAdvertisedGeneration(peer, dup.g!, dup.gid);
+				}
+				return;
+			}
+			if (type === 'rekey-grant' || type === 'rekey-request') {
+				await this.handleRekeyBody(peer, body as unknown as Record<string, unknown>);
+				return;
+			}
 			if (peer.deviceId) this.onMessageCallback?.(body, peer.deviceId);
 		} catch (error) {
 			console.warn('[P2P] dropping envelope:', error);
+			// A verified peer sealed something we cannot read at its stated
+			// generation: ask for the generation, rate-limited (§1.4).
+			if (envelope.t !== 'hs') void this.requestGenerationFrom(peer, envelope.g);
+		}
+	}
+
+	// ============ generation ratchet choreography (§1.4/§3.4) ============
+
+	/**
+	 * §3.4: a verified hello advertising a generation we hold while the
+	 * peer is behind (or a sibling we lack) prompts a grant; a generation
+	 * ahead of ours prompts a request. The hello itself never moves us.
+	 */
+	private async respondToAdvertisedGeneration(peer: Peer, peerG: number, peerGid: string): Promise<void> {
+		try {
+			const mine = this.session.generation;
+			if (peerG > mine.g) {
+				await this.requestGenerationFrom(peer, peerG, peerGid);
+				return;
+			}
+			if (peerG === 0 && mine.g === 0) {
+				// Both at the link generation: a newcomer joined a fresh room —
+				// the join trigger (debounced, minter-selected) ratchets it.
+				this.onNewcomerCallback?.(peer.deviceId ?? peer.clientId);
+				return;
+			}
+			if (peerG < mine.g || !this.session.hasGeneration(peerG, peerGid)) {
+				const wire = await this.session.grantWireFor(peerG, peerGid);
+				if (peer.chat.readyState === 'open') peer.chat.send(wire);
+				// A peer still at the link generation is a newcomer (§1.4
+				// trigger a): grant it the current generation for immediate
+				// readability, then let the join trigger ratchet the room.
+				if (peerG === 0) this.onNewcomerCallback?.(peer.deviceId ?? peer.clientId);
+			}
+		} catch (error) {
+			console.warn('[P2P] generation response failed:', error);
+		}
+	}
+
+	/** Direct-only rekey-request, rate-limited per peer (§1.4). */
+	private async requestGenerationFrom(peer: Peer, g: number, gid?: string): Promise<void> {
+		if (!peer.verified || peer.chat.readyState !== 'open') return;
+		if (!Number.isInteger(g) || g <= 0) return;
+		// Only ask when the generation is actually missing — a failure we
+		// could have decrypted (replay, corruption) is not a key gap.
+		if (this.session.canReadGeneration(g) && gid === undefined) return;
+		const last = this.lastRekeyRequest.get(peer.clientId) ?? 0;
+		if (Date.now() - last < 5000) return;
+		this.lastRekeyRequest.set(peer.clientId, Date.now());
+		try {
+			peer.chat.send(await this.session.makeRekeyRequestWire(g, gid));
+		} catch (error) {
+			console.warn('[P2P] rekey-request send failed:', error);
+		}
+	}
+
+	/** Verified rekey bodies — never surfaced to the app layer. */
+	private async handleRekeyBody(peer: Peer, body: Record<string, unknown>): Promise<void> {
+		if (body.type === 'rekey-request') {
+			// Answer with a chained grant, minting if we cannot grant (§1.4).
+			const wire = await this.session.handleRekeyRequest(body as never);
+			if (peer.chat.readyState === 'open') peer.chat.send(wire);
+			return;
+		}
+		const outcome = await this.session.handleRekeyGrant(body as never);
+		if (outcome === 'adopted') {
+			// Gossip: re-grant verbatim to our verified direct peers so
+			// meshes and partitions converge without the minter reaching
+			// everyone (§1.4). Duplicates die as 'stale' at the receivers.
+			this.gossipCurrentGrant(peer.clientId);
+		} else if (outcome === 'behind') {
+			const grant = (body as { grant?: { g?: number; gid?: string } }).grant;
+			if (grant && Number.isInteger(grant.g)) {
+				await this.requestGenerationFrom(peer, grant.g!, grant.gid);
+			}
+		} else if (outcome === 'rejected') {
+			// Their line lost a fork tie-break (§1.4): the winning side
+			// converges the room by answering with its own chained grant so
+			// the heal applies in the other direction. Rate-limited; an
+			// already-converged sender drops the reply as 'stale'.
+			const last = this.lastForkReply.get(peer.clientId) ?? 0;
+			if (Date.now() - last >= 5000 && peer.chat.readyState === 'open') {
+				this.lastForkReply.set(peer.clientId, Date.now());
+				try {
+					peer.chat.send(await this.session.grantWireFor(0));
+				} catch (error) {
+					console.warn('[P2P] fork-heal reply failed:', error);
+				}
+			}
+		}
+	}
+
+	/** Send a grant wire to every verified direct peer (never the relay). */
+	private gossipCurrentGrant(excludeClientId?: string): void {
+		void (async () => {
+			try {
+				const wire = await this.session.grantWireFor(0);
+				for (const p of this.peers.values()) {
+					if (p.clientId === excludeClientId) continue;
+					if (p.verified && p.chat.readyState === 'open') {
+						try {
+							p.chat.send(wire);
+						} catch (error) {
+							console.warn('[P2P] grant gossip failed:', error);
+						}
+					}
+				}
+			} catch (error) {
+				console.warn('[P2P] grant gossip failed:', error);
+			}
+		})();
+	}
+
+	/** Broadcast a freshly minted grant (manager-driven trigger, §1.4). */
+	broadcastGrant(wire: string): void {
+		for (const p of this.peers.values()) {
+			if (p.verified && p.chat.readyState === 'open') {
+				try {
+					p.chat.send(wire);
+				} catch (error) {
+					console.warn('[P2P] grant broadcast failed:', error);
+				}
+			}
 		}
 	}
 
@@ -717,10 +873,12 @@ export class P2PConnection {
 		this.sendSignaling({ type: 'relay', targetId: clientId, data: { hello } as never });
 	}
 
-	private relayBinding(peerClientId: string): string {
-		// Sorted so both ends compute the same binding (§3.4 relay variant).
+	private relayBinding(peerClientId: string): HelloBinding {
+		// Sorted so both ends compute the same binding (§3.4 relay variant);
+		// distinct label and lp() fields (§0) — a relay hello can never be
+		// replayed as a direct one or vice versa.
 		const pair = [this.myClientId ?? '', peerClientId].sort();
-		return `relay::${pair[0]}::${pair[1]}::${this.roomId}`;
+		return { label: 'hello-relay-v3', fields: [pair[0], pair[1], this.roomId] };
 	}
 
 	private async handleRelay(fromId: string, payload: AuthedPayload): Promise<void> {
