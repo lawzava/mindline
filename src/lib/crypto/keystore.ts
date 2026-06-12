@@ -6,9 +6,11 @@
  * is never persisted.
  */
 
-import type { DeviceIdentity } from './identity';
+import type { DeviceIdentity, KemIdentity } from './identity';
 import { deviceIdFromSpki } from './identity';
+import { kemKeypair } from './kem';
 import type { RoomKeys } from './keys';
+import { lp } from './lp';
 // Type-only: the runtime dependency goes the other way (p2p → keystore).
 import type { PersistedRatchet } from '$lib/p2p/ratchet';
 
@@ -145,6 +147,55 @@ export async function loadIdentity(): Promise<DeviceIdentity | null> {
 		privateKey: stored.privateKey,
 		spki
 	};
+}
+
+interface StoredKemIdentity {
+	/** Non-extractable AES-GCM key that wraps the seed. */
+	wrapKey: CryptoKey;
+	wrappedSeed: Uint8Array;
+	nonce: Uint8Array;
+}
+
+const KEM_SEED_AAD = lp('kem-seed');
+
+/**
+ * Persist the device KEM identity (PROTOCOL.md §1.3). The X-Wing seed
+ * cannot be a WebCrypto key (the implementation is JS), so it is stored
+ * only AES-256-GCM-wrapped under a non-extractable key persisted beside
+ * it — the same at-rest protection class as the WebCrypto keys, no raw
+ * key bytes in any record. The public key is re-derived from the seed on
+ * load (deterministic), so the record carries no redundant state.
+ */
+export async function saveKemIdentity(kem: KemIdentity): Promise<void> {
+	const wrapKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+		'encrypt',
+		'decrypt'
+	]);
+	const nonce = crypto.getRandomValues(new Uint8Array(12));
+	const wrappedSeed = new Uint8Array(
+		await crypto.subtle.encrypt(
+			{ name: 'AES-GCM', iv: nonce, additionalData: KEM_SEED_AAD as BufferSource },
+			wrapKey,
+			kem.seed as BufferSource
+		)
+	);
+	const record: StoredKemIdentity = { wrapKey, wrappedSeed, nonce };
+	await withStore(DEVICE, 'readwrite', (s) => s.put(record, 'kem-identity'));
+}
+
+export async function loadKemIdentity(): Promise<KemIdentity | null> {
+	const stored = await withStore<StoredKemIdentity | undefined>(DEVICE, 'readonly', (s) =>
+		s.get('kem-identity')
+	);
+	if (!stored) return null;
+	const seed = new Uint8Array(
+		await crypto.subtle.decrypt(
+			{ name: 'AES-GCM', iv: stored.nonce as BufferSource, additionalData: KEM_SEED_AAD as BufferSource },
+			stored.wrapKey,
+			stored.wrappedSeed as BufferSource
+		)
+	);
+	return { publicKey: kemKeypair(seed).publicKey, seed };
 }
 
 /**
