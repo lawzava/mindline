@@ -76,8 +76,14 @@ not per-room.
 - **Safari may evict storage.** Without the persistence permission, Safari
   deletes site storage (your keys and history) after 7 days without a
   visit.
-- **No forward secrecy.** The room key does not rotate in this version; a
-  leaked link exposes the room's past and future content.
+- **Forward secrecy is scoped.** Room keys rotate when someone joins or
+  leaves (PROTOCOL.md §1.4), so ciphertext the signaling operator archived
+  while relaying stays unreadable even if the invite link later leaks.
+  Rotation does **not** revoke the link itself: whoever holds it can still
+  join (visibly, as a peer) and receive history; history stored on your
+  device stays under a link-derived key; and a peer reachable only through
+  the relay cannot receive rotations — the app shows this as "key rotation
+  pending direct connection".
 
 ## What we never have
 
