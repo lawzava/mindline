@@ -40,6 +40,10 @@ describe('keystore', () => {
 	});
 
 	test('ratchet state round-trips with usable keys and burnRoom clears it', async () => {
+		// Generation state persists only for rooms whose keys exist (the
+		// fail-closed §4 rule), matching CryptoSession.create's ordering.
+		const roomKeys = await deriveRoomKeys(await importRoomKeyMaterial(createRoomKey()));
+		await saveRoomKeys('room-1', roomKeys);
 		const engine = GenerationRatchet.atLinkGeneration(
 			'room-1',
 			await deriveGenerationKeys(createRoomKey())
@@ -67,6 +71,24 @@ describe('keystore', () => {
 
 	test('loadRatchetState returns null for unknown room', async () => {
 		expect(await loadRatchetState('nope')).toBeNull();
+	});
+
+	test('saveRatchetState fails closed after burn (no key resurrection)', async () => {
+		// An in-flight adopt or a sibling tab must not re-persist generation
+		// decrypt keys into a store the burn just cleared (§4): the save is
+		// conditional on the room's keys still existing.
+		const keys = await deriveRoomKeys(await importRoomKeyMaterial(createRoomKey()));
+		await saveRoomKeys('room-burned', keys);
+		const engine = GenerationRatchet.atLinkGeneration(
+			'room-burned',
+			await deriveGenerationKeys(createRoomKey())
+		);
+		await engine.mintNext(await createDeviceIdentity());
+		await saveRatchetState('room-burned', engine.state());
+		await burnRoom('room-burned');
+		// The race: a mint/adopt completing after the burn tries to persist.
+		await saveRatchetState('room-burned', engine.state());
+		expect(await loadRatchetState('room-burned')).toBeNull();
 	});
 
 	test('loadRoomKeys returns null for unknown room', async () => {

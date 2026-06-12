@@ -84,9 +84,31 @@ export async function saveRoomKeys(roomId: string, keys: RoomKeys): Promise<void
  * Persist the ratchet's generation state (PROTOCOL.md §1.4): derived
  * non-extractable CryptoKeys plus the public cert log — never a raw
  * generation secret, so a reloaded member reads/writes but cannot grant.
+ *
+ * Fails closed when the room's keys are gone (§4): a mint/adopt landing
+ * after a burn — same tab in flight, or a sibling tab that has not yet
+ * processed the burn broadcast — must not resurrect decrypt-capable key
+ * material into a store the burn just cleared. The existence check and
+ * the put share one transaction; burnRoom deletes ROOMS before
+ * GENERATIONS, so both race directions end with the record absent.
  */
 export async function saveRatchetState(roomId: string, state: PersistedRatchet): Promise<void> {
-	await withStore(GENERATIONS, 'readwrite', (s) => s.put(state, roomId));
+	const db = await openDb();
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const tx = db.transaction([ROOMS, GENERATIONS], 'readwrite');
+			const probe = tx.objectStore(ROOMS).get(roomId);
+			probe.onsuccess = () => {
+				if (probe.result !== undefined) tx.objectStore(GENERATIONS).put(state, roomId);
+			};
+			probe.onerror = () => reject(probe.error);
+			tx.oncomplete = () => resolve();
+			tx.onabort = () => reject(tx.error ?? probe.error);
+			tx.onerror = () => reject(tx.error ?? probe.error);
+		});
+	} finally {
+		db.close();
+	}
 }
 
 export async function loadRatchetState(roomId: string): Promise<PersistedRatchet | null> {
