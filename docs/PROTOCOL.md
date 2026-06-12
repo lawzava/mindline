@@ -161,9 +161,15 @@ cannot claim a forged low `minter` to win a tie-break (F2), nor substitute
 its own `rk` under an honest member's identity. The `prevGid` link makes
 the generation line a **hash chain**: minting generation `g` requires
 naming `gid_{g-1}`, which a member only knows if it actually held
-generation `g-1`, so no member can fabricate a far-ahead `g` to wedge
-the room (F1) — the chain, not a numeric `< 2³²` bound alone, is what
-forecloses leaps.
+generation `g-1` (or was served its certificate, below — still members
+only), so no member can fabricate a far-ahead `g` to wedge the room (F1)
+— the chain, not a numeric `< 2³²` bound alone, is what forecloses leaps.
+
+Members retain the **certificate log** of their line — the rk-free part
+of each grant (`{g, minter, minterSpki, gid, prevGid, cert}`). Certs
+contain no secrets, so the log persists (unlike raw `rk`, which never
+does) and is what lets a member serve lineage to a behind peer long
+after the old generations' keys — and their raw secrets — are gone.
 
 **Distribution (rekey-grant).** The minter sends each verified **direct**
 peer the grant as a signed `hs` envelope (§2). A recipient that *adopts*
@@ -175,34 +181,91 @@ inner `cert` is never re-signed. Grants never relay (§3.6) — see §1.2
 for why this carrier restriction, not detectability, is the security
 boundary. A member that sees an envelope it cannot decrypt at a known
 `g`, or a hello advertising a `gid` it lacks, sends
-`rekey-request { g, gid? }` direct-only; the answer is a grant.
+`rekey-request { g, gid?, haveG, haveGid }` direct-only; the answer is a
+grant for the responder's **current** generation carrying the rk-free
+ancestor certificates linking it back to the requester's stated
+position. At most `MAX_CHAIN` ancestor certs ride one grant — the cap
+bounds per-message wire size and verification work. A member behind by
+more than `MAX_CHAIN` generations (the room rotated 32+ times while it
+was away) cannot chain-verify that far and **re-enters through the
+link** — leave and rejoin, which is the same members-only trust its
+position already implies (see Bootstrap below) and loses nothing:
+identity persists and history re-syncs (§3.5).
 
 **Convergence (chained total order on `(g, gid)`).** A grant is
 *admissible* only if its `cert` verifies and `g` is a non-negative
 integer `< 2³²`. Among admissible grants:
 - `g == g_current + 1` and `prevGid == currentGid`: adopt (the normal
-  forward step).
-- `g > g_current + 1`: do not adopt yet — the receiver is behind. It
-  sends `rekey-request { g, gid }` for the missing ancestors and adopts
-  the chain in order once each link verifies back to a generation it
-  holds. This lets a member two or more generations behind **catch up**
-  across a gap (the verified chain authorises the jump) without ever
-  honouring an unchained leap (closes the strict-`+1` liveness gap while
-  keeping F1's wedge defence).
-- `g == g_current` with a *different* `gid`: a same-generation sibling
-  (concurrent mint or healed partition). Resolve to lower `gid`. To bound
-  grind/flood, same-`g` siblings are accepted **only within a short
+  forward step). Forward steps chain **only from the established line**
+  — a `prevGid` naming a retained *losing* sibling is not adopted (the
+  line is final); the stranded sibling-minter converges later through
+  the fork-heal rule below.
+- `g > g_current + 1`: do not adopt on the grant alone — the receiver is
+  behind. The gap is crossed by the grant's accompanying rk-free
+  ancestor certs (or a `rekey-request` round to fetch them): the receiver
+  verifies each cert's signature and `prevGid` linkage as one consecutive
+  run from its own line up to the tip, then adopts the tip (only the tip
+  carries `rk` — old keys are neither needed nor obtainable; missed
+  content re-syncs at the current generation, §3.5). This lets a member
+  arbitrarily far behind **catch up** without ever honouring an unchained
+  leap (closes the strict-`+1` liveness gap while keeping F1's wedge
+  defence).
+- `g == g_current` with a *different* `gid`, tip not extending further: a
+  lone same-generation sibling (concurrent mint). Resolve to lower `gid`.
+  To bound grind/flood, lone siblings are accepted **only within a short
   convergence window** (`SIBLING_WINDOW`, from first observing `g`) and
-  at most a small fixed number of siblings are retained per `g`; after
-  the window the established `gid` is final and a later same-`g` sibling
-  is rejected (a genuinely-behind member instead requests the established
-  generation). This stops a member from forcing unbounded ever-lower
-  same-`g` siblings to bloat retained keys and trial-decrypt (review #3).
+  at most a small fixed number of generation instances are retained per
+  `g`; after the window the established `gid` is final within the
+  connected partition and a later lone sibling is rejected (a
+  genuinely-behind member instead requests the established generation).
+  This stops a member from forcing unbounded ever-lower same-`g`
+  siblings to bloat retained keys and trial-decrypt (review #3).
 
-The chain + lower-`gid` tie-break is a deterministic total order, so
-concurrent ratchets and healed partitions converge on one winner (F3).
-`g` is never advanced from a hello advertisement — only from a verified
-grant chain.
+**Bootstrap (newcomer).** A member still at the link generation that has
+never adopted or minted accepts its **first verified grant at any
+admissible `g`**, chain or no chain: its anchor is `gid_0 = ''`, and a
+chain down to that anchor proves nothing a fabricated one could not (any
+link-holder can sign a complete parallel line from scratch), so the
+joiner's actual trust anchor is the §3.4-verified member and channel the
+grant arrived on. Certs served with the bootstrap grant seed the
+joiner's log. Named residual: the granting member can hand a joiner a
+*fork* — a fabricated line the rest of the room is not on. That is a
+member-grade denial of service (the same member could refuse to grant,
+serve garbage sync, or lie in history), not a confidentiality loss, and
+it heals through fork-heal below once an honest line's chain reaches
+the joiner.
+
+**Fork heal (partitions).** Two partitions that each ratchet past the
+sibling window would otherwise split permanently — each side's window
+has closed against the other's line. Heal rule: a verified chain that
+diverges from the receiver's line at some ancestor `g_f` **and extends
+past it** is resolved by the same lower-`gid` tie-break applied at the
+fork point, **window-free**: if the incoming line's `gid` at `g_f` is
+lower, the receiver adopts the incoming line's tip (even when that tip's
+`g` is at or below its own — re-minting forward resumes immediately);
+otherwise it rejects, and the *winning* side converges the room by
+minting past the loser's tip so the heal applies in the other direction
+(a lone post-window sibling never heals — that is the flood bound; a
+line must extend past the fork to claim it). **Depth bound** (same
+`MAX_CHAIN` bound as catch-up, and for the same reason): the heal needs
+the fork cert inside one admissible run, and runs end at the tip — so a
+fork heals in-protocol only while the *winning* line's tip is within
+`MAX_CHAIN` of `g_f`. A partition that ratchets deeper than that past
+the fork (32+ membership changes while split) is recovered the same way
+as a deeper-than-`MAX_CHAIN` gap: the losing side **re-enters through
+the link** (leave + rejoin → bootstrap onto the winning line; identity
+persists, history re-syncs §3.5). Availability-only, like every fork. Forks are **availability**
+events, not confidentiality events — every line is minted by a member
+and granted only to members — so a deterministic symmetric tie-break is
+sufficient; a member abusing heal to repeatedly re-root the room (each
+re-fork needs a strictly lower `gid` at the fork, i.e. hash-grinding
+`rk` candidates) is the same member-grade DoS class as flooding, named
+in §6.
+
+The chain + lower-`gid` tie-break (live at the current `g`, window-free
+at a fork) is a deterministic total order, so concurrent ratchets and
+healed partitions converge on one winner (F3). `g` is never advanced
+from a hello advertisement — only from a verified grant chain.
 
 **Key retention and the FS horizon.** Encryption always uses the winning
 current generation. The receiver retains *decrypt-only* keys for prior
@@ -212,9 +275,10 @@ adopting `g` never silently drops a losing sibling's in-flight `g`
 traffic (F3). Retention is an **availability** parameter, deliberately
 separated from the FS horizon: a generation is *retired* (no longer used
 to encrypt) the instant a successor is adopted — that is what bounds new
-ciphertext — and its decrypt keys are destroyed only when **two** further
-generations have superseded it (so a member holds at most ~3
-generations). Destroying old wire keys does not lose *content* **as long
+ciphertext — and its decrypt keys are destroyed once **two** further
+generations have superseded it (generation `X` dies when `X+2` is
+adopted, so a member holds the current and the immediately preceding
+generation, plus any same-`g` siblings the convergence window retained). Destroying old wire keys does not lose *content* **as long
 as a key-confirmed direct peer still holds the history to serve**:
 history re-syncs re-encrypted under the current generation (§3.5), so a
 member that missed a generation recovers those messages by sync, not by
@@ -422,8 +486,10 @@ lower `g` prompts a `rekey-grant`; a higher advertised `g` prompts a
 only a verified, sequential grant does (§1.4, F1).
 
 Relay variant (§3.6): no DTLS exists, so
-`proof = HMAC(k_auth, lp('hello-relay-v3', deviceId, clientId_self,
-clientId_peer, roomId))`. Weaker binding (clientIds are server-assigned),
+`proof = HMAC(k_auth, lp('hello-relay-v3', deviceId, clientIdLow,
+clientIdHigh, roomId))` with the clientId pair sorted lexicographically
+so both ends compute the same binding. Weaker (clientIds are
+server-assigned),
 acceptable because envelope signatures + the monotonic replay high-water
 (§2) still hold; the operator can replay a stale hello but cannot mint
 traffic with it — and, because the relay hello carries no rekey material
@@ -596,7 +662,7 @@ AAD   = lp(transferId, str(chunkIndex))
 | TURN operator              | Encrypted SCTP/DTLS packets, peer IPs                           |
 | Link-holder (intended or leaked) | Entry + history-by-sync, as a visible peer (§1.1, §1.4). Passive + later leak: relay-archived ciphertext of generations ≥1 stays unreadable (grants never relay); residual — a grant captured *at an endpoint* (log/extension/forensics) is readable, since `k_hs` is link-derived (§1.4 residual 4) |
 | Past participant           | Keeps everything already synced, and the link (can rejoin visibly). Loses passive read of post-departure traffic once the leave-triggered ratchet lands (§1.4) |
-| Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, delete, or react as others (signatures + §3.7 authorization); can misrepresent history it serves to a syncing device (§3.5) |
+| Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, delete, or react as others (signatures + §3.7 authorization); can misrepresent history it serves to a syncing device (§3.5); can grief the ratchet — fork a joiner, mint-flood, grind low gids to re-root lines (§1.4) — an availability nuisance, never a read of traffic it was not granted |
 | Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB |
 | XSS / malicious extension  | Game over (can use keys in place). Mitigation: strict CSP — `connect-src` pinned to self + the signaling origin (no any-host WebSocket exfil), zero third-party runtime origins, self-hosted fonts |
 
@@ -627,10 +693,17 @@ reset); generation machinery: `rk_g` subkey derivation + cross-generation
 isolation, `gid = H(rk_g)`, chained grant-certificate verify/forge
 (forged `minter` rejected; unchained `prevGid` rejected; far-ahead `g`
 not adopted without a verified ancestor chain; multi-generation catch-up
-via requested ancestors accepted), same-`g` tie-break by lower `gid`
-bounded by the convergence window, trial-decrypt across retained
-`(g,gid)` keys, can't-grant → mint-next liveness, unknown-generation
-drop, `hs`-class body-type restriction both directions; signature
+via rk-free ancestor certs accepted, holes and tampered links rejected,
+per-grant chain cap enforced), same-`g` tie-break by lower `gid` bounded
+by the convergence window and the per-`g` instance cap, line finality (a
+sibling-rooted `+1` not adopted), newcomer bootstrap (first verified
+grant at any `g`; normal rules thereafter), fork heal (window-free
+lower-`gid` at the fork for a line extending past it; lone post-window
+sibling stays rejected), trial-decrypt across retained `(g,gid)` keys,
+retention horizon (keys die two generations on), persisted ratchet state
+round-trip without raw secrets, can't-grant → mint-next liveness
+(including post-reload), unknown-generation drop, `hs`-class body-type
+restriction both directions; signature
 verify/forge; edit/delete
 authorization; reaction membership transitions (verified-device keyed,
 §3.7); sync page reconciliation (edit LWW, reaction maps); media

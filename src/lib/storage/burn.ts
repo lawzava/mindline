@@ -1,18 +1,19 @@
 /**
  * Burn a room from this device (PROTOCOL.md §4, PRIVACY.md): delete the
  * room's keys and replay state, encrypted history (and any legacy
- * plaintext), media blobs, and the per-device epoch counter (it reseeds
- * from the clock on the next session, §2). Keys go first so a racing
- * fire-and-forget save can no longer encrypt anything back. Device
- * identity is per-device, not per-room, and deliberately survives.
- * Peers keep their copies.
+ * plaintext), and media blobs. Keys go first so a racing fire-and-forget
+ * save can no longer encrypt anything back. Device identity and its
+ * monotonic epoch high-water (§2) are per-device, not per-room, and
+ * deliberately survive — the high-water must never regress, or a burned
+ * device would be censored by peers' persisted replay state. Peers keep
+ * their copies.
  */
 
 import { burnRoom } from '$lib/crypto/keystore';
 import { burnRoomBlobs } from '$lib/media/blob-store';
 import { clearRoomMessages } from './messages';
 
-export async function burnRoomData(roomId: string, deviceId: string | null): Promise<void> {
+export async function burnRoomData(roomId: string): Promise<void> {
 	const failures: string[] = [];
 	const steps: Array<[string, () => Promise<void>]> = [
 		['keys', () => burnRoom(roomId)],
@@ -24,13 +25,6 @@ export async function burnRoomData(roomId: string, deviceId: string | null): Pro
 			await step();
 		} catch (error) {
 			failures.push(`${name}: ${String(error)}`);
-		}
-	}
-	if (deviceId) {
-		try {
-			localStorage.removeItem(`mindline_epoch_${deviceId}`);
-		} catch {
-			/* no localStorage: nothing persisted there to burn */
 		}
 	}
 	// Other tabs hold the room keys in memory and would re-persist history;
