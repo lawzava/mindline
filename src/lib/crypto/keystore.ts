@@ -7,7 +7,7 @@
  */
 
 import type { DeviceIdentity, KemIdentity } from './identity';
-import { createKemIdentity, deviceIdFromSpki } from './identity';
+import { createDeviceIdentity, createKemIdentity, deviceIdFromSpki } from './identity';
 import { kemKeypair } from './kem';
 import type { RoomKeys } from './keys';
 import { lp } from './lp';
@@ -145,6 +145,53 @@ export async function loadIdentity(): Promise<DeviceIdentity | null> {
 		deviceId: await deviceIdFromSpki(spki),
 		publicKey: stored.publicKey,
 		privateKey: stored.privateKey,
+		spki
+	};
+}
+
+/**
+ * Atomic get-or-create of the device ECDSA identity (PROTOCOL.md §1.3) —
+ * the same cure as getOrCreateKemIdentity below: a plain load-then-save
+ * races two first-launch tabs onto divergent deviceIds, and the losing
+ * tab keeps signing under an identity whose record no longer exists
+ * (peers TOFU-pin the winner and reject it). The keygen runs fully
+ * *before* the transaction (IDB transactions auto-commit when the event
+ * loop turns on non-IDB work); the loser adopts the stored winner,
+ * rebuilding the deviceId from the stored SPKI.
+ */
+export async function getOrCreateIdentity(): Promise<DeviceIdentity> {
+	const candidate = await createDeviceIdentity();
+	const candidateRecord: StoredIdentity = {
+		publicKey: candidate.publicKey,
+		privateKey: candidate.privateKey,
+		spki: candidate.spki.slice()
+	};
+	const db = await openDb();
+	let winner: StoredIdentity;
+	try {
+		winner = await new Promise<StoredIdentity>((resolve, reject) => {
+			const tx = db.transaction(DEVICE, 'readwrite');
+			const store = tx.objectStore(DEVICE);
+			let result = candidateRecord;
+			const getReq = store.get('identity');
+			getReq.onsuccess = () => {
+				if (getReq.result) result = getReq.result as StoredIdentity;
+				else store.put(candidateRecord, 'identity');
+			};
+			getReq.onerror = () => reject(getReq.error);
+			tx.oncomplete = () => resolve(result);
+			tx.onabort = () => reject(tx.error ?? getReq.error);
+			tx.onerror = () => reject(tx.error ?? getReq.error);
+		});
+	} finally {
+		db.close();
+	}
+	if (winner === candidateRecord) return candidate;
+	const spki = new Uint8Array(winner.spki);
+	return {
+		deviceId: await deviceIdFromSpki(spki),
+		publicKey: winner.publicKey,
+		privateKey: winner.privateKey,
 		spki
 	};
 }
