@@ -11,10 +11,6 @@ import { fromB64url, toB64url } from './b64';
 const HKDF_SALT = new TextEncoder().encode('mindline-v2');
 
 export interface RoomKeys {
-	/** AES-256-GCM for chat/control/sync envelopes */
-	msg: CryptoKey;
-	/** AES-256-GCM for drafts/presence envelopes */
-	eph: CryptoKey;
 	/** AES-256-GCM for at-rest history and blobs */
 	storage: CryptoKey;
 	/** HMAC-SHA-256 for handshake/signaling authentication */
@@ -85,15 +81,15 @@ async function deriveHmacKey(material: CryptoKey, info: string): Promise<CryptoK
 }
 
 export async function deriveRoomKeys(material: CryptoKey): Promise<RoomKeys> {
-	const [msg, eph, storage, auth, hs, mediaBase] = await Promise.all([
-		deriveAesKey(material, 'mindline/v2/msg'),
-		deriveAesKey(material, 'mindline/v2/eph'),
+	// Link-static set only (§1.2): wire msg/eph keys are generation-keyed
+	// (deriveGenerationKeys) and live on the ratchet, never here.
+	const [storage, auth, hs, mediaBase] = await Promise.all([
 		deriveAesKey(material, 'mindline/v2/storage'),
 		deriveHmacKey(material, 'mindline/v2/auth'),
 		deriveAesKey(material, 'mindline/v3/handshake'),
 		deriveHmacKey(material, 'mindline/v2/media-base')
 	]);
-	return { msg, eph, storage, auth, hs, mediaBase };
+	return { storage, auth, hs, mediaBase };
 }
 
 /**

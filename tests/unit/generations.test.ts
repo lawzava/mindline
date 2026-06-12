@@ -36,17 +36,19 @@ describe('generation key schedule (PROTOCOL.md §1.2/§1.4)', () => {
 		expect(Buffer.from(ca).equals(Buffer.from(cb))).toBe(false);
 	});
 
-	it('generation msg key differs from the v2 link-static msg key (distinct info strings)', async () => {
+	it('generation keys are independent of every link-static AES key', async () => {
 		// rk_0 == link key, but generation keys use v3 info strings, so the
-		// g=0 generation key is independent of the legacy link-static msg key.
+		// g=0 generation keys never collide with the static storage/hs keys.
 		const rk = createRoomKey();
 		const linkKeys = await deriveRoomKeys(await importRoomKeyMaterial(rk));
 		const genKeys = await deriveGenerationKeys(rk);
 		const nonce = new Uint8Array(12);
 		const data = new TextEncoder().encode('x');
-		const cLink = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, linkKeys.msg, data);
 		const cGen = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, genKeys.msg, data);
-		expect(Buffer.from(cLink).equals(Buffer.from(cGen))).toBe(false);
+		for (const linkKey of [linkKeys.storage, linkKeys.hs]) {
+			const cLink = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, linkKey, data);
+			expect(Buffer.from(cLink).equals(Buffer.from(cGen))).toBe(false);
+		}
 	});
 
 	it('generationId is a stable, deterministic, 16-char base64url tag of the secret', async () => {
