@@ -20,6 +20,7 @@ import type {
 	TypedP2PMessage
 } from './types';
 import { DEFAULT_CONFIG } from './types';
+import { CooldownGate } from './cooldown';
 
 interface SignalingAuth {
 	deviceId: string;
@@ -105,10 +106,15 @@ export class P2PConnection {
 	private onMediaChannelCallback:
 		| ((peerDeviceId: string, transferId: string, channel: RTCDataChannel) => void)
 		| null = null;
-	/** Per-peer rekey-request rate limit (decrypt-failure path, §1.4). */
-	private lastRekeyRequest = new Map<string, number>();
-	/** Per-peer rate limit for fork-heal replies to rejected grants. */
-	private lastForkReply = new Map<string, number>();
+	/**
+	 * Per-device rekey-request rate limit (decrypt-failure path, §1.4).
+	 * Keyed by the verified deviceId, never clientId — the server-assigned
+	 * clientId rotates on every signaling reconnect, which would reset the
+	 * window (limiter bypass by socket cycling) and strand dead entries.
+	 */
+	private rekeyRequestGate = new CooldownGate(5000);
+	/** Per-device rate limit for fork-heal replies to rejected grants. */
+	private forkReplyGate = new CooldownGate(5000);
 
 	constructor(session: CryptoSession, config: Partial<P2PConfig> = {}, displayName: () => string) {
 		this.session = session;
@@ -161,6 +167,8 @@ export class P2PConnection {
 		for (const clientId of [...this.peers.keys()]) this.removePeer(clientId);
 		for (const clientId of [...this.relayPeers.keys()]) this.removePeer(clientId);
 		this.deviceToClient.clear();
+		this.rekeyRequestGate.clear();
+		this.forkReplyGate.clear();
 	}
 
 	isWebSocketConnected(): boolean {
@@ -779,9 +787,7 @@ export class P2PConnection {
 		// Only ask when the generation is actually missing — a failure we
 		// could have decrypted (replay, corruption) is not a key gap.
 		if (this.session.canReadGeneration(g) && gid === undefined) return;
-		const last = this.lastRekeyRequest.get(peer.clientId) ?? 0;
-		if (Date.now() - last < 5000) return;
-		this.lastRekeyRequest.set(peer.clientId, Date.now());
+		if (!peer.deviceId || !this.rekeyRequestGate.allow(peer.deviceId)) return;
 		try {
 			peer.chat.send(await this.session.makeRekeyRequestWire(g, gid));
 		} catch (error) {
@@ -814,9 +820,7 @@ export class P2PConnection {
 			// converges the room by answering with its own chained grant so
 			// the heal applies in the other direction. Rate-limited; an
 			// already-converged sender drops the reply as 'stale'.
-			const last = this.lastForkReply.get(peer.clientId) ?? 0;
-			if (Date.now() - last >= 5000 && peer.chat.readyState === 'open') {
-				this.lastForkReply.set(peer.clientId, Date.now());
+			if (peer.chat.readyState === 'open' && this.forkReplyGate.allow(peer.deviceId)) {
 				try {
 					peer.chat.send(await this.session.grantWireFor(peer.deviceId, 0));
 				} catch (error) {
@@ -945,12 +949,16 @@ export class P2PConnection {
 			this.removePeerConnectionOnly(clientId);
 			if (peer.deviceId) {
 				this.deviceToClient.delete(peer.deviceId);
+				this.rekeyRequestGate.forget(peer.deviceId);
+				this.forkReplyGate.forget(peer.deviceId);
 				if (peer.verified) this.onPeerDisconnectedCallback?.(peer.deviceId);
 			}
 		}
 		if (relay) {
 			this.relayPeers.delete(clientId);
 			this.deviceToClient.delete(relay.deviceId);
+			this.rekeyRequestGate.forget(relay.deviceId);
+			this.forkReplyGate.forget(relay.deviceId);
 			if (relay.verified && !peer?.verified) this.onPeerDisconnectedCallback?.(relay.deviceId);
 		}
 	}
