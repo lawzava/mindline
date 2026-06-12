@@ -6,6 +6,7 @@
  */
 
 import { toB64url } from './b64';
+import { generateKemSeed, kemKeypair } from './kem';
 
 export interface DeviceIdentity {
 	deviceId: string;
@@ -13,6 +14,24 @@ export interface DeviceIdentity {
 	privateKey: CryptoKey;
 	/** Raw SPKI bytes of the public key, shared in the hello handshake. */
 	spki: Uint8Array;
+}
+
+/**
+ * Per-device X-Wing KEM identity (PROTOCOL.md §1.3): receives the hybrid
+ * grant wraps of §1.4. The keypair is deterministic from the 32-byte seed;
+ * only the seed exists at rest (wrapped — keystore), the public key is
+ * re-derived on load and shared in the hello beside the ECDSA SPKI.
+ */
+export interface KemIdentity {
+	/** X-Wing public key (1216 bytes), shared and TOFU-pinned in the hello. */
+	publicKey: Uint8Array;
+	/** 32-byte X-Wing seed; in memory only, persisted wrapped. */
+	seed: Uint8Array;
+}
+
+export function createKemIdentity(): KemIdentity {
+	const seed = generateKemSeed();
+	return { publicKey: kemKeypair(seed).publicKey, seed };
 }
 
 export async function deviceIdFromSpki(spki: Uint8Array): Promise<string> {

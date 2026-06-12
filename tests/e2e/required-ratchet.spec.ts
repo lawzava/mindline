@@ -18,7 +18,7 @@ import {
  * stranded by a rotation they cannot receive.
  */
 
-/** Record every outgoing v3 'msg' envelope's generation on the page. */
+/** Record every outgoing v4 'msg' envelope's generation on the page. */
 async function hookSentGenerations(target: Page | BrowserContext): Promise<void> {
 	await target.addInitScript(() => {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,7 +29,7 @@ async function hookSentGenerations(target: Page | BrowserContext): Promise<void>
 			try {
 				if (typeof data === 'string') {
 					const parsed = JSON.parse(data);
-					if (parsed?.v === 3 && parsed?.t === 'msg' && typeof parsed.g === 'number') {
+					if (parsed?.v === 4 && parsed?.t === 'msg' && typeof parsed.g === 'number') {
 						// eslint-disable-next-line @typescript-eslint/no-explicit-any
 						(window as any).__sentG.push(parsed.g);
 					}
