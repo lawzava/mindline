@@ -4,6 +4,9 @@ import { IDBFactory } from 'fake-indexeddb';
 import { CryptoSession } from '$lib/p2p/crypto-session';
 import { createRoomKey } from '$lib/crypto/keys';
 
+// §3.4 binding shape: a label plus lp() fields; tests use one field.
+const bind = (s: string) => ({ label: 'hello-v3' as const, fields: [s] });
+
 beforeEach(() => {
 	indexedDB = new IDBFactory();
 });
@@ -18,7 +21,7 @@ async function twoSessions(roomId = 'room-1') {
 describe('CryptoSession', () => {
 	test('hello exchange verifies and registers the peer', async () => {
 		const { a, b } = await twoSessions();
-		const binding = 'AA:BB::CC:DD';
+		const binding = bind('AA:BB');
 		const hello = await a.makeHello('Alice', binding);
 		const result = await b.acceptHello(hello, binding);
 		expect(result).not.toBeNull();
@@ -29,21 +32,21 @@ describe('CryptoSession', () => {
 
 	test('hello replayed onto a different channel binding is rejected', async () => {
 		const { a, b } = await twoSessions();
-		const hello = await a.makeHello('Alice', 'binding-one');
-		expect(await b.acceptHello(hello, 'binding-two')).toBeNull();
+		const hello = await a.makeHello('Alice', bind('binding-one'));
+		expect(await b.acceptHello(hello, bind('binding-two'))).toBeNull();
 		expect(b.isVerified(a.deviceId)).toBe(false);
 	});
 
 	test('hello from a different room key is rejected', async () => {
 		const a = await CryptoSession.create('room-1', createRoomKey());
 		const b = await CryptoSession.create('room-1', createRoomKey());
-		const hello = await a.makeHello('Alice', 'bind');
-		expect(await b.acceptHello(hello, 'bind')).toBeNull();
+		const hello = await a.makeHello('Alice', bind('bind'));
+		expect(await b.acceptHello(hello, bind('bind'))).toBeNull();
 	});
 
 	test('messages round-trip between verified peers', async () => {
 		const { a, b } = await twoSessions();
-		await b.acceptHello(await a.makeHello('Alice', 'bind'), 'bind');
+		await b.acceptHello(await a.makeHello('Alice', bind('bind')), bind('bind'));
 		const wire = await a.sealMessage({ type: 'chat', content: 'hi', messageId: 'm1' });
 		const body = await b.openMessage(JSON.parse(wire));
 		expect(body).toMatchObject({ type: 'chat', content: 'hi', messageId: 'm1' });
@@ -57,7 +60,7 @@ describe('CryptoSession', () => {
 
 	test('replayed message envelopes are rejected', async () => {
 		const { a, b } = await twoSessions();
-		await b.acceptHello(await a.makeHello('Alice', 'bind'), 'bind');
+		await b.acceptHello(await a.makeHello('Alice', bind('bind')), bind('bind'));
 		const wire = await a.sealMessage({ type: 'chat', content: 'hi', messageId: 'm1' });
 		await b.openMessage(JSON.parse(wire));
 		await expect(b.openMessage(JSON.parse(wire))).rejects.toThrow(/replay/i);
@@ -86,7 +89,7 @@ describe('CryptoSession', () => {
 		const s2 = await CryptoSession.create('room-1', null);
 		expect(s2).not.toBeNull();
 		// same room keys: s2 can decrypt s1's envelopes once verified
-		await s2!.acceptHello(await s1.makeHello('A', 'bind'), 'bind');
+		await s2!.acceptHello(await s1.makeHello('A', bind('bind')), bind('bind'));
 		const wire = await s1.sealMessage({ type: 'chat', content: 'x', messageId: 'm1' });
 		const body = await s2!.openMessage(JSON.parse(wire));
 		expect(body).toMatchObject({ content: 'x' });
@@ -102,8 +105,8 @@ describe('session generations (PROTOCOL.md §1.4 — ratchet wiring)', () => {
 		const key = createRoomKey();
 		const a = (await CryptoSession.create(roomId, key))!;
 		const b = (await CryptoSession.create(roomId, key))!;
-		await b.acceptHello(await a.makeHello('A', 'bind'), 'bind');
-		await a.acceptHello(await b.makeHello('B', 'bind'), 'bind');
+		await b.acceptHello(await a.makeHello('A', bind('bind')), bind('bind'));
+		await a.acceptHello(await b.makeHello('B', bind('bind')), bind('bind'));
 		return { a, b };
 	}
 
@@ -138,7 +141,7 @@ describe('session generations (PROTOCOL.md §1.4 — ratchet wiring)', () => {
 		const a = (await CryptoSession.create('room-adv', key))!;
 		const b = (await CryptoSession.create('room-adv', key))!;
 		await a.mintGeneration();
-		const info = await b.acceptHello(await a.makeHello('A', 'bind'), 'bind');
+		const info = await b.acceptHello(await a.makeHello('A', bind('bind')), bind('bind'));
 		expect(info!.g).toBe(1);
 		expect(info!.gid).toBe(a.generation.gid);
 	});
@@ -192,7 +195,7 @@ describe('session epoch (PROTOCOL.md §2 — monotonic device high-water)', () =
 		// from the clock on first allocation instead.
 		const before = Date.now();
 		const { a, b } = await twoSessions();
-		await b.acceptHello(await a.makeHello('A', 'bind'), 'bind');
+		await b.acceptHello(await a.makeHello('A', bind('bind')), bind('bind'));
 		const body = await b.openMessage(
 			JSON.parse(await a.sealMessage({ type: 'chat', content: 'x' }))
 		);
@@ -206,14 +209,14 @@ describe('session epoch (PROTOCOL.md §2 — monotonic device high-water)', () =
 		const key = createRoomKey();
 		const verifier = await CryptoSession.create('room-epoch', key);
 		const s1 = await CryptoSession.create('room-epoch', key);
-		await verifier!.acceptHello(await s1!.makeHello('A', 'bind'), 'bind');
+		await verifier!.acceptHello(await s1!.makeHello('A', bind('bind')), bind('bind'));
 		const e1 = Number(
 			(await verifier!.openMessage(JSON.parse(await s1!.sealMessage({ type: 'chat', content: '1' }))))
 				.epoch
 		);
 
 		const s2 = await CryptoSession.create('room-epoch', key);
-		await verifier!.acceptHello(await s2!.makeHello('A', 'bind2'), 'bind2');
+		await verifier!.acceptHello(await s2!.makeHello('A', bind('bind2')), bind('bind2'));
 		const e2 = Number(
 			(await verifier!.openMessage(JSON.parse(await s2!.sealMessage({ type: 'chat', content: '2' }))))
 				.epoch
