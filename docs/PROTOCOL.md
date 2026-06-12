@@ -561,7 +561,11 @@ proof = HMAC(k_auth, lp('hello-v4', deviceId, kem, fpLow, fpHigh))
 together with the SPKI: a known deviceId presenting a changed SPKI *or*
 a changed KEM key is rejected. The proof covers `kem`, so stripping or
 substituting it fails the HMAC before the envelope signature is even
-considered. `fpLow`/`fpHigh` are the two `a=fingerprint` values from the
+considered. A key that is well-sized but encapsulation-invalid (ML-KEM
+modulus check) is rejected at the hello — accepting it would only
+strand its presenter from every future grant. The `name` is a display
+hint (§3.7) clamped to 64 characters in the hello, which bounds the
+relay-hello frame under the §3.6 budget. `fpLow`/`fpHigh` are the two `a=fingerprint` values from the
 negotiated SDP (local and remote), sorted lexicographically and fed to
 `lp()` as separate fields — no delimiter joining (§0). The receiver
 **recomputes** the binding from its own view of the connection and

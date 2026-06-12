@@ -2,7 +2,11 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { CryptoSession } from '$lib/p2p/crypto-session';
-import { createRoomKey } from '$lib/crypto/keys';
+import { createRoomKey, deriveRoomKeys, importRoomKeyMaterial } from '$lib/crypto/keys';
+import { createDeviceIdentity } from '$lib/crypto/identity';
+import { sealEnvelope } from '$lib/crypto/envelope';
+import { toB64url } from '$lib/crypto/b64';
+import { lp } from '$lib/crypto/lp';
 
 // §3.4 binding shape: a label plus lp() fields; tests use one field.
 const bind = (s: string) => ({ label: 'hello-v4' as const, fields: [s] });
@@ -283,6 +287,54 @@ describe('per-device KEM grant wrapping (PROTOCOL.md §1.4 v4)', () => {
 		const a = await isolatedDevice('room-kem-unknown', key);
 		await a.mintGeneration();
 		await expect(a.grantWireFor('unknown-device', 0)).rejects.toThrow();
+	});
+
+	test('a hello with a well-sized but invalid X-Wing key is rejected before pinning', async () => {
+		// A link holder can mint an identity and a proof-valid hello carrying
+		// 1216 random bytes as its kem key; encapsulation against it throws
+		// at grant time. Reject at the door instead (review V4-PQ-02).
+		const key = createRoomKey();
+		const b = await isolatedDevice('room-kem-bogus', key);
+		const identity = await createDeviceIdentity();
+		const keys = await deriveRoomKeys(await importRoomKeyMaterial(key));
+		const bogusKem = toB64url(crypto.getRandomValues(new Uint8Array(1216)));
+		const proof = await crypto.subtle.sign(
+			'HMAC',
+			keys.auth,
+			lp('hello-v4', identity.deviceId, bogusKem, 'bind')
+		);
+		const body = {
+			type: 'hello',
+			deviceId: identity.deviceId,
+			name: 'Mallory',
+			spki: toB64url(identity.spki),
+			kem: bogusKem,
+			proof: toB64url(new Uint8Array(proof)),
+			g: 0,
+			gid: '',
+			epoch: Date.now(),
+			seq: 1
+		};
+		const envelope = await sealEnvelope(body, {
+			key: keys.hs,
+			roomId: 'room-kem-bogus',
+			identity,
+			klass: 'hs',
+			g: 0
+		});
+		expect(await b.acceptHello(JSON.stringify(envelope), bind('bind'))).toBeNull();
+		expect(b.isVerified(identity.deviceId)).toBe(false);
+	});
+
+	test('makeHello clamps the display name so relay hellos always fit the frame budget', async () => {
+		const key = createRoomKey();
+		const a = await isolatedDevice('room-name-cap', key);
+		const b = await isolatedDevice('room-name-cap', key);
+		const wire = await a.makeHello('n'.repeat(10_000), bind('bind'));
+		expect(wire.length).toBeLessThan(14 * 1024); // §3.6 relay guard budget
+		const info = await b.acceptHello(wire, bind('bind'));
+		expect(info).not.toBeNull();
+		expect(info!.name.length).toBeLessThanOrEqual(64);
 	});
 
 	test('TOFU pins the KEM key: a known device presenting a new one is rejected', async () => {
