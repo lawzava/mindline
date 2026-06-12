@@ -9,6 +9,7 @@ import {
 } from '$lib/crypto/keys';
 import {
 	burnRoom,
+	getOrCreateKemIdentity,
 	loadIdentity,
 	loadKemIdentity,
 	loadRatchetState,
@@ -174,6 +175,22 @@ describe('keystore', () => {
 				expect(Buffer.from(value).includes(seed)).toBe(false);
 			}
 		}
+	});
+
+	test('concurrent first-launch sessions converge on one KEM identity (atomic get-or-create)', async () => {
+		// Two tabs racing the v4 upgrade (identity present, kem absent) must
+		// not diverge to different seeds under the same deviceId (review F1).
+		const [k1, k2] = await Promise.all([getOrCreateKemIdentity(), getOrCreateKemIdentity()]);
+		expect(Buffer.from(k1.publicKey).equals(Buffer.from(k2.publicKey))).toBe(true);
+		expect(Buffer.from(k1.seed).equals(Buffer.from(k2.seed))).toBe(true);
+		const persisted = await loadKemIdentity();
+		expect(Buffer.from(persisted!.publicKey).equals(Buffer.from(k1.publicKey))).toBe(true);
+	});
+
+	test('getOrCreateKemIdentity returns the already-persisted identity', async () => {
+		const first = await getOrCreateKemIdentity();
+		const second = await getOrCreateKemIdentity();
+		expect(Buffer.from(second.publicKey).equals(Buffer.from(first.publicKey))).toBe(true);
 	});
 
 	test('a room burn leaves the device-scoped KEM identity intact', async () => {
