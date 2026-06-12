@@ -15,7 +15,7 @@ import { lp } from './lp';
 import type { PersistedRatchet } from '$lib/p2p/ratchet';
 
 const DB_NAME = 'mindline-keys';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const ROOMS = 'rooms';
 const DEVICE = 'device';
 const REPLAY = 'replay';
@@ -30,12 +30,54 @@ interface StoredIdentity {
 function openDb(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
 		const request = indexedDB.open(DB_NAME, DB_VERSION);
-		request.onupgradeneeded = () => {
+		request.onupgradeneeded = (event) => {
 			const db = request.result;
 			if (!db.objectStoreNames.contains(ROOMS)) db.createObjectStore(ROOMS);
 			if (!db.objectStoreNames.contains(DEVICE)) db.createObjectStore(DEVICE);
 			if (!db.objectStoreNames.contains(REPLAY)) db.createObjectStore(REPLAY);
 			if (!db.objectStoreNames.contains(GENERATIONS)) db.createObjectStore(GENERATIONS);
+			// v→4 hygiene: strip the dead v2-era link-static msg/eph CryptoKeys
+			// from ROOMS records (residual decrypt capability at rest beyond
+			// what §1.2/§4 document), and drop pre-v3 flat-shape REPLAY sender
+			// entries (they hydrate empty — replay.ts cloneSlots — but persist
+			// forever). DEVICE is deliberately untouched: wiping it would reset
+			// the epoch high-water and rotate identities, breaking TOFU pins.
+			// Best-effort per record: leaving one stale record is harmless,
+			// aborting the upgrade bricks the keystore.
+			if (event.oldVersion > 0 && event.oldVersion < 4 && request.transaction) {
+				const tx = request.transaction;
+				tx.objectStore(ROOMS).openCursor().onsuccess = (e) => {
+					const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+					if (!cursor) return;
+					try {
+						const rec = cursor.value as Record<string, unknown>;
+						if ('msg' in rec || 'eph' in rec) {
+							const { msg: _msg, eph: _eph, ...rest } = rec;
+							void _msg;
+							void _eph;
+							cursor.update(rest);
+						}
+					} catch {
+						/* best-effort */
+					}
+					cursor.continue();
+				};
+				tx.objectStore(REPLAY).openCursor().onsuccess = (e) => {
+					const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+					if (!cursor) return;
+					try {
+						const state = cursor.value as Record<string, { msg?: unknown }>;
+						const live = Object.fromEntries(
+							Object.entries(state).filter(([, s]) => Array.isArray(s?.msg))
+						);
+						if (Object.keys(live).length === 0) cursor.delete();
+						else if (Object.keys(live).length !== Object.keys(state).length) cursor.update(live);
+					} catch {
+						/* best-effort */
+					}
+					cursor.continue();
+				};
+			}
 		};
 		request.onsuccess = () => resolve(request.result);
 		request.onerror = () => reject(request.error);
