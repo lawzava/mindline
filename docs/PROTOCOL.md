@@ -128,6 +128,48 @@ identity. That eviction risk is documented user-facing (§6).
 - Residual limit (documented, inherent to capability URLs): a key-holder can
   mint new identities; they cannot impersonate an existing deviceId.
 
+**Quantum-signature posture (Phase-2 item 9, owner-decided 2026-06-12).**
+Signatures stay classical ECDSA P-256, deliberately. The reasoning, in
+full, because it bounds what a quantum adversary gets:
+
+- Against **non-members**, authentication never rested on ECDSA. Envelope
+  validity requires the symmetric room/generation keys (AES-256-GCM with
+  bound AAD, §2), membership proof is the symmetric `k_auth` HMAC (§3.4)
+  — both quantum-adequate. An outsider with a CRQC and a recovered device
+  key still cannot mint a single valid envelope.
+- ECDSA defends **attribution against link holders**: member↔member
+  non-impersonation (§2 signatures, §3.7 authorization), the §3.4
+  defense against a link-holding operator MITM, and grant-cert minter
+  authenticity (§1.4). Against a link holder, confidentiality is already
+  conceded by the capability model — what signatures protect is who said
+  what, and forging that requires a **live CRQC at message time**. There
+  is nothing to harvest: a recorded signature does not become a forgery
+  later; recorded *content* is what harvest-now-decrypt-later threatens,
+  and that is symmetric (plus hybrid-wrapped grants, §1.4 v4).
+- Device keys are rotatable: TOFU re-pin, and the project has already
+  executed two hard wire cutovers. A signature-algorithm migration before
+  CRQCs exist loses nothing.
+- Precedent and guidance: every production E2EE messenger that deployed
+  post-quantum cryptography (Signal PQXDH/SPQR, iMessage PQ3, Tuta, the
+  MLS PQ ciphersuites draft) ships hybrid PQ key agreement with
+  **classical** signatures, for exactly this asymmetry; NIST IR 8547
+  (draft) deprecates ECDSA after 2030 and disallows it after 2035.
+- The cost side, measured against this protocol: hybrid ML-DSA-65 would
+  grow every signed envelope by ~4.4 KB (a typical chat envelope is
+  ~380 B), push a MAX_CHAIN grant chain past the 64 KiB DataChannel
+  budget, and put an unaudited PQC implementation on the *integrity*
+  path, where a bug forges rather than merely fails to add protection.
+
+**Named residual** (CLAIMS.md): a link-holding adversary with a live
+CRQC could impersonate existing members and minters until rotation —
+an attribution break, not a confidentiality one.
+
+**Rotation trigger**: hybridize signatures (LAMPS composite pattern —
+domain-separated payload naming the algorithm pair, both signatures
+must verify) when WebCrypto ML-DSA reaches cross-engine availability,
+or earlier on credible CRQC acceleration. Until then this section is
+re-evaluated whenever the threat model is revisited.
+
 ### 1.4 Key generations (wire forward secrecy)
 
 The room runs at an integer **generation** `g ≥ 0`, carried on every
