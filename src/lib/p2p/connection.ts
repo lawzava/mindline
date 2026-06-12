@@ -681,7 +681,7 @@ export class P2PConnection {
 		const extract = (sdp: string | undefined): string =>
 			[...(sdp ?? '').matchAll(/^a=fingerprint:\S+\s+(\S+)\s*$/gim)].map((m) => m[1])[0] ?? '';
 		const pair = [extract(pc.localDescription?.sdp), extract(pc.remoteDescription?.sdp)].sort();
-		return { label: 'hello-v3', fields: pair };
+		return { label: 'hello-v4', fields: pair };
 	}
 
 	private async handleChannelMessage(peer: Peer, raw: unknown): Promise<void> {
@@ -759,7 +759,8 @@ export class P2PConnection {
 				return;
 			}
 			if (peerG < mine.g || !this.session.hasGeneration(peerG, peerGid)) {
-				const wire = await this.session.grantWireFor(peerG, peerGid);
+				if (!peer.deviceId) return;
+				const wire = await this.session.grantWireFor(peer.deviceId, peerG, peerGid);
 				if (peer.chat.readyState === 'open') peer.chat.send(wire);
 				// A peer still at the link generation is a newcomer (§1.4
 				// trigger a): grant it the current generation for immediate
@@ -790,9 +791,10 @@ export class P2PConnection {
 
 	/** Verified rekey bodies — never surfaced to the app layer. */
 	private async handleRekeyBody(peer: Peer, body: Record<string, unknown>): Promise<void> {
+		if (!peer.deviceId) return;
 		if (body.type === 'rekey-request') {
 			// Answer with a chained grant, minting if we cannot grant (§1.4).
-			const wire = await this.session.handleRekeyRequest(body as never);
+			const wire = await this.session.handleRekeyRequest(body as never, peer.deviceId);
 			if (peer.chat.readyState === 'open') peer.chat.send(wire);
 			return;
 		}
@@ -816,7 +818,7 @@ export class P2PConnection {
 			if (Date.now() - last >= 5000 && peer.chat.readyState === 'open') {
 				this.lastForkReply.set(peer.clientId, Date.now());
 				try {
-					peer.chat.send(await this.session.grantWireFor(0));
+					peer.chat.send(await this.session.grantWireFor(peer.deviceId, 0));
 				} catch (error) {
 					console.warn('[P2P] fork-heal reply failed:', error);
 				}
@@ -824,33 +826,32 @@ export class P2PConnection {
 		}
 	}
 
-	/** Send a grant wire to every verified direct peer (never the relay). */
+	/**
+	 * Send a grant wire to every verified direct peer (never the relay).
+	 * Per-recipient wires (§1.4 v4): each peer gets the secret wrapped to
+	 * its own pinned KEM key; the signed cert inside is identical.
+	 */
 	private gossipCurrentGrant(excludeClientId?: string): void {
 		void (async () => {
-			try {
-				const wire = await this.session.grantWireFor(0);
-				for (const p of this.peers.values()) {
-					if (p.clientId === excludeClientId) continue;
-					if (p.verified && p.chat.readyState === 'open') {
-						try {
-							p.chat.send(wire);
-						} catch (error) {
-							console.warn('[P2P] grant gossip failed:', error);
-						}
+			for (const p of this.peers.values()) {
+				if (p.clientId === excludeClientId) continue;
+				if (p.verified && p.deviceId && p.chat.readyState === 'open') {
+					try {
+						p.chat.send(await this.session.grantWireFor(p.deviceId, 0));
+					} catch (error) {
+						console.warn('[P2P] grant gossip failed:', error);
 					}
 				}
-			} catch (error) {
-				console.warn('[P2P] grant gossip failed:', error);
 			}
 		})();
 	}
 
 	/** Broadcast a freshly minted grant (manager-driven trigger, §1.4). */
-	broadcastGrant(wire: string): void {
+	async broadcastGrant(): Promise<void> {
 		for (const p of this.peers.values()) {
-			if (p.verified && p.chat.readyState === 'open') {
+			if (p.verified && p.deviceId && p.chat.readyState === 'open') {
 				try {
-					p.chat.send(wire);
+					p.chat.send(await this.session.grantWireFor(p.deviceId, 0));
 				} catch (error) {
 					console.warn('[P2P] grant broadcast failed:', error);
 				}
@@ -878,7 +879,7 @@ export class P2PConnection {
 		// distinct label and lp() fields (§0) — a relay hello can never be
 		// replayed as a direct one or vice versa.
 		const pair = [this.myClientId ?? '', peerClientId].sort();
-		return { label: 'hello-relay-v3', fields: [pair[0], pair[1], this.roomId] };
+		return { label: 'hello-relay-v4', fields: [pair[0], pair[1], this.roomId] };
 	}
 
 	private async handleRelay(fromId: string, payload: AuthedPayload): Promise<void> {

@@ -30,8 +30,8 @@ beforeAll(async () => {
 
 const body = { type: 'chat', content: 'hello', messageId: 'm1', seq: 1 } as const;
 
-describe('envelope seal/open (v3)', () => {
-	test('round-trips a chat body with signature, stamping v3 + generation', async () => {
+describe('envelope seal/open (v4)', () => {
+	test('round-trips a chat body with signature, stamping v4 + generation', async () => {
 		const env = await sealEnvelope(body, {
 			key: gen0.msg,
 			roomId: ROOM,
@@ -39,7 +39,7 @@ describe('envelope seal/open (v3)', () => {
 			klass: 'msg',
 			g: 0
 		});
-		expect(env.v).toBe(3);
+		expect(env.v).toBe(4);
 		expect(env.t).toBe('msg');
 		expect(env.g).toBe(0);
 		expect(env.s).toBe(alice.deviceId);

@@ -94,8 +94,8 @@ async function mintAndBroadcast(): Promise<void> {
 	const conn = p2pConnection;
 	if (!session || !conn) return;
 	try {
-		const wire = await session.mintGeneration();
-		conn.broadcastGrant(wire);
+		await session.mintGeneration();
+		await conn.broadcastGrant();
 		console.log('[P2P Manager] Ratcheted to generation', session.generation.g);
 	} catch (error) {
 		console.error('[P2P Manager] Mint failed:', error);
