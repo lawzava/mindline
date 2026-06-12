@@ -176,6 +176,28 @@ describe('session generations (PROTOCOL.md §1.4 — ratchet wiring)', () => {
 		expect(s2.generation.g).toBe(2);
 	});
 
+	test('a losing sibling heals through a tailored rekey-request chain (§1.4)', async () => {
+		const { a, b } = await verifiedPair('room-fork');
+		// Shared g1, then a concurrent mint on each side: same-g siblings.
+		const g1Body = await b.openMessage(JSON.parse(await a.mintGeneration()));
+		await b.handleRekeyGrant(g1Body as never);
+		await a.mintGeneration(); // a's sibling at g2
+		await b.mintGeneration(); // b's sibling at g2
+		const [winner, loser] = a.generation.gid < b.generation.gid ? [a, b] : [b, a];
+		await winner.mintGeneration(); // the winning line extends past the fork
+		// The loser asks, stating its position INCLUDING its gid; the
+		// responder must serve the chain from the fork so the heal anchors.
+		const wire = await winner.handleRekeyRequest({
+			type: 'rekey-request',
+			g: winner.generation.g,
+			haveG: loser.generation.g,
+			haveGid: loser.generation.gid
+		});
+		const body = await loser.openMessage(JSON.parse(wire));
+		expect(await loser.handleRekeyGrant(body as never)).toBe('adopted');
+		expect(loser.generation).toEqual(winner.generation);
+	});
+
 	test('refreshFromStore picks up a sibling tab adoption (multi-tab)', async () => {
 		const key = createRoomKey();
 		const t1 = (await CryptoSession.create('room-tabs', key))!;

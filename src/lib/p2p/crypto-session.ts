@@ -435,16 +435,23 @@ export class CryptoSession {
 
 	/**
 	 * A grant wire for a peer at `peerG`, with the chain it needs to verify
-	 * the gap. Mints first when this session cannot grant (§1.4 liveness:
-	 * raw rk gone after reload, or nothing grantable yet).
+	 * the gap. When the peer's stated gid is off our line (a losing
+	 * sibling / fork), the chain starts one generation earlier so it
+	 * carries our cert AT the fork — the receiver's heal rule anchors at
+	 * the shared parent (§1.4 "tailor the chain"). Mints first when this
+	 * session cannot grant (§1.4 liveness).
 	 */
-	async grantWireFor(peerG: number): Promise<string> {
+	async grantWireFor(peerG: number, peerGid?: string): Promise<string> {
 		if (!this.ratchet.canGrant()) {
 			await this.ratchet.mintNext(this.identity);
 			await this.ratchetChanged();
 		}
 		const grant = this.ratchet.currentGrant()!;
-		const chain = this.ratchet.chainTail(Math.max(0, peerG)).slice(-MAX_CHAIN);
+		let fromG = Math.max(0, peerG);
+		if (peerGid !== undefined && fromG >= 1 && !this.ratchet.onLine(fromG, peerGid)) {
+			fromG -= 1;
+		}
+		const chain = this.ratchet.chainTail(fromG).slice(-MAX_CHAIN);
 		const body: RekeyGrantBody = { type: 'rekey-grant', grant, chain };
 		return this.sealHs(body as unknown as Record<string, unknown>);
 	}
@@ -471,7 +478,8 @@ export class CryptoSession {
 	/** Answer a rekey-request: grant, minting if necessary (liveness). */
 	async handleRekeyRequest(body: RekeyRequestBody): Promise<string> {
 		const haveG = Number.isInteger(body.haveG) && body.haveG >= 0 ? body.haveG : 0;
-		return this.grantWireFor(haveG);
+		const haveGid = typeof body.haveGid === 'string' ? body.haveGid : undefined;
+		return this.grantWireFor(haveG, haveGid);
 	}
 
 	/**

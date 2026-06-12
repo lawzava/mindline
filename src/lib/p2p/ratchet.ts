@@ -281,6 +281,11 @@ export class GenerationRatchet {
 		return this.retained.has(`${g}|${gid}`);
 	}
 
+	/** True when (g, gid) sits on our established line (not a sibling). */
+	onLine(g: number, gid: string): boolean {
+		return this.lineGid(g) === gid;
+	}
+
 	/** All retained key sets at `g`, current first — the trial-decrypt set. */
 	keysFor(g: number): GenerationKeys[] {
 		const keys: GenerationKeys[] = [];
