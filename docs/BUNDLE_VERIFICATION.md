@@ -83,3 +83,16 @@ forge. Three mechanisms, in increasing strength:
 The README "Honest limits" served-code bullet links here; CLAIMS.md row
 "You don't have to trust the server with content" remains
 TRUE-WITH-CAVEATS, with this document as the detailed ceiling analysis.
+
+## Owner decision (Phase 3, 2026-06-13)
+
+**Do nothing beyond this documented assessment, for now.** Pre-launch,
+with no install base to protect, building reproducible-build/digest
+infrastructure (Option 1) or a pinned verifier (Option 2) is not yet
+worth the engineering and ongoing maintenance: the served-code ceiling
+is the ceiling of every web-delivered E2EE app and is already disclosed
+honestly in the README and CLAIMS.md, so no user-facing claim overstates
+what the deployment provides. Revisit at launch — Option 1 (reproducible
+build + per-release `bundle-manifest.json` digest) is the natural first
+step if/when a verifiable supply chain becomes a launch requirement. No
+infrastructure is built under this decision.

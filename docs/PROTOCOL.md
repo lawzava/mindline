@@ -718,13 +718,35 @@ to all served history.
 - `k_storage` is link-static and does **not** ratchet with §1.4: at-rest
   protection targets device theft/forensics, and the §1.4 forward-secrecy
   claim explicitly excludes it (a leaked link plus a copy of a member
-  device's IndexedDB pages still decrypts them). At-rest generation
-  re-keying (derive `k_storage(g)`, re-encrypt pages through the
-  serialized per-room op queue on ratchet) is deferred: the
-  partial-failure surface — a crash between deleting old-key pages and
-  committing new ones — needs its own design pass, and the marginal
-  adversary (link holder who also exfiltrated the ciphertext database
-  but not the browser's key storage) is narrow. Named in CLAIMS.md.
+  device's IndexedDB pages still decrypts them). Named in CLAIMS.md.
+  **At-rest generation re-keying is a decided no (Phase 3, 2026-06-13),
+  not merely deferred.** The only adversary any re-keying would defeat is
+  one who captured the `mindline-messages` page ciphertext but **not** the
+  `mindline-keys` key records, while also holding the link — because today
+  `k_storage` is link-derived, that adversary needs no key DB at all.
+  Decompose that capture: Chromium stores all of an origin's IndexedDB
+  databases in **one LevelDB instance**, so there is no file boundary
+  between the two to capture across — if the attacker has the pages, it
+  has the keys; Firefox and Safari/WebKit keep one SQLite file per
+  database, so a surgical single-file leak is *conceivable* there, but
+  every adversary §6 actually names (device theft, disk forensics, XSS,
+  malicious extension) obtains both databases or neither, and a
+  non-extractable WebCrypto key is a script-API boundary a file-level
+  adversary reads through regardless. Two constructions were evaluated and
+  both rejected: (a) per-generation `k_storage(g)` re-encrypting pages on
+  every ratchet — a third key-lifecycle class, a ratchet-aware storage
+  layer, cross-tab churn, and an enlarged silent-history-loss surface
+  exercised on every join/leave, for that near-fictional adversary; (b) a
+  cheaper device-local random storage secret (`k_storage` off a wrapped
+  per-device seed instead of the link) — it removes link-derivability with
+  no churn, but it is the exact mirror of the gain: it also removes today's
+  link-deterministic **recovery** of a keys-only storage loss (e.g. Safari
+  ITP evicting the key DB, §6/§1.2), orphaning history permanently. Closing
+  a near-fictional read-path by forfeiting a real recovery-path fails the
+  project's honesty bar. **Revisit triggers:** at-rest pages moving out of
+  same-origin IndexedDB into a separately-capturable store, or a platform
+  shipping per-database isolation worth defending. CLAIMS.md's
+  forward-secrecy at-rest exclusion stands unchanged.
 
 ## 5. Media transfer
 
