@@ -170,14 +170,30 @@ export const SIBLING_WINDOW_MS = 30_000;
 export const MAX_SIBLINGS_PER_G = 3;
 /** Max ancestor certs carried per grant; longer gaps iterate requests. */
 export const MAX_CHAIN = 32;
+/**
+ * Max generations a behind member assembles speculatively across segmented
+ * catch-up rounds before giving up to link re-entry (§1.4). Bounds the
+ * member-grade cost of a peer feeding a verified-but-fabricated parallel
+ * line: ≤ this many cert verifies, paced by the connection-layer cooldown,
+ * committing nothing until a complete run to a real tip adopts.
+ */
+export const MAX_SEGMENTED_DEPTH = 8 * MAX_CHAIN; // 256
 
-export type AdoptOutcome = 'adopted' | 'sibling-retained' | 'behind' | 'stale' | 'rejected';
+export type AdoptOutcome =
+	| 'adopted'
+	| 'sibling-retained'
+	| 'behind'
+	| 'stale'
+	| 'rejected'
+	| 'extended'
+	| 'wedged';
 
 export interface RatchetOpts {
 	now?: () => number;
 	siblingWindowMs?: number;
 	maxSiblings?: number;
 	maxChain?: number;
+	maxSegmentedDepth?: number;
 }
 
 /** A non-current generation kept decrypt-only for trial decrypt (§1.4). */
@@ -216,6 +232,7 @@ export class GenerationRatchet {
 	private readonly siblingWindowMs: number;
 	private readonly maxSiblings: number;
 	private readonly maxChain: number;
+	private readonly maxSegmentedDepth: number;
 
 	private curG: number;
 	private curGid: string;
@@ -227,6 +244,14 @@ export class GenerationRatchet {
 	private retained = new Map<string, RetainedGeneration>(); // `${g}|${gid}`
 	private log = new Map<number, GrantCert>(); // our line, by g
 	private firstSeen = new Map<number, number>(); // g → when it became current
+	/**
+	 * Segmented catch-up accumulator (§1.4): a verified, consecutive,
+	 * prevGid-linked run of rk-free certs immediately above `curG` on our
+	 * own line, grown across rounds until a round connects it to the tip.
+	 * In-memory only — never persisted (a reload re-fetches at MAX_CHAIN
+	 * per round, which also avoids the reload-window bug class P2.0-F2).
+	 */
+	private ahead: GrantCert[] = [];
 	/** Mutation queue: adopt/mint decide on state across awaits, so they
 	 *  serialize — concurrent grants must not race the sibling cap or the
 	 *  convergence checks against stale state. */
@@ -238,6 +263,7 @@ export class GenerationRatchet {
 		this.siblingWindowMs = opts.siblingWindowMs ?? SIBLING_WINDOW_MS;
 		this.maxSiblings = opts.maxSiblings ?? MAX_SIBLINGS_PER_G;
 		this.maxChain = opts.maxChain ?? MAX_CHAIN;
+		this.maxSegmentedDepth = opts.maxSegmentedDepth ?? MAX_SEGMENTED_DEPTH;
 		this.curG = state.g;
 		this.curGid = state.gid;
 		this.curKeys = state.keys;
@@ -327,6 +353,31 @@ export class GenerationRatchet {
 		return out;
 	}
 
+	/**
+	 * The FIRST `limit` of our line's certs strictly above `fromG`, ascending
+	 * — the segmented-catch-up counterpart to chainTail's tail slice. The
+	 * responder serves these so a deeply-behind requester extends its run
+	 * upward one bounded segment per round (§1.4).
+	 */
+	chainAbove(fromG: number, limit: number): GrantCert[] {
+		const out: GrantCert[] = [];
+		for (let g = fromG + 1; g <= this.curG && out.length < limit; g++) {
+			const c = this.log.get(g);
+			if (c) out.push(c);
+		}
+		return out;
+	}
+
+	/**
+	 * The frontier a segmented requester reports as its position: the top of
+	 * the accumulated `ahead` run, or the current generation when none is
+	 * accumulated yet. The responder serves the next segment above it.
+	 */
+	aheadFrontier(): { g: number; gid: string } {
+		const top = this.ahead[this.ahead.length - 1];
+		return top ? { g: top.g, gid: top.gid } : { g: this.curG, gid: this.curGid };
+	}
+
 	state(): PersistedRatchet {
 		return {
 			g: this.curG,
@@ -367,6 +418,80 @@ export class GenerationRatchet {
 	 */
 	adopt(grant: RekeyGrant, chain: GrantCert[] = []): Promise<AdoptOutcome> {
 		return this.locked(() => this.adoptLocked(grant, chain));
+	}
+
+	/**
+	 * Segmented deep-gap catch-up (§1.4): for a member more than MAX_CHAIN
+	 * behind, where one grant's chain cannot reach the tip in a single
+	 * admissible run. Each round's `chain` is the next bounded segment of
+	 * ancestor certs above our accumulation frontier; we verify it, extend
+	 * the in-memory `ahead` run, and adopt the tip only once `ahead` connects
+	 * to it. Called only when the plain adopt() returned 'behind' and the tip
+	 * is deep. Outcomes: 'adopted' (run completed), 'extended' (frontier
+	 * advanced, request the next segment), 'wedged' (depth cap — give up to
+	 * link re-entry), 'behind' (segment did not anchor — a fork below curG or
+	 * an untailored gossip grant; commits nothing), 'rejected'/'stale'.
+	 */
+	adoptSegment(grant: RekeyGrant, chain: GrantCert[] = []): Promise<AdoptOutcome> {
+		return this.locked(() => this.adoptSegmentLocked(grant, chain));
+	}
+
+	private async adoptSegmentLocked(grant: RekeyGrant, chain: GrantCert[]): Promise<AdoptOutcome> {
+		const verified = await verifyGrant(grant, this.roomId);
+		if (!verified) return 'rejected';
+
+		// Build the incoming ancestor run: certs strictly below the tip,
+		// de-duplicated, conflict-rejected, sorted ascending.
+		const byG = new Map<number, GrantCert>();
+		for (const c of chain) {
+			if (!c || !Number.isInteger(c.g) || c.g < 1 || c.g >= grant.g) continue;
+			const existing = byG.get(c.g);
+			if (existing && existing.cert !== c.cert) return 'rejected';
+			byG.set(c.g, c);
+		}
+		const incoming = [...byG.values()].sort((a, b) => a.g - b.g);
+
+		// Verify every incoming cert (the per-round budget; `ahead` is already
+		// verified and never re-verified).
+		if (incoming.length > this.maxChain) return 'rejected';
+		const checks = await Promise.all(incoming.map((c) => verifyCert(c, this.roomId)));
+		if (checks.some((ok) => !ok)) return 'rejected';
+
+		// The incoming run must be internally consecutive and prevGid-linked.
+		for (let i = 1; i < incoming.length; i++) {
+			if (incoming[i].g !== incoming[i - 1].g + 1) return 'rejected';
+			if (incoming[i].prevGid !== incoming[i - 1].gid) return 'rejected';
+		}
+
+		// Anchor strictly above our frontier (ahead-top, or curG when empty).
+		const frontier = this.aheadFrontier();
+		const fresh = incoming.filter((c) => c.g > frontier.g);
+		if (fresh.length > 0) {
+			if (fresh[0].g !== frontier.g + 1 || fresh[0].prevGid !== frontier.gid) return 'behind';
+		}
+
+		const candidate = [...this.ahead, ...fresh];
+		const top = candidate[candidate.length - 1];
+		const topG = top ? top.g : this.curG;
+		const topGid = top ? top.gid : this.curGid;
+
+		// Completion: the candidate run now reaches the tip consecutively.
+		if (grant.g === topG + 1 && grant.prevGid === topGid) {
+			this.advance(grant, await deriveGenerationKeys(verified.rk), verified.rk, candidate);
+			this.ahead = [];
+			return 'adopted';
+		}
+		// The tip sits at or below our frontier: already covered / behind.
+		if (grant.g <= topG) return 'stale';
+		// Nothing fresh to add and not complete: the segment did not advance us.
+		if (fresh.length === 0) return 'behind';
+		// Depth cap: beyond in-protocol catch-up — give up to link re-entry.
+		if (candidate.length > this.maxSegmentedDepth) {
+			this.ahead = [];
+			return 'wedged';
+		}
+		this.ahead = candidate;
+		return 'extended';
 	}
 
 	private async adoptLocked(grant: RekeyGrant, chain: GrantCert[]): Promise<AdoptOutcome> {
