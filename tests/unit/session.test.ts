@@ -173,6 +173,34 @@ describe('session generations (PROTOCOL.md §1.4 — ratchet wiring)', () => {
 		expect(b.generation.g).toBe(3);
 	});
 
+	test('a member > MAX_CHAIN behind catches up across segmented rekey-request rounds', async () => {
+		const { a, b } = await verifiedPair('room-deep-gap');
+		// b establishes at g1, then a ratchets MAX_CHAIN+5 times while b is away.
+		await a.mintGeneration();
+		const g1 = await b.openMessage(JSON.parse(await a.grantWireFor(b.deviceId, 0)));
+		await b.handleRekeyGrant(g1 as never);
+		for (let i = 0; i < MAX_CHAIN + 5; i++) await a.mintGeneration();
+		expect(a.generation.g).toBe(MAX_CHAIN + 6);
+		expect(b.generation.g).toBe(1);
+
+		// Drive the multi-round catch-up: each round b sends a rekey-request
+		// (reporting its advancing frontier), a answers, b consumes.
+		let outcome = 'extended';
+		let rounds = 0;
+		while (outcome !== 'adopted' && rounds < 20) {
+			const reqWire = await b.makeRekeyRequestWire(a.generation.g, a.generation.gid);
+			const req = await a.openMessage(JSON.parse(reqWire));
+			const grantWire = await a.handleRekeyRequest(req as never, b.deviceId);
+			const grant = await b.openMessage(JSON.parse(grantWire));
+			outcome = await b.handleRekeyGrant(grant as never);
+			rounds++;
+		}
+		expect(outcome).toBe('adopted');
+		expect(b.generation).toEqual(a.generation);
+		// ancestors g2..g(MAX_CHAIN+5) = MAX_CHAIN+4 certs, MAX_CHAIN/round → 2 rounds.
+		expect(rounds).toBe(2);
+	});
+
 	test('grantWireFor mints first when the session cannot grant (reload liveness)', async () => {
 		const key = createRoomKey();
 		const s1 = (await CryptoSession.create('room-reload', key))!;
