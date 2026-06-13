@@ -118,11 +118,12 @@ export class P2PConnection {
 	/** Per-device rate limit for fork-heal replies to rejected grants. */
 	private forkReplyGate = new CooldownGate(5000);
 	/**
-	 * Per-device inbound cooldown on answering rekey-requests (the
-	 * KEM-encapsulating responder path, §1.4). Shorter than the 5 s outbound
-	 * request gate so honest segmented catch-up (≤ one request per 5 s per
-	 * peer) is never throttled, while a request-flooder's forced KEM work is
-	 * capped at one response per second per peer.
+	 * Per-device inbound cooldown on every KEM-encapsulating grant we serve a
+	 * peer (§1.4): both the rekey-request answer and the advertised-generation
+	 * grant (a re-sent hello must not force one encapsulation per hello).
+	 * Shorter than the 5 s outbound request gate so honest segmented catch-up
+	 * (≤ one request per 5 s per peer) is never throttled, while a flooder's
+	 * forced KEM work is capped at one grant per second per peer.
 	 */
 	private rekeyRespondGate = new CooldownGate(1000);
 	/**
@@ -787,6 +788,11 @@ export class P2PConnection {
 			}
 			if (peerG < mine.g || !this.session.hasGeneration(peerG, peerGid)) {
 				if (!peer.deviceId) return;
+				// Same inbound cooldown as the rekey-request answer: a peer
+				// re-sending hellos (fresh epoch:seq) must not force one KEM
+				// encapsulation per hello. Shared gate caps total grant-serving
+				// per peer across both triggers; the first hello always passes.
+				if (!this.rekeyRespondGate.allow(peer.deviceId)) return;
 				const wire = await this.session.grantWireFor(peer.deviceId, peerG, peerGid);
 				if (peer.chat.readyState === 'open') peer.chat.send(wire);
 				// A peer still at the link generation is a newcomer (§1.4
