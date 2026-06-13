@@ -836,8 +836,14 @@ export class P2PConnection {
 			this.gossipCurrentGrant(peer.clientId);
 		} else if (outcome === 'extended') {
 			// Segmented catch-up advanced our frontier (§1.4): ask the same
-			// peer for the next bounded segment. Rate-limited by the outbound
-			// gate, so this proceeds at one segment per 5 s.
+			// peer for the next bounded segment. This immediate follow-up is
+			// usually swallowed by the 5 s outbound cooldown (just stamped by
+			// the request that produced this round) — by design: catch-up is
+			// re-pumped by the steady stream of undecryptable current-
+			// generation envelopes (each retriggers a request once the
+			// cooldown opens) and by hello advertisements, so it converges
+			// while there is current traffic to read and defers harmlessly in
+			// a quiet room. The frontier is preserved in memory across the gap.
 			this.segmentNoProgress.delete(peer.deviceId);
 			if (grant && Number.isInteger(grant.g)) {
 				await this.requestGenerationFrom(peer, grant.g!, grant.gid);
