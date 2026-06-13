@@ -55,6 +55,8 @@ interface Peer {
 const CHAT_CHANNEL_ID = 0;
 const EPH_CHANNEL_ID = 1;
 const MAX_RESTART_ATTEMPTS = 5;
+/** Consecutive non-anchoring segmented rounds before we stop asking a peer (§1.4). */
+const SEGMENT_NO_PROGRESS_LIMIT = 4;
 
 /**
  * §3.6: drafts/presence (eph), sync, and media never transit the relay;
@@ -115,6 +117,21 @@ export class P2PConnection {
 	private rekeyRequestGate = new CooldownGate(5000);
 	/** Per-device rate limit for fork-heal replies to rejected grants. */
 	private forkReplyGate = new CooldownGate(5000);
+	/**
+	 * Per-device inbound cooldown on answering rekey-requests (the
+	 * KEM-encapsulating responder path, §1.4). Shorter than the 5 s outbound
+	 * request gate so honest segmented catch-up (≤ one request per 5 s per
+	 * peer) is never throttled, while a request-flooder's forced KEM work is
+	 * capped at one response per second per peer.
+	 */
+	private rekeyRespondGate = new CooldownGate(1000);
+	/**
+	 * Per-device count of consecutive non-anchoring ('behind') segmented
+	 * rounds. A deep fork never anchors, so after SEGMENT_NO_PROGRESS_LIMIT
+	 * rounds we stop re-requesting from that peer (the documented link
+	 * re-entry then applies); reset on any progress.
+	 */
+	private segmentNoProgress = new Map<string, number>();
 
 	constructor(session: CryptoSession, config: Partial<P2PConfig> = {}, displayName: () => string) {
 		this.session = session;
@@ -169,6 +186,8 @@ export class P2PConnection {
 		this.deviceToClient.clear();
 		this.rekeyRequestGate.clear();
 		this.forkReplyGate.clear();
+		this.rekeyRespondGate.clear();
+		this.segmentNoProgress.clear();
 	}
 
 	isWebSocketConnected(): boolean {
@@ -800,20 +819,44 @@ export class P2PConnection {
 		if (!peer.deviceId) return;
 		if (body.type === 'rekey-request') {
 			// Answer with a chained grant, minting if we cannot grant (§1.4).
+			// Rate-limited inbound so a request-flooder cannot force unbounded
+			// KEM encapsulations; honest catch-up (≤ 1 req/5 s/peer) is unaffected.
+			if (!this.rekeyRespondGate.allow(peer.deviceId)) return;
 			const wire = await this.session.handleRekeyRequest(body as never, peer.deviceId);
 			if (peer.chat.readyState === 'open') peer.chat.send(wire);
 			return;
 		}
 		const outcome = await this.session.handleRekeyGrant(body as never);
+		const grant = (body as { grant?: { g?: number; gid?: string } }).grant;
 		if (outcome === 'adopted') {
 			// Gossip: re-grant verbatim to our verified direct peers so
 			// meshes and partitions converge without the minter reaching
 			// everyone (§1.4). Duplicates die as 'stale' at the receivers.
+			this.segmentNoProgress.delete(peer.deviceId);
 			this.gossipCurrentGrant(peer.clientId);
-		} else if (outcome === 'behind') {
-			const grant = (body as { grant?: { g?: number; gid?: string } }).grant;
+		} else if (outcome === 'extended') {
+			// Segmented catch-up advanced our frontier (§1.4): ask the same
+			// peer for the next bounded segment. Rate-limited by the outbound
+			// gate, so this proceeds at one segment per 5 s.
+			this.segmentNoProgress.delete(peer.deviceId);
 			if (grant && Number.isInteger(grant.g)) {
 				await this.requestGenerationFrom(peer, grant.g!, grant.gid);
+			}
+		} else if (outcome === 'wedged') {
+			// Past the segmented depth cap (§1.4): stop asking this peer. The
+			// member stays at its generation until a peer on a reachable line
+			// serves it or it re-enters through the link.
+			this.segmentNoProgress.delete(peer.deviceId);
+		} else if (outcome === 'behind') {
+			// No anchor this round. A shallow gap resolves on a follow-up
+			// request; a deep fork never anchors, so bound the retries —
+			// after the cap, stop (the documented link re-entry applies).
+			const n = (this.segmentNoProgress.get(peer.deviceId) ?? 0) + 1;
+			if (n < SEGMENT_NO_PROGRESS_LIMIT && grant && Number.isInteger(grant.g)) {
+				this.segmentNoProgress.set(peer.deviceId, n);
+				await this.requestGenerationFrom(peer, grant.g!, grant.gid);
+			} else {
+				this.segmentNoProgress.delete(peer.deviceId);
 			}
 		} else if (outcome === 'rejected') {
 			// Their line lost a fork tie-break (§1.4): the winning side
@@ -951,6 +994,8 @@ export class P2PConnection {
 				this.deviceToClient.delete(peer.deviceId);
 				this.rekeyRequestGate.forget(peer.deviceId);
 				this.forkReplyGate.forget(peer.deviceId);
+				this.rekeyRespondGate.forget(peer.deviceId);
+				this.segmentNoProgress.delete(peer.deviceId);
 				if (peer.verified) this.onPeerDisconnectedCallback?.(peer.deviceId);
 			}
 		}
@@ -959,6 +1004,8 @@ export class P2PConnection {
 			this.deviceToClient.delete(relay.deviceId);
 			this.rekeyRequestGate.forget(relay.deviceId);
 			this.forkReplyGate.forget(relay.deviceId);
+			this.rekeyRespondGate.forget(relay.deviceId);
+			this.segmentNoProgress.delete(relay.deviceId);
 			if (relay.verified && !peer?.verified) this.onPeerDisconnectedCallback?.(relay.deviceId);
 		}
 	}
