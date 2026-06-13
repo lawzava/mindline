@@ -409,6 +409,121 @@ describe('GenerationRatchet — fork heal (§1.4 partitions)', () => {
 	});
 });
 
+describe('GenerationRatchet — segmented deep-gap catch-up (§1.4)', () => {
+	/**
+	 * Model the responder serving a behind requester: the first `limit`
+	 * ancestor certs above the requester's reported frontier, tip excluded
+	 * (it rides as the grant). This mirrors crypto-session.grantWireFor's
+	 * bottom-anchored selection when the gap exceeds MAX_CHAIN.
+	 */
+	function serveSegment(responder: GenerationRatchet, fromG: number, limit: number): GrantCert[] {
+		return responder.chainAbove(fromG, limit).filter((c) => c.g < responder.g);
+	}
+
+	/** Drive the multi-round catch-up until terminal; return rounds + outcome. */
+	async function catchUp(
+		receiver: GenerationRatchet,
+		responder: GenerationRatchet,
+		limit: number,
+		maxRounds = 50
+	): Promise<{ outcome: string; rounds: number }> {
+		let rounds = 0;
+		let outcome = 'extended';
+		while (outcome === 'extended' && rounds < maxRounds) {
+			const frontier = receiver.aheadFrontier();
+			const segment = serveSegment(responder, frontier.g, limit);
+			outcome = await receiver.adoptSegment(responder.currentGrant()!, segment);
+			rounds++;
+		}
+		return { outcome, rounds };
+	}
+
+	it('a member > MAX_CHAIN behind on the same line catches up across rounds', async () => {
+		const a = await freshEngine({ maxChain: 2 });
+		const b = await freshEngine({ maxChain: 2 });
+		await b.adopt(await a.mintNext(alice)); // both at g1
+		for (let i = 0; i < 6; i++) await a.mintNext(alice); // a at g7, b at g1
+
+		const { outcome, rounds } = await catchUp(b, a, 2);
+		expect(outcome).toBe('adopted');
+		expect(b.g).toBe(7);
+		expect(b.gid).toBe(a.gid);
+		// ancestors g2..g6 = 5, served 2 per round → ⌈5/2⌉ = 3 rounds.
+		expect(rounds).toBe(3);
+		// The adopter now holds rk_tip and can grant / decrypt current traffic.
+		expect(b.canGrant()).toBe(true);
+		expect(await canDecrypt(a.currentKeys, b.keysFor(7))).toBe(true);
+	});
+
+	it("'extended' never moves the receiver's generation, gid, or keys", async () => {
+		const a = await freshEngine({ maxChain: 2 });
+		const b = await freshEngine({ maxChain: 2 });
+		await b.adopt(await a.mintNext(alice));
+		for (let i = 0; i < 6; i++) await a.mintNext(alice);
+		const before = b.currentKeys;
+		const segment = serveSegment(a, b.aheadFrontier().g, 2);
+		expect(await b.adoptSegment(a.currentGrant()!, segment)).toBe('extended');
+		expect(b.g).toBe(1);
+		expect(b.gid).not.toBe(a.gid);
+		expect(await canDecrypt(before, [b.currentKeys])).toBe(true); // keys unchanged
+		// The frontier advanced so the next round makes progress.
+		expect(b.aheadFrontier().g).toBe(3);
+	});
+
+	it('rejects a segment with a hole or a broken prevGid link without corrupting ahead', async () => {
+		const a = await freshEngine({ maxChain: 4 });
+		const b = await freshEngine({ maxChain: 4 });
+		await b.adopt(await a.mintNext(alice));
+		for (let i = 0; i < 6; i++) await a.mintNext(alice);
+		const good = serveSegment(a, 1, 4); // g2,g3,g4,g5
+		const holed = [good[0], good[2], good[3]]; // g2,g4,g5 — missing g3
+		expect(await b.adoptSegment(a.currentGrant()!, holed)).toBe('rejected');
+		expect(b.aheadFrontier().g).toBe(1); // ahead untouched
+	});
+
+	it('a segment that does not anchor at the frontier returns behind (fork case)', async () => {
+		// b is on a losing fork: the responder's line never links to b's
+		// frontier, so the segment cannot anchor and nothing is accumulated.
+		const a = await freshEngine({ maxChain: 2 });
+		const b = await freshEngine({ maxChain: 2 });
+		await b.adopt(await a.mintNext(alice)); // shared g1
+		await a.mintNext(alice); // a forks: g2_a
+		await b.mintNext(bob); // b forks: g2_b
+		for (let i = 0; i < 4; i++) await a.mintNext(alice); // a deep on its line
+		const segment = serveSegment(a, b.aheadFrontier().g, 2);
+		expect(await b.adoptSegment(a.currentGrant()!, segment)).toBe('behind');
+		expect(b.g).toBe(2);
+		expect(b.aheadFrontier().g).toBe(2); // unchanged
+	});
+
+	it('wedges at the segmented depth cap and clears ahead (→ link re-entry)', async () => {
+		const a = await freshEngine({ maxChain: 2, maxSegmentedDepth: 4 });
+		const b = await freshEngine({ maxChain: 2, maxSegmentedDepth: 4 });
+		await b.adopt(await a.mintNext(alice));
+		for (let i = 0; i < 10; i++) await a.mintNext(alice); // a at g11, gap far beyond cap
+
+		const { outcome } = await catchUp(b, a, 2);
+		expect(outcome).toBe('wedged');
+		expect(b.g).toBe(1); // never moved
+		expect(b.aheadFrontier().g).toBe(1); // ahead cleared on wedge
+	});
+
+	it('drops ahead on reload but still converges from scratch', async () => {
+		const a = await freshEngine({ maxChain: 2 });
+		const b = await freshEngine({ maxChain: 2 });
+		await b.adopt(await a.mintNext(alice));
+		for (let i = 0; i < 6; i++) await a.mintNext(alice);
+		// One round of accumulation, then reload.
+		const segment = serveSegment(a, b.aheadFrontier().g, 2);
+		expect(await b.adoptSegment(a.currentGrant()!, segment)).toBe('extended');
+		const revived = GenerationRatchet.fromPersisted(ROOM, b.state(), opts({ maxChain: 2 }));
+		expect(revived.aheadFrontier().g).toBe(1); // ahead is in-memory only
+		const { outcome } = await catchUp(revived, a, 2);
+		expect(outcome).toBe('adopted');
+		expect(revived.g).toBe(7);
+	});
+});
+
 describe('GenerationRatchet — persistence and reload liveness (§1.4 F8)', () => {
 	it('round-trips through persisted state without raw secrets', async () => {
 		const a = await freshEngine();
