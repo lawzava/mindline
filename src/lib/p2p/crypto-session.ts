@@ -514,10 +514,18 @@ export class CryptoSession {
 		// The tip cert already rides as `grant`; serving it again in the
 		// chain would waste one of the MAX_CHAIN slots and push the fork
 		// cert out at exactly the spec's boundary depth (P2.0 review F3).
-		const chain = this.ratchet
-			.chainTail(fromG)
-			.filter((c) => c.g < grant.g)
-			.slice(-MAX_CHAIN);
+		const chain =
+			grant.g - fromG > MAX_CHAIN
+				? // Deep gap (§1.4 segmented catch-up): serve the FIRST MAX_CHAIN
+					// ancestors above the requester's frontier so it extends its
+					// verified run upward one bounded segment per round.
+					this.ratchet.chainAbove(fromG, MAX_CHAIN).filter((c) => c.g < grant.g)
+				: // Within the chain bound: the tail run that links the tip to the
+					// requester's line in a single admissible round (unchanged).
+					this.ratchet
+						.chainTail(fromG)
+						.filter((c) => c.g < grant.g)
+						.slice(-MAX_CHAIN);
 		const body: RekeyGrantBody = { type: 'rekey-grant', grant, chain };
 		return this.sealHs(body as unknown as Record<string, unknown>);
 	}
@@ -544,19 +552,37 @@ export class CryptoSession {
 		);
 		if (!rk) throw new Error('grant unwrap failed (not wrapped for this device?)');
 		const grant: RekeyGrant = { ...cert, rk: toB64url(rk) };
-		const outcome = await this.ratchet.adopt(grant, body.chain ?? []);
+		const chain = body.chain ?? [];
+		const outcome = await this.ratchet.adopt(grant, chain);
+		// A tip more than MAX_CHAIN above our current generation cannot be
+		// reached by one admissible run; fall to the segmented path, which
+		// accumulates a verified run across rounds (§1.4). adopt() left our
+		// state untouched on 'behind', so this is purely additive.
+		if (outcome === 'behind' && cert.g - this.ratchet.g > MAX_CHAIN) {
+			const seg = await this.ratchet.adoptSegment(grant, chain);
+			if (seg === 'adopted') await this.ratchetChanged();
+			return seg;
+		}
 		if (outcome === 'adopted' || outcome === 'sibling-retained') await this.ratchetChanged();
 		return outcome;
 	}
 
+	/** The position a segmented requester reports / drives catch-up from (§1.4). */
+	catchUpFrontier(): { g: number; gid: string } {
+		return this.ratchet.aheadFrontier();
+	}
+
 	/** The direct-only ask for a generation we saw but cannot read (§1.4). */
 	async makeRekeyRequestWire(g: number, gid?: string): Promise<string> {
+		// Report our accumulation frontier, not just curG: mid-catch-up it has
+		// advanced past curG, so the responder serves the NEXT segment (§1.4).
+		const frontier = this.ratchet.aheadFrontier();
 		const body: RekeyRequestBody = {
 			type: 'rekey-request',
 			g,
 			gid,
-			haveG: this.ratchet.g,
-			haveGid: this.ratchet.gid
+			haveG: frontier.g,
+			haveGid: frontier.gid
 		};
 		return this.sealHs(body as unknown as Record<string, unknown>);
 	}

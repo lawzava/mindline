@@ -269,12 +269,40 @@ confidentiality boundary. A member that sees an envelope it cannot decrypt at a 
 grant for the responder's **current** generation carrying the rk-free
 ancestor certificates linking it back to the requester's stated
 position. At most `MAX_CHAIN` ancestor certs ride one grant — the cap
-bounds per-message wire size and verification work. A member behind by
-more than `MAX_CHAIN` generations (the room rotated 33+ times while it
-was away) cannot chain-verify that far and **re-enters through the
-link** — leave and rejoin, which is the same members-only trust its
-position already implies (see Bootstrap below) and loses nothing:
-identity persists and history re-syncs (§3.5).
+bounds per-message wire size and verification work.
+
+A member behind by more than `MAX_CHAIN` generations **on the established
+line** (a deep *gap* — it was offline/partitioned through 33+ membership
+changes, same line) catches up by **segmented chain transfer**: it reports
+its accumulation **frontier** in `haveG/haveGid`, the responder serves the
+**first** `MAX_CHAIN` ancestor certs above that frontier (vs the tail-slice
+that links a within-bound tip), the requester verifies that segment as a
+consecutive run extending its frontier and accumulates it **decrypt-key-free**
+(only the tip ever carries `rk`), then advances its frontier and asks for the
+next segment. The current tip rides every round and is adopted only once the
+accumulated run connects to it — so missed generations are never keyed,
+only their rk-free lineage is verified, and the missed content re-syncs at
+the current generation (§3.5). The accumulator is held only in memory (a
+reload re-fetches it, which also denies a reloaded engine a fresh sibling
+window — the P2.0-F2 property). Each round costs at most `MAX_CHAIN` cert
+verifications and is paced by the per-recipient request cooldown; total
+speculative accumulation is bounded by `MAX_SEGMENTED_DEPTH`
+(= 8·`MAX_CHAIN`), past which the member gives up to link re-entry. The
+bound is the explicit ceiling on the member-grade cost of a peer feeding a
+verified-but-fabricated parallel line: it commits nothing (no generation,
+no keys) until a complete run to a real tip adopts.
+
+A deep **fork** — two partitions each ratcheting more than `MAX_CHAIN` past
+a shared fork below the receiver's current generation — is **not** healed by
+segmented transfer (the winning line's served certs never anchor at the
+receiver's frontier, which sits on the losing line; the receiver provably
+fails to anchor rather than mis-converging). It keeps the documented
+recovery: the losing side **re-enters through the link** — leave and rejoin,
+which is the same members-only trust its position already implies (see
+Bootstrap below) and loses nothing: identity persists and history re-syncs
+(§3.5). A receiver detects this case after a bounded number of
+non-anchoring rounds and stops re-requesting from that peer (so the futile
+loop terminates), surfacing the stranded state.
 
 **Convergence (chained total order on `(g, gid)`).** A grant is
 *admissible* only if its `cert` verifies and `g` is a non-negative
@@ -341,11 +369,15 @@ the fork cert inside one admissible run, and runs end at the tip — so a
 fork heals in-protocol only while the *winning* line's tip is within
 `MAX_CHAIN` of `g_f` (the tip cert rides as the grant itself, so the
 chain budget is spent entirely on ancestors). A partition that ratchets
-deeper than that past
-the fork (33+ membership changes while split) is recovered the same way
-as a deeper-than-`MAX_CHAIN` gap: the losing side **re-enters through
-the link** (leave + rejoin → bootstrap onto the winning line; identity
-persists, history re-syncs §3.5). Availability-only, like every fork. Forks are **availability**
+deeper than that past the fork (33+ membership changes while split) is
+**not** recovered by the segmented catch-up that heals a deep *gap*: the
+winning line's served certs branch off below the losing receiver's
+current generation, so they never anchor at its frontier (which sits on
+the losing line) — the receiver fails to anchor rather than mis-converging,
+detects the no-progress after a bounded number of rounds, and the losing
+side **re-enters through the link** (leave + rejoin → bootstrap onto the
+winning line; identity persists, history re-syncs §3.5). Availability-only,
+like every fork. Forks are **availability**
 events, not confidentiality events — every line is minted by a member
 and granted only to members — so a deterministic symmetric tie-break is
 sufficient; a member abusing heal to repeatedly re-root the room (each
@@ -806,7 +838,13 @@ isolation, `gid = H(rk_g)`, chained grant-certificate verify/forge
 (forged `minter` rejected; unchained `prevGid` rejected; far-ahead `g`
 not adopted without a verified ancestor chain; multi-generation catch-up
 via rk-free ancestor certs accepted, holes and tampered links rejected,
-per-grant chain cap enforced), same-`g` tie-break by lower `gid` bounded
+per-grant chain cap enforced; **segmented deep-gap catch-up** — a member
+more than `MAX_CHAIN` behind on the established line converges across
+multiple rounds in `⌈(tip−1−curG)/MAX_CHAIN⌉` segments, each ≤ `MAX_CHAIN`
+certs, an `'extended'` round moving no key/generation, a non-anchoring
+segment committing nothing, the `MAX_SEGMENTED_DEPTH` cap wedging to link
+re-entry, and a reload dropping the in-memory accumulator yet still
+converging), same-`g` tie-break by lower `gid` bounded
 by the convergence window and the per-`g` instance cap (window closed
 across reload — a revived engine rejects a lone same-`g` sibling), line
 finality (a
