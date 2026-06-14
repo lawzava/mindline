@@ -34,13 +34,24 @@
   "keywords": [
     "chat",
     "p2p",
-    "wasm",
     "webrtc",
+    "e2ee",
     "encryption",
+    "webcrypto",
+    "real-time",
+    "privacy",
     "svelte"
   ],
-  "author": "",
-  "license": "MIT",
+  "author": "Law Zava (https://github.com/lawzava)",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://mindline.chat",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lawzava/mindline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lawzava/mindline/issues"
+  },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
     "@noble/post-quantum": "0.6.1",
