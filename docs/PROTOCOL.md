@@ -5,9 +5,8 @@ encryption, P2P wire protocol, and media transfer. TypeScript + WebCrypto,
 plus exactly one pure-JS post-quantum library (§1.3) — no WASM. If code
 and this document disagree, one of them is a bug.
 
-Revision 2: incorporates adversarial review (docs/analysis/
-protocol-verification.json) — media nonce-salt fix, seq epochs, defined
-channel binding, sync caps, platform corrections.
+Revision 2: incorporates an adversarial review pass — media nonce-salt
+fix, seq epochs, defined channel binding, sync caps, platform corrections.
 
 Revision 3: key generations with a signed, gid-identified grant
 certificate and a `g == g+1` adoption invariant (wire forward secrecy,
