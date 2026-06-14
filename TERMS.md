@@ -1,6 +1,6 @@
 # Terms of Service
 
-**Last Updated: January 2025**
+**Last Updated: June 2026**
 
 ## Agreement to Terms
 
@@ -71,13 +71,18 @@ Key points:
 ## Intellectual Property
 
 ### Open Source License
-Mindline is licensed under the MIT License. See [LICENSE](./LICENSE) for full terms.
+Mindline is licensed under the GNU Affero General Public License v3.0
+(AGPL-3.0-only). See [LICENSE](./LICENSE) for full terms.
 
 You are free to:
 - Use the software for any purpose
 - Modify the source code
 - Distribute copies
 - Create derivative works
+
+The AGPL adds one condition that matters here: if you run a modified version
+of Mindline as a network service, you must offer your users the corresponding
+source code of your version. This keeps hosted forks auditable.
 
 ### Trademarks
 "Mindline" and associated branding are trademarks of the project. You may not use them to imply endorsement without permission.
@@ -138,7 +143,7 @@ Since there are no accounts, "termination" means blocking access from your IP ad
 ## Dispute Resolution
 
 ### Governing Law
-These Terms are governed by the laws of [Your Jurisdiction], without regard to conflict of law provisions.
+These Terms are governed by the laws of Germany, without regard to conflict of law provisions. Nothing in these Terms limits any non-waivable statutory rights you have as a consumer under the law of your country of residence.
 
 ### Informal Resolution
 Before filing a claim, please contact us to attempt informal resolution.
@@ -186,9 +191,9 @@ We encourage:
 ## Contact
 
 Questions about these Terms?
-- Open an issue: [GitHub Issues](https://github.com/yourusername/mindline/issues)
+- Open an issue: [GitHub Issues](https://github.com/lawzava/mindline/issues)
 - Read the docs: [Documentation](./README.md)
-- Review the code: [Source Code](https://github.com/yourusername/mindline)
+- Review the code: [Source Code](https://github.com/lawzava/mindline)
 
 ---
 
@@ -199,7 +204,8 @@ If you're a developer:
 - ✅ You can fork and modify it
 - ✅ You can use it in commercial projects
 - ✅ You can integrate it into other services
-- ✅ Just comply with the MIT License
+- ✅ Just comply with the AGPL-3.0 license (including offering source for
+  modified network deployments)
 
 We built this for the community. Use it, improve it, share it!
 
