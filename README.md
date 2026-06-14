@@ -110,4 +110,9 @@ pnpm run verify:ai    # all of the above
 
 ## License
 
-MIT
+[AGPL-3.0-only](LICENSE). © 2025–2026 Law Zava and Mindline contributors.
+
+Mindline is network-use copyleft: if you run a modified version as a service,
+the AGPL requires you to offer your users the corresponding source. That is
+deliberate — the product's promise is that the code you run is the code you
+can audit.
