@@ -206,7 +206,10 @@ test.describe('Room Page', () => {
 		await expect(page.getByText("You're the only one here.")).toBeVisible();
 	});
 
-	test('should focus message input on load', async ({ page }) => {
+	test('should focus message input on load', async ({ page, isMobile }) => {
+		// Mobile browsers intentionally do not autofocus inputs on load (it would
+		// pop the on-screen keyboard), so this desktop-only behavior is skipped.
+		test.skip(isMobile, 'mobile browsers do not autofocus inputs on load');
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);
 
