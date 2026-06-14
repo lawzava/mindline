@@ -6,7 +6,6 @@ Thank you for your interest in contributing to Mindline! This document provides 
 - [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
 - [Development Workflow](#development-workflow)
-- [AI-Assisted Workflow](#ai-assisted-workflow)
 - [Coding Standards](#coding-standards)
 - [Testing](#testing)
 - [Submitting Changes](#submitting-changes)
@@ -66,18 +65,19 @@ We are committed to providing a welcoming and inclusive experience for everyone.
 ### Project Structure
 ```
 mindline/
-│   ├── lib.rs            # Main entry point
-│   ├── crypto.rs         # Encryption implementation
-│   ├── messages.rs       # Message handling
-│   ├── p2p.rs            # P2P coordination
-│   └── ...
-├── src/                  # SvelteKit TypeScript app
-│   ├── routes/           # Pages (/, /[roomId])
-│   ├── lib/components/   # UI components
-│   ├── lib/p2p/          # WebRTC data layer
-│   └── ...
-├── tests/e2e/            # Playwright end-to-end tests
-└── signaling-server.js   # WebSocket signaling server
+├── src/
+│   ├── routes/             # SvelteKit pages (/, /[roomId])
+│   ├── service-worker.js   # offline cache (auto-versioned)
+│   └── lib/
+│       ├── crypto/         # key schedule, envelopes, identity, replay, keystore
+│       ├── p2p/            # WebRTC negotiation, crypto session, signaling
+│       ├── media/          # chunked encrypted transfer, blob store, image, recorder
+│       ├── storage/        # IndexedDB persistence
+│       ├── stores/         # Svelte stores (messages, drafts, connection, transfers)
+│       └── components/     # UI components
+├── tests/                  # vitest unit + Playwright e2e
+├── signaling-server.js     # discovery + ciphertext relay of last resort
+└── docs/PROTOCOL.md        # wire protocol, key schedule, threat model
 ```
 
 ## Development Workflow
@@ -127,13 +127,6 @@ Now shows user-friendly error and retry option.
 
 Fixes #67
 ```
-
-## AI-Assisted Workflow
-
-- Follow repository guardrails in `AGENTS.md` and scoped overrides in `src/AGENTS.md`.
-- Use skill docs in `docs/ai-skills.md` and `.codex/skills/` for repeatable command selection.
-- Use MCP guidance from `docs/mcp-usage.md` when external systems are involved.
-- Run `pnpm run verify:ai` before opening or updating a PR unless the change is clearly narrow enough for `test:unit` or `verify:web`.
 
 ## Coding Standards
 
@@ -279,7 +272,7 @@ Look for issues labeled `good-first-issue`:
 - Accessibility improvements
 
 ### Feature Ideas
-See [README Roadmap](./README.md#roadmap) for planned features:
+See the [issue tracker](https://github.com/lawzava/mindline/issues) for planned features:
 - File sharing
 - Voice/video calls
 - Message reactions
@@ -325,31 +318,25 @@ Please:
 *(For maintainers)*
 
 1. **Version bump**
-   - Update version in `Cargo.toml`
    - Update version in `package.json`
-   - Update version in `sw.js` cache names
 
-2. **Update changelog**
-   - Add entry to `CHANGELOG.md`
-   - List all changes since last release
-
-3. **Create release**
+2. **Create release**
    ```bash
    git tag v1.2.3
    git push origin v1.2.3
    ```
 
-4. **Build production**
+3. **Build production**
    ```bash
    pnpm run build:production
    ```
 
-5. **Deploy**
+4. **Deploy**
    - Push to production hosting
    - Update signaling server if needed
 
-6. **Announce**
-   - GitHub Release with changelog
+5. **Announce**
+   - GitHub Release with release notes
    - Post to relevant communities
 
 ## Community
@@ -368,7 +355,7 @@ Contributors are recognized in:
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under the [AGPL-3.0-only](LICENSE) license.
 
 ---
 
