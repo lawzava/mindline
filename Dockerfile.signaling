@@ -9,7 +9,7 @@ RUN apk add --no-cache curl && corepack enable && corepack prepare pnpm@9.15.0 -
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile
 
-COPY signaling-server.js ./
+COPY signaling-server.js turn-credentials.js ./
 RUN mkdir -p logs
 
 EXPOSE 3000
