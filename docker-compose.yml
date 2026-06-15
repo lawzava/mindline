@@ -1,22 +1,52 @@
+# Full self-host stack: the web app + the signaling/relay server.
+#
+#   docker compose up --build      # app: http://localhost:8080  signaling: :9210
+#
+# For a real domain (cross-device needs TLS), build the app against your public
+# signaling origin and put a TLS reverse proxy in front of both services:
+#   VITE_SIGNALING_SERVER=wss://signal.example.com docker compose up --build
 services:
-  mindline-signaling:
-    build: .
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+      args:
+        # Browser-reachable signaling origin, baked into the CSP at build time.
+        VITE_SIGNALING_SERVER: ${VITE_SIGNALING_SERVER:-ws://localhost:9210}
     ports:
-      - "9210:3000"
+      - '8080:3000'
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    depends_on:
+      signaling:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  signaling:
+    build:
+      context: .
+      dockerfile: Dockerfile.signaling
+    ports:
+      - '9210:3000'
     environment:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
-      # Production-safe tuning (required for remote E2E + soak behind shared NATs).
+      # Origins allowed to open the signaling WebSocket / call /health.
+      # Override for a real domain, e.g. ALLOWED_ORIGINS=https://app.example.com
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8080}
       - RATE_LIMIT_MESSAGES_PER_SECOND=50
       - RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE=240
       - RATE_LIMIT_ROOM_JOINS_PER_MINUTE=30
-    volumes:
-      - ./logs:/app/logs
-      - ./ssl:/app/ssl:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
       interval: 30s
       timeout: 10s
       retries: 3
