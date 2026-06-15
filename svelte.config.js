@@ -1,4 +1,5 @@
-import adapter from '@sveltejs/adapter-node';
+import adapterNode from '@sveltejs/adapter-node';
+import adapterCloudflare from '@sveltejs/adapter-cloudflare';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 // CSP connect-src is pinned to the signaling origin at build time. The
@@ -15,10 +16,10 @@ const config = {
 	preprocess: vitePreprocess(),
 
 	kit: {
-		// adapter-node emits ./build; run the production server with `node build`.
-		// Deployable anywhere Node runs (Docker, a VM, a PaaS) — no platform
-		// lock-in. See https://svelte.dev/docs/kit/adapter-node.
-		adapter: adapter(),
+		// Default: adapter-node (emits ./build; `node build`), deployable on any
+		// Node host (Docker, VM, PaaS) — no platform lock-in. Cloudflare Pages
+		// sets ADAPTER=cloudflare to emit .svelte-kit/cloudflare instead.
+		adapter: process.env.ADAPTER === 'cloudflare' ? adapterCloudflare() : adapterNode(),
 		// Strict CSP with hashed inline hydration scripts, production builds
 		// only: in dev, Vite injects inline scripts kit cannot hash, which
 		// intermittently kills hydration. The room key lives in the URL
