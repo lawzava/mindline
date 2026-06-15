@@ -1,6 +1,7 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import http from 'http';
 import crypto from 'crypto';
+import { generateTurnIceServers, DEFAULT_TTL_SECONDS } from './turn-credentials.js';
 
 const server = http.createServer();
 
@@ -202,6 +203,26 @@ function checkRoomJoinRateLimit(clientId) {
 	return true;
 }
 
+// Cloudflare TURN credentials, minted server-side (the app frontend is static
+// and can't hold the CF secret) and handed to clients on the signaling welcome
+// message. Refreshed on a timer rather than per request, so clients can never
+// trigger credential generation. Stays empty when CF_TURN_* env is unset, in
+// which case clients fall back to STUN-only.
+let turnIceServers = [];
+
+async function refreshTurnIceServers() {
+	const next = await generateTurnIceServers(
+		process.env.CF_TURN_TOKEN_ID,
+		process.env.CF_TURN_API_TOKEN
+	);
+	const configured = process.env.CF_TURN_TOKEN_ID && process.env.CF_TURN_API_TOKEN;
+	// Keep the last good set if a refresh returns empty due to a transient
+	// Cloudflare error while still configured — don't flap clients to STUN-only.
+	if (next.length > 0 || !configured) {
+		turnIceServers = next;
+	}
+}
+
 wss.on('connection', (ws, req) => {
 	// Check max connections limit
 	if (totalConnections >= SERVER_LIMITS.maxConnections) {
@@ -243,11 +264,13 @@ wss.on('connection', (ws, req) => {
 		ws.isAlive = true;
 	});
 
-	// Send the server-assigned client ID to the client
+	// Send the server-assigned client ID to the client, plus any managed TURN
+	// credentials so peers behind strict NATs can relay (PROTOCOL.md §3).
 	ws.send(
 		JSON.stringify({
 			type: 'client-id',
-			clientId: serverClientId
+			clientId: serverClientId,
+			iceServers: turnIceServers
 		})
 	);
 
@@ -533,8 +556,15 @@ const keepaliveInterval = setInterval(() => {
 	});
 }, KEEPALIVE_INTERVAL);
 
+// Mint TURN credentials at startup and refresh at half the TTL to stay well
+// ahead of expiry. No-op (leaves turnIceServers empty) when CF_TURN_* is unset.
+const TURN_REFRESH_MS = (DEFAULT_TTL_SECONDS / 2) * 1000;
+void refreshTurnIceServers();
+const turnRefreshInterval = setInterval(refreshTurnIceServers, TURN_REFRESH_MS);
+
 wss.on('close', () => {
 	clearInterval(keepaliveInterval);
+	clearInterval(turnRefreshInterval);
 });
 
 server.listen(PORT, HOST, () => {

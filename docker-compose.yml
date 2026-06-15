@@ -39,8 +39,8 @@ services:
       - PORT=3000
       - HOST=0.0.0.0
       # Origins allowed to open the signaling WebSocket / call /health.
-      # Override for a real domain, e.g. ALLOWED_ORIGINS=https://app.example.com
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8080}
+      # Override for a real domain, e.g. ALLOWED_ORIGINS=https://mindline.chat
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://mindline.chat}
       - RATE_LIMIT_MESSAGES_PER_SECOND=50
       - RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE=240
       - RATE_LIMIT_ROOM_JOINS_PER_MINUTE=30

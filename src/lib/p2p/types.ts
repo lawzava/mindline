@@ -64,6 +64,9 @@ export interface SignalingMessage {
 	roomId?: string;
 	clientId?: string;
 	yourId?: string;
+	// Managed TURN credentials minted by the signaling server, delivered on the
+	// 'client-id' welcome so peers behind strict NATs can relay.
+	iceServers?: RTCIceServer[];
 	peers?: string[];
 	fromId?: string;
 	targetId?: string;
