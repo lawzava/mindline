@@ -29,7 +29,7 @@ We are committed to providing a welcoming and inclusive experience for everyone.
 ## Getting Started
 
 ### Prerequisites
-- **Node.js** 18+ and pnpm
+- **Node.js** 20+ and pnpm (see `.nvmrc`)
 - Basic understanding of TypeScript/Svelte, WebCrypto, and WebRTC
 
 ### Development Setup
@@ -45,9 +45,9 @@ We are committed to providing a welcoming and inclusive experience for everyone.
    pnpm install
    ```
 
-3. **Build the project**
+3. **Install Playwright browsers** (only needed to run the e2e suite)
    ```bash
-   pnpm run build
+   pnpm exec playwright install
    ```
 
 4. **Start development servers**
@@ -165,17 +165,15 @@ async function connectToPeer(peerId, options = {}) {
 
 ### Running Tests
 
-**Unit tests** (crypto/protocol, vitest):
+For everyday iteration, the **fast** checks (no browsers, seconds to run):
 ```bash
-pnpm run test:unit
+pnpm run test:unit    # crypto/protocol unit tests (vitest)
+pnpm run check        # types + svelte-check
+pnpm run lint         # prettier + eslint
 ```
 
-**TypeScript checks**:
-```bash
-pnpm run check
-```
-
-**End-to-end tests**:
+**End-to-end tests** (real two-browser P2P; install browsers once with
+`pnpm exec playwright install`):
 ```bash
 pnpm run test:e2e:with-signaling
 ```
@@ -218,9 +216,14 @@ Create test files in `/tests` directory
    - Add tests
    - Update documentation
 
-3. **Test thoroughly**
+3. **Test your change**
    ```bash
-   pnpm run verify:ai    # unit + web + e2e verification
+   # Fast gate — run for every change:
+   pnpm run test:unit && pnpm run check && pnpm run lint
+
+   # Full gate (adds the web build + two-browser e2e) before opening a PR
+   # that touches the protocol, p2p, or crypto layers:
+   pnpm run verify:ai
    ```
 
 4. **Commit changes**
