@@ -66,6 +66,9 @@ jobs:
   required-remote-e2e:
     runs-on: ubuntu-latest
     needs: deploy-staging
+    # Skip cleanly when the staging app URL isn't configured (var unset and no
+    # manual input) instead of failing the daily run.
+    if: ${{ github.event.inputs.app_base_url != '' || vars.STAGING_APP_BASE_URL != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -113,6 +116,8 @@ jobs:
   signaling-soak:
     runs-on: ubuntu-latest
     needs: deploy-staging
+    # Skip cleanly when no staging signaling URL is configured.
+    if: ${{ github.event.inputs.signaling_health_url != '' || vars.STAGING_SIGNALING_HEALTH_URL != '' || github.event.inputs.signaling_ws_url != '' || vars.STAGING_SIGNALING_WS_URL != '' }}
     env:
       SIGNALING_HEALTH_URL: ${{ github.event.inputs.signaling_health_url || vars.STAGING_SIGNALING_HEALTH_URL }}
       SIGNALING_WS_URL_INPUT: ${{ github.event.inputs.signaling_ws_url || vars.STAGING_SIGNALING_WS_URL }}
