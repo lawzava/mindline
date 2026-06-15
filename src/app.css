@@ -1,6 +1,6 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "@fontsource-variable/inter";
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/inter';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -13,7 +13,7 @@
 	 * Chroma is a semantic axis: vivid = happening now, tinted = yours,
 	 * gray = theirs.
 	 */
-	--font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+	--font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
 	--radius: 0.625rem;
 
 	--background: oklch(0.984 0.003 262);
@@ -135,7 +135,7 @@
 	}
 	body {
 		@apply bg-background text-foreground font-sans antialiased;
-		font-feature-settings: "cv05", "cv11";
+		font-feature-settings: 'cv05', 'cv11';
 	}
 	h1,
 	h2,

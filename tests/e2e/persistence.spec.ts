@@ -88,7 +88,9 @@ test.describe('User Data Persistence', () => {
 		await joinRoom(page, roomId);
 
 		// Get initial theme state
-		const isDarkBefore = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+		const isDarkBefore = await page.evaluate(() =>
+			document.documentElement.classList.contains('dark')
+		);
 
 		// Toggle theme via the room menu
 		await page.locator('[data-testid="room-menu-btn"]').click();
@@ -97,7 +99,9 @@ test.describe('User Data Persistence', () => {
 		await page.waitForTimeout(500);
 
 		// Verify theme changed
-		const isDarkAfter = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+		const isDarkAfter = await page.evaluate(() =>
+			document.documentElement.classList.contains('dark')
+		);
 		expect(isDarkAfter).not.toBe(isDarkBefore);
 
 		// Reload page
@@ -105,7 +109,9 @@ test.describe('User Data Persistence', () => {
 		await page.waitForTimeout(1000);
 
 		// Theme should persist
-		const isDarkAfterReload = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+		const isDarkAfterReload = await page.evaluate(() =>
+			document.documentElement.classList.contains('dark')
+		);
 		expect(isDarkAfterReload).toBe(isDarkAfter);
 	});
 });
@@ -129,8 +135,12 @@ test.describe('Message Persistence', () => {
 		await joinRoom(page, roomId);
 
 		// Messages should still be visible
-		await expect(page.locator('[data-testid="message-list"]').getByText('First message')).toBeVisible({ timeout: 5000 });
-		await expect(page.locator('[data-testid="message-list"]').getByText('Second message')).toBeVisible({ timeout: 5000 });
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('First message')
+		).toBeVisible({ timeout: 5000 });
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('Second message')
+		).toBeVisible({ timeout: 5000 });
 	});
 
 	test('should persist message edits after page reload', async ({ page }) => {
@@ -141,7 +151,10 @@ test.describe('Message Persistence', () => {
 		await waitForMessage(page, 'Original message');
 
 		// Skip if actions not available (touch device)
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Edit the message
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -207,7 +220,10 @@ test.describe('Message Persistence', () => {
 		await waitForMessage(page, 'Will be deleted');
 
 		// Skip if actions not available
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Delete the message
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -284,8 +300,12 @@ test.describe('Encryption Key Persistence', () => {
 		await joinRoom(page, roomId);
 
 		// Messages should be decryptable and visible
-		await expect(page.locator('[data-testid="message-list"]').getByText('Secret message one')).toBeVisible({ timeout: 5000 });
-		await expect(page.locator('[data-testid="message-list"]').getByText('Secret message two')).toBeVisible({ timeout: 5000 });
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('Secret message one')
+		).toBeVisible({ timeout: 5000 });
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('Secret message two')
+		).toBeVisible({ timeout: 5000 });
 	});
 
 	test('should have different encryption keys per room', async ({ page, browser }) => {
@@ -330,6 +350,8 @@ test.describe('Encryption Key Persistence', () => {
 		await joinRoom(page, savedRoomId);
 
 		// Message should still be there
-		await expect(page.locator('[data-testid="message-list"]').getByText('Will survive tab close')).toBeVisible({ timeout: 5000 });
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('Will survive tab close')
+		).toBeVisible({ timeout: 5000 });
 	});
 });

@@ -8,7 +8,12 @@
 	<div class="mx-auto flex h-12 max-w-4xl items-center justify-between px-4">
 		<span class="text-sm font-semibold tracking-tight">Mindline</span>
 
-		<Button variant="ghost" size="icon" onclick={toggleMode} class="h-10 w-10 text-muted-foreground">
+		<Button
+			variant="ghost"
+			size="icon"
+			onclick={toggleMode}
+			class="h-10 w-10 text-muted-foreground"
+		>
 			{#if mode.current === 'dark'}
 				<Sun class="h-4 w-4" />
 			{:else}

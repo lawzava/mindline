@@ -137,7 +137,9 @@
 	);
 
 	const isPartiallyDelivered = $derived(
-		deliveryStatus && deliveryStatus.delivered > 0 && deliveryStatus.delivered < deliveryStatus.total
+		deliveryStatus &&
+			deliveryStatus.delivered > 0 &&
+			deliveryStatus.delivered < deliveryStatus.total
 	);
 
 	// Corner-radius arithmetic: within a group the corners facing an adjacent
@@ -187,7 +189,12 @@
 	     containing block is the full-width column) — a percentage max-width
 	     on the bubble itself resolves against this shrink-to-fit row and
 	     collapses to ~2ch on touch devices, where the row has no buttons. -->
-	<div class={cn('flex max-w-[min(78%,36rem)] items-center gap-1', isMe ? 'flex-row-reverse' : 'flex-row')}>
+	<div
+		class={cn(
+			'flex max-w-[min(78%,36rem)] items-center gap-1',
+			isMe ? 'flex-row-reverse' : 'flex-row'
+		)}
+	>
 		<!-- Bubble: fill alone defines it; no borders, no shadows. -->
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex -- role is 'button' exactly when tabindex is 0 (revealable) -->
 		<div
@@ -216,10 +223,22 @@
 						class="h-7 min-w-[200px] bg-background text-sm text-foreground"
 						autofocus
 					/>
-					<Button variant="ghost" size="icon" onclick={saveEdit} class="h-7 w-7" aria-label="Save edit">
+					<Button
+						variant="ghost"
+						size="icon"
+						onclick={saveEdit}
+						class="h-7 w-7"
+						aria-label="Save edit"
+					>
 						<Check class="h-4 w-4" />
 					</Button>
-					<Button variant="ghost" size="icon" onclick={cancelEdit} class="h-7 w-7" aria-label="Cancel edit">
+					<Button
+						variant="ghost"
+						size="icon"
+						onclick={cancelEdit}
+						class="h-7 w-7"
+						aria-label="Cancel edit"
+					>
 						<X class="h-4 w-4" />
 					</Button>
 				</div>
@@ -292,7 +311,10 @@
 								<p>Sent (no peers connected)</p>
 							{:else}
 								<p>
-									Delivered to {deliveryStatus.delivered}/{deliveryStatus.total} peer{deliveryStatus.total !== 1 ? 's' : ''}
+									Delivered to {deliveryStatus.delivered}/{deliveryStatus.total} peer{deliveryStatus.total !==
+									1
+										? 's'
+										: ''}
 								</p>
 							{/if}
 						</Tooltip.Content>

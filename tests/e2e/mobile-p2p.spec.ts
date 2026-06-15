@@ -125,7 +125,11 @@ test.describe('Mobile P2P Connection Lifecycle', () => {
 		const offlineStart = Date.now();
 		while (Date.now() - offlineStart < 10000) {
 			const text = await statusBadge.textContent().catch(() => '');
-			if (text?.includes('Offline') || text?.includes('Reconnecting') || text?.includes('Connecting')) {
+			if (
+				text?.includes('Offline') ||
+				text?.includes('Reconnecting') ||
+				text?.includes('Connecting')
+			) {
 				break;
 			}
 			await page.waitForTimeout(500);
@@ -200,10 +204,9 @@ test.describe('Mobile P2P Connection Lifecycle', () => {
 
 		// Check if mobile detection works and forceRelay is set correctly
 		const config = await page.evaluate(() => {
-			const isMobile =
-				/Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(
-					navigator.userAgent
-				);
+			const isMobile = /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(
+				navigator.userAgent
+			);
 			return { isMobile, userAgent: navigator.userAgent };
 		});
 

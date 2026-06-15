@@ -125,9 +125,7 @@ export async function deleteBlob(roomId: string, transferId: string): Promise<vo
 }
 
 export async function burnRoomBlobs(roomId: string): Promise<void> {
-	await withStore('readwrite', (s) =>
-		s.delete(IDBKeyRange.bound(`${roomId}/`, `${roomId}/￿`))
-	);
+	await withStore('readwrite', (s) => s.delete(IDBKeyRange.bound(`${roomId}/`, `${roomId}/￿`)));
 }
 
 /** Refuse media when quota headroom is below 2x the incoming size (§4). */

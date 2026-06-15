@@ -88,11 +88,7 @@ export async function sealEnvelope(body: unknown, opts: SealOptions): Promise<En
 	const aad = buildAad(ENVELOPE_VERSION, roomId, identity.deviceId, klass, g);
 	const plaintext = textEncoder.encode(JSON.stringify(body));
 	const ciphertext = new Uint8Array(
-		await crypto.subtle.encrypt(
-			{ name: 'AES-GCM', iv: nonce, additionalData: aad },
-			key,
-			plaintext
-		)
+		await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, additionalData: aad }, key, plaintext)
 	);
 
 	const envelope: Envelope = {
@@ -127,7 +123,8 @@ export async function openEnvelope(envelope: Envelope, opts: OpenOptions): Promi
 	if (!Number.isInteger(envelope.g) || envelope.g < 0) {
 		throw new Error('malformed envelope generation');
 	}
-	if (envelope.t === 'hs' && envelope.g !== 0) throw new Error("'hs' envelopes must use generation 0");
+	if (envelope.t === 'hs' && envelope.g !== 0)
+		throw new Error("'hs' envelopes must use generation 0");
 
 	const nonce = fromB64url(envelope.n);
 	const ciphertext = fromB64url(envelope.c);

@@ -30,13 +30,17 @@ test.describe('Required P2P', () => {
 
 		await sendMessage(page, 'message-from-a');
 		await waitForMessage(page, 'message-from-a');
-		await expect(pageB.locator('[data-testid="message-list"]').getByText('message-from-a')).toBeVisible({
+		await expect(
+			pageB.locator('[data-testid="message-list"]').getByText('message-from-a')
+		).toBeVisible({
 			timeout: 10000
 		});
 
 		await sendMessage(pageB, 'message-from-b');
 		await waitForMessage(pageB, 'message-from-b');
-		await expect(page.locator('[data-testid="message-list"]').getByText('message-from-b')).toBeVisible({
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('message-from-b')
+		).toBeVisible({
 			timeout: 10000
 		});
 
