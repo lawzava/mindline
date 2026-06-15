@@ -7,10 +7,29 @@ import { browser, dev } from '$app/environment';
 import type { P2PConfig } from './types';
 
 /**
+ * Subset of the Network Information API (`navigator.connection`) that the app
+ * reads. Not in the standard lib DOM types, so we declare the fields we use.
+ */
+export interface NetworkInformation {
+	effectiveType?: string;
+	saveData?: boolean;
+	downlink?: number;
+	rtt?: number;
+	type?: string;
+	addEventListener?: (type: string, listener: () => void) => void;
+	removeEventListener?: (type: string, listener: () => void) => void;
+}
+
+/** Returns `navigator.connection` (Network Information API), if available. */
+export function getNetworkInfo(): NetworkInformation | undefined {
+	return (navigator as unknown as { connection?: NetworkInformation }).connection;
+}
+
+/**
  * TURN comes only from explicit configuration (runtime MINDLINE_ENV or
  * VITE_TURN_* build vars). The previous hardcoded free openrelay tier is
  * discontinued/throttled and gave a false sense of NAT coverage; deploys
- * should provision real TURN (see docs/analysis/DECISIONS.md D4).
+ * should provision their own real TURN servers for reliable NAT traversal.
  */
 function turnServersFromEnv(): RTCIceServer[] {
 	const urls = import.meta.env.VITE_TURN_URLS as string | undefined;
@@ -70,8 +89,7 @@ export function isMobileNetwork(): boolean {
 	if (!browser) return false;
 
 	// Check Network Information API
-	const conn = (navigator as unknown as { connection?: { type?: string; effectiveType?: string } })
-		.connection;
+	const conn = getNetworkInfo();
 	if (conn) {
 		// Cellular connection type
 		if (conn.type === 'cellular') return true;
@@ -94,6 +112,27 @@ export function isMobileDevice(): boolean {
 }
 
 /**
+ * Resolve a signaling target that may be a bare host (`signal.example.com`) or
+ * a full ws(s):// origin (`ws://localhost:9210`). A scheme, when present, wins
+ * over `defaultSSL` — important because the build-time CSP pins the exact
+ * origin, so localhost must stay `ws://` and a real domain `wss://`.
+ */
+function parseSignalingTarget(
+	value: string,
+	defaultSSL: boolean
+): { server: string; useSSL: boolean } {
+	if (value.includes('://')) {
+		try {
+			const url = new URL(value);
+			return { server: url.host, useSSL: url.protocol === 'wss:' || url.protocol === 'https:' };
+		} catch {
+			// not a parseable URL; fall through to bare-host handling
+		}
+	}
+	return { server: value, useSSL: defaultSSL };
+}
+
+/**
  * Get environment-aware signaling server configuration
  */
 export function getSignalingConfig(): { server: string; useSSL: boolean } {
@@ -110,16 +149,16 @@ export function getSignalingConfig(): { server: string; useSSL: boolean } {
 
 	const runtimeEnv = getRuntimeEnvConfig();
 	if (runtimeEnv.SIGNALING_SERVER) {
-		return {
-			server: runtimeEnv.SIGNALING_SERVER,
-			useSSL: parseUseSsl(runtimeEnv.USE_SSL, window.location.protocol === 'https:')
-		};
+		return parseSignalingTarget(
+			runtimeEnv.SIGNALING_SERVER,
+			parseUseSsl(runtimeEnv.USE_SSL, window.location.protocol === 'https:')
+		);
 	}
 
 	// Production: Use environment variable or derive from current hostname
 	const envServer = import.meta.env.VITE_SIGNALING_SERVER;
 	if (envServer) {
-		return { server: envServer, useSSL: true };
+		return parseSignalingTarget(envServer, true);
 	}
 
 	// Fallback: Use current hostname with signal subdomain or same-origin
@@ -132,12 +171,14 @@ export function getSignalingConfig(): { server: string; useSSL: boolean } {
 	}
 	// If on Cloudflare Pages, signaling might be on a different subdomain
 	if (host.includes('pages.dev')) {
-		// Production signaling (the old signal-mindline.fly.dev host is gone)
 		return { server: 'signal.mindline.chat', useSSL: true };
 	}
 
 	// For custom domains, assume signaling on same host different port or subdomain
-	return { server: `signal.${host}`, useSSL: window.location.protocol === 'https:' };
+	return {
+		server: `signal.${host}`,
+		useSSL: window.location.protocol === 'https:'
+	};
 }
 
 /**

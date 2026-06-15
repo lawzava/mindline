@@ -8,12 +8,32 @@ import { CryptoSession } from './crypto-session';
 import { shouldMint } from './rekey-policy';
 import { RekeyScheduler } from './rekey-scheduler';
 import { parseKeyFragment } from '$lib/crypto/keys';
+import { getNetworkInfo } from './config';
 import { routeP2PMessage, setMediaControlFn, setSendToPeerFn, emitToast } from './handlers';
 import { MediaTransferEngine, type MediaKind, type MediaOffer } from '$lib/media/transfer';
 import { saveRoomMessages } from '$lib/storage/messages';
 import type { Message } from '$lib/types/message';
-import { connection, user, drafts, currentRoomId, messages, delivery, transfers, mediaConsent } from '$lib/stores';
-import type { P2PConfig, TypedP2PMessage, ChatMessage, TypingMessage, EditMessage, DeleteMessage, ReactionMessage, UserConnectedMessage, SyncRequestMessage } from './types';
+import {
+	connection,
+	user,
+	drafts,
+	currentRoomId,
+	messages,
+	delivery,
+	transfers,
+	mediaConsent
+} from '$lib/stores';
+import type {
+	P2PConfig,
+	TypedP2PMessage,
+	ChatMessage,
+	TypingMessage,
+	EditMessage,
+	DeleteMessage,
+	ReactionMessage,
+	UserConnectedMessage,
+	SyncRequestMessage
+} from './types';
 import { get } from 'svelte/store';
 
 /** Thrown when the URL has no key fragment and no stored keys exist. */
@@ -248,7 +268,8 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 				}
 			},
 			onReceived: (offer) => {
-				const targetRoomId = offer.roomId || roomId;
+				// Use the session room, not the offer's self-asserted roomId.
+				const targetRoomId = roomId;
 				const existing = messages.getMessage(targetRoomId, offer.messageId);
 				if (existing?.attachment) {
 					messages.updateMessage(targetRoomId, offer.messageId, {
@@ -440,7 +461,9 @@ export function broadcastChat(content: string, messageId: string): void {
 	};
 
 	const deliveredCount = p2pConnection.broadcast(message);
-	console.log(`[P2P Manager] Chat broadcast to ${deliveredCount} peers, tracking ${connectedPeers.length}`);
+	console.log(
+		`[P2P Manager] Chat broadcast to ${deliveredCount} peers, tracking ${connectedPeers.length}`
+	);
 }
 
 /**
@@ -514,7 +537,11 @@ export function broadcastDelete(messageId: string): void {
 /**
  * Broadcast a reaction
  */
-export function broadcastReaction(messageId: string, reaction: string, action: 'add' | 'remove'): void {
+export function broadcastReaction(
+	messageId: string,
+	reaction: string,
+	action: 'add' | 'remove'
+): void {
 	const userState = get(user);
 	const roomId = get(currentRoomId);
 
@@ -552,9 +579,8 @@ function requestSyncFrom(peerDeviceId: string, roomId: string): void {
 
 		// Get stats from store
 		const roomMessages = messages.getRoomMessages(roomId);
-		const lastSync = roomMessages.length > 0
-			? Math.max(...roomMessages.map(m => m.timestamp))
-			: 0;
+		const lastSync =
+			roomMessages.length > 0 ? Math.max(...roomMessages.map((m) => m.timestamp)) : 0;
 
 		const syncRequest: SyncRequestMessage = {
 			type: 'sync-request',
@@ -621,8 +647,13 @@ function startReconnection(roomId: string, config?: Partial<P2PConfig>): void {
 		reconnectAttempts++;
 
 		// Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s
-		const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
-		console.log(`[P2P Manager] Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
+		const delay = Math.min(
+			BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1),
+			MAX_RECONNECT_DELAY
+		);
+		console.log(
+			`[P2P Manager] Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`
+		);
 
 		// Update store with reconnection state (before waiting)
 		connection.setReconnecting(true, reconnectAttempts, delay);
@@ -799,7 +830,7 @@ export async function reconnectP2P(): Promise<void> {
 /**
  * Setup visibility change listener for mobile background/foreground handling
  */
-export function setupVisibilityHandler(roomId: string, config?: Partial<P2PConfig>): void {
+export function setupVisibilityHandler(_roomId: string, _config?: Partial<P2PConfig>): void {
 	if (typeof document === 'undefined') return;
 
 	// Remove existing handler if any
@@ -820,11 +851,15 @@ export function setupVisibilityHandler(roomId: string, config?: Partial<P2PConfi
 			const wsConnected = p2pConnection?.isWebSocketConnected?.() ?? false;
 			const hasDataChannels = (p2pConnection?.getConnectedPeers()?.length ?? 0) > 0;
 
-			console.log(`[P2P Manager] Connection state: ws=${wsConnected}, channels=${hasDataChannels}, storeConnected=${isP2PConnected()}`);
+			console.log(
+				`[P2P Manager] Connection state: ws=${wsConnected}, channels=${hasDataChannels}, storeConnected=${isP2PConnected()}`
+			);
 
 			// Only reconnect if WebSocket is actually dead AND we were hidden for a while
 			if (!wsConnected && hiddenDuration > STALE_CONNECTION_THRESHOLD) {
-				console.log('[P2P Manager] WebSocket disconnected after long background, triggering reconnect');
+				console.log(
+					'[P2P Manager] WebSocket disconnected after long background, triggering reconnect'
+				);
 				emitToast('info', 'Reconnecting...');
 				try {
 					await reconnectP2P();
@@ -864,12 +899,12 @@ export function cleanupVisibilityHandler(): void {
 /**
  * Setup network change listener for WiFi/cellular transitions
  */
-export function setupNetworkHandler(roomId: string, config?: Partial<P2PConfig>): void {
+export function setupNetworkHandler(_roomId: string, _config?: Partial<P2PConfig>): void {
 	if (typeof navigator === 'undefined') return;
 
-	const connection = (navigator as unknown as { connection?: { addEventListener: (type: string, listener: () => void) => void; removeEventListener: (type: string, listener: () => void) => void; type?: string; effectiveType?: string; downlink?: number } }).connection;
+	const connection = getNetworkInfo();
 
-	if (!connection) {
+	if (!connection?.addEventListener || !connection.removeEventListener) {
 		console.log('[P2P Manager] Network Information API not available');
 		return;
 	}
@@ -907,8 +942,8 @@ export function setupNetworkHandler(roomId: string, config?: Partial<P2PConfig>)
  */
 export function cleanupNetworkHandler(): void {
 	if (networkHandler && typeof navigator !== 'undefined') {
-		const connection = (navigator as unknown as { connection?: { removeEventListener: (type: string, listener: () => void) => void } }).connection;
-		if (connection) {
+		const connection = getNetworkInfo();
+		if (connection?.removeEventListener) {
 			connection.removeEventListener('change', networkHandler);
 		}
 		networkHandler = null;
