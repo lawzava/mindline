@@ -1,27 +1,35 @@
 import type { Handle } from '@sveltejs/kit';
 
-/**
- * Document responses come from the SvelteKit worker, and Cloudflare Pages
- * applies `_headers` only to static assets — so every header that matters
- * for HTML must be set here.
- *
- * Cache-Control: no-store is load-bearing: a zone-level cache rule once
- * edge-cached the HTML, and after a deploy the stale page referenced hashed
- * chunks that no longer existed, taking the app down entirely (2026-06-11).
- * Documents must never be cached; hashed assets carry their own immutable
- * headers via `_headers`.
- */
+// Security and cache headers. The Content-Security-Policy itself is emitted by
+// SvelteKit (see svelte.config.js `kit.csp`); these are the complementary
+// headers, applied to every response that flows through SvelteKit (documents,
+// endpoints, SSR). Note: adapter-node serves prebuilt static assets
+// (/_app/immutable, service-worker.js, /icons, ...) via its own middleware
+// *before* hooks run, so those responses don't pass through here — in
+// production set blanket headers at the TLS reverse proxy in front of the app.
+// Keep in sync with PROTOCOL.md §6.
+const SECURITY_HEADERS: Record<string, string> = {
+	'X-Content-Type-Options': 'nosniff',
+	'X-Frame-Options': 'DENY',
+	'Referrer-Policy': 'no-referrer',
+	'X-DNS-Prefetch-Control': 'off',
+	'Permissions-Policy': 'camera=(self), microphone=(self), geolocation=(), payment=(), usb=()'
+};
+
 export const handle: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
 
-	response.headers.set('Cache-Control', 'no-store');
-	response.headers.set('X-Content-Type-Options', 'nosniff');
-	response.headers.set('X-Frame-Options', 'DENY');
-	response.headers.set('Referrer-Policy', 'no-referrer');
-	response.headers.set(
-		'Permissions-Policy',
-		'camera=(self), microphone=(self), geolocation=(), payment=(), usb=()'
-	);
+	for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+		response.headers.set(name, value);
+	}
+
+	// Cache-Control: no-store is load-bearing. A stale, edge-cached HTML document
+	// once referenced hashed chunks that no longer existed after a deploy, taking
+	// the app down entirely (2026-06-11). Documents and unhashed responses must
+	// never be cached; immutable build assets keep their own long-lived header.
+	if (!event.url.pathname.startsWith('/_app/immutable/')) {
+		response.headers.set('Cache-Control', 'no-store');
+	}
 
 	return response;
 };
