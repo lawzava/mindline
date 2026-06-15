@@ -17,7 +17,9 @@ sw.addEventListener('install', (event) => {
 
 sw.addEventListener('activate', (event) => {
 	event.waitUntil(
-		caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+		caches
+			.keys()
+			.then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
 	);
 });
 
@@ -27,7 +29,9 @@ sw.addEventListener('fetch', (event) => {
 	// Cache-first for immutable build assets only; rooms stay network-first.
 	if (ASSETS.includes(url.pathname)) {
 		event.respondWith(
-			caches.open(CACHE).then(async (cache) => (await cache.match(event.request)) ?? fetch(event.request))
+			caches
+				.open(CACHE)
+				.then(async (cache) => (await cache.match(event.request)) ?? fetch(event.request))
 		);
 	}
 });

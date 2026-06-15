@@ -3,10 +3,41 @@
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
 	import { MessageList, MessageInput, ConnectionStatus } from '$lib/components/chat';
-	import { currentRoomId, currentRoomMessages, messages, user, drafts, mediaConsent } from '$lib/stores';
+	import {
+		currentRoomId,
+		currentRoomMessages,
+		messages,
+		user,
+		drafts,
+		mediaConsent
+	} from '$lib/stores';
 	import { clearRoomMessages, loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
 	import { burnRoomData } from '$lib/storage/burn';
-	import { initializeP2P, disconnectP2P, applyReaction, broadcastChat, broadcastTyping, broadcastEdit, broadcastDelete, broadcastReaction, getP2PConfig, getSessionDeviceId, getTestConfig, isTestMode, isMobileDevice, setupVisibilityHandler, cleanupVisibilityHandler, setupNetworkHandler, cleanupNetworkHandler, setupPageLifecycleHandlers, cleanupPageLifecycleHandlers, NoRoomKeyError, sendMediaMessage, acceptMediaTransfer, declineMediaTransfer } from '$lib/p2p';
+	import {
+		initializeP2P,
+		disconnectP2P,
+		applyReaction,
+		broadcastChat,
+		broadcastTyping,
+		broadcastEdit,
+		broadcastDelete,
+		broadcastReaction,
+		getP2PConfig,
+		getSessionDeviceId,
+		getTestConfig,
+		isTestMode,
+		isMobileDevice,
+		setupVisibilityHandler,
+		cleanupVisibilityHandler,
+		setupNetworkHandler,
+		cleanupNetworkHandler,
+		setupPageLifecycleHandlers,
+		cleanupPageLifecycleHandlers,
+		NoRoomKeyError,
+		sendMediaMessage,
+		acceptMediaTransfer,
+		declineMediaTransfer
+	} from '$lib/p2p';
 	import type { Message } from '$lib/types/message';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -98,7 +129,9 @@
 				}
 				// P2P failed but app still works in local mode
 				console.warn('P2P initialization failed (running in local mode):', error);
-				toast.warning("P2P connection failed. Running in local mode - messages won't sync with others.");
+				toast.warning(
+					"P2P connection failed. Running in local mode - messages won't sync with others."
+				);
 			}
 		} catch (error) {
 			console.error('Failed to join room:', error);
@@ -168,10 +201,7 @@
 		}
 	}
 
-	async function handleSendMedia(
-		data: Uint8Array,
-		meta: Parameters<typeof sendMediaMessage>[1]
-	) {
+	async function handleSendMedia(data: Uint8Array, meta: Parameters<typeof sendMediaMessage>[1]) {
 		try {
 			await sendMediaMessage(data, meta);
 		} catch (error) {
@@ -317,8 +347,8 @@
 		<div class="flex max-w-sm flex-col items-center gap-3 text-center">
 			<p class="text-lg font-medium">This room is locked</p>
 			<p class="text-sm text-muted-foreground">
-				Your link is missing the room key. Ask the person who invited you for the full
-				invite link; it ends with <code>#k=...</code> and never reaches our servers.
+				Your link is missing the room key. Ask the person who invited you for the full invite link;
+				it ends with <code>#k=...</code> and never reaches our servers.
 			</p>
 			<Button variant="outline" onclick={() => goto('/')}>Back to start</Button>
 		</div>
@@ -421,7 +451,10 @@
 
 		<!-- Large-transfer consent prompts -->
 		{#each $mediaConsent as request (request.offer.transferId)}
-			<div class="flex items-center gap-2 border-t border-border bg-muted/40 px-4 py-2 text-sm" data-testid="media-consent">
+			<div
+				class="flex items-center gap-2 border-t border-border bg-muted/40 px-4 py-2 text-sm"
+				data-testid="media-consent"
+			>
 				<span class="min-w-0 flex-1 truncate">
 					{request.offer.senderName} wants to send
 					<strong>{request.offer.name}</strong>
@@ -432,14 +465,23 @@
 				<Button size="sm" onclick={() => acceptMediaTransfer(request.offer, request.peerDeviceId)}>
 					Accept
 				</Button>
-				<Button size="sm" variant="ghost" onclick={() => declineMediaTransfer(request.offer.transferId)}>
+				<Button
+					size="sm"
+					variant="ghost"
+					onclick={() => declineMediaTransfer(request.offer.transferId)}
+				>
 					Decline
 				</Button>
 			</div>
 		{/each}
 
 		<!-- Message input -->
-		<MessageInput onSend={handleSend} onSendMedia={handleSendMedia} onTyping={handleTyping} {isSending} />
+		<MessageInput
+			onSend={handleSend}
+			onSendMedia={handleSendMedia}
+			onTyping={handleTyping}
+			{isSending}
+		/>
 	</div>
 
 	<!-- Leave confirmation dialog -->
@@ -448,9 +490,8 @@
 			<AlertDialog.Header>
 				<AlertDialog.Title>Leave Room?</AlertDialog.Title>
 				<AlertDialog.Description>
-					Leave keeps this room's history on this device. Burn also deletes the room's
-					keys, history, and media from this device — other participants keep their
-					copies.
+					Leave keeps this room's history on this device. Burn also deletes the room's keys,
+					history, and media from this device — other participants keep their copies.
 				</AlertDialog.Description>
 			</AlertDialog.Header>
 			<AlertDialog.Footer>

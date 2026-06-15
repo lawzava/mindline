@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { generateTestRoomId, waitForConnectionStatus,
-	keyFragmentFor
-} from './helpers/test-utils';
+import { generateTestRoomId, waitForConnectionStatus, keyFragmentFor } from './helpers/test-utils';
 
 test.describe('Connection Status', () => {
 	test.describe.configure({ mode: 'serial' });
@@ -47,7 +45,12 @@ test.describe('Connection Status', () => {
 		// Should be in a stable state - extract just the base status
 		const statusText = await statusBadge.textContent();
 		// Remove peer count and reconnect attempt numbers
-		const baseStatus = statusText?.split('\u00b7')[0].replace(/\s*\(\d+\/\d+\)/, '').replace(/\.+\s*$/, '').trim() || '';
+		const baseStatus =
+			statusText
+				?.split('\u00b7')[0]
+				.replace(/\s*\(\d+\/\d+\)/, '')
+				.replace(/\.+\s*$/, '')
+				.trim() || '';
 		expect(['Connected', 'Local', 'Connecting', 'Reconnecting']).toContainEqual(baseStatus);
 	});
 

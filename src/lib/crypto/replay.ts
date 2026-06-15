@@ -123,7 +123,10 @@ export class ReplayGuard {
 		);
 	}
 
-	static hydrate(state: ReplayState, opts: { ephWindow?: number; maxEpochs?: number } = {}): ReplayGuard {
+	static hydrate(
+		state: ReplayState,
+		opts: { ephWindow?: number; maxEpochs?: number } = {}
+	): ReplayGuard {
 		const guard = new ReplayGuard(opts);
 		const cloneSlots = (slots: unknown): EpochSlot[] =>
 			Array.isArray(slots)

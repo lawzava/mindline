@@ -133,14 +133,14 @@
 						</div>
 						{#if $relayedPeers.length > 0}
 							<p class="border-t border-border pt-2 text-xs text-muted-foreground">
-								Relayed peers get live messages only — history and files need a direct
-								connection. Encrypted messages pass through the signaling server.
+								Relayed peers get live messages only — history and files need a direct connection.
+								Encrypted messages pass through the signaling server.
 							</p>
 							{#if $rotationStranded}
 								<!-- §1.4/§3.6 honesty: room keys never transit the relay -->
 								<p class="text-xs text-muted-foreground" data-testid="rotation-stranded">
-									Key rotation pending direct connection — relayed peers can't receive the
-									room's newer keys and won't see messages sent under them.
+									Key rotation pending direct connection — relayed peers can't receive the room's
+									newer keys and won't see messages sent under them.
 								</p>
 							{/if}
 						{/if}

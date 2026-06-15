@@ -79,7 +79,9 @@
 					const processed = await processImage(file);
 					await onSendMedia(processed.data, {
 						kind: 'image',
-						name: file.name.replace(/\.[a-z0-9]+$/i, '') + (processed.mime === 'image/webp' ? '.webp' : '.jpg'),
+						name:
+							file.name.replace(/\.[a-z0-9]+$/i, '') +
+							(processed.mime === 'image/webp' ? '.webp' : '.jpg'),
 						mime: processed.mime,
 						thumb: processed.thumb,
 						thumbMime: processed.thumbMime
@@ -199,14 +201,28 @@
 >
 	{#if recorder?.isRecording}
 		<div class="flex h-11 flex-1 items-center gap-3 rounded-[1.375rem] bg-destructive/5 px-4">
-			<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-destructive motion-reduce:animate-none"></span>
-			<span class="text-xs tabular-nums" data-testid="record-elapsed">{formatSeconds(recordSeconds)}</span>
+			<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-destructive motion-reduce:animate-none"
+			></span>
+			<span class="text-xs tabular-nums" data-testid="record-elapsed"
+				>{formatSeconds(recordSeconds)}</span
+			>
 			<span class="flex-1 text-sm text-muted-foreground">Recording voice note...</span>
-			<Button variant="ghost" size="icon" class="h-9 w-9 text-destructive" onclick={cancelVoice} aria-label="Cancel recording">
+			<Button
+				variant="ghost"
+				size="icon"
+				class="h-9 w-9 text-destructive"
+				onclick={cancelVoice}
+				aria-label="Cancel recording"
+			>
 				<X class="h-4 w-4" />
 			</Button>
 		</div>
-		<Button onclick={toggleVoice} size="icon" class="h-10 w-10 shrink-0 rounded-full" data-testid="voice-stop-btn">
+		<Button
+			onclick={toggleVoice}
+			size="icon"
+			class="h-10 w-10 shrink-0 rounded-full"
+			data-testid="voice-stop-btn"
+		>
 			<Square class="h-4 w-4" />
 			<span class="sr-only">Stop and send</span>
 		</Button>
@@ -256,7 +272,10 @@
 			<!-- The wire dot: glows only when your words are actually on a wire
 			     (text in the field AND at least one peer connected). -->
 			{#if message.trim() && $peerCount > 0}
-				<span class="breathe absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-draft" aria-hidden="true"></span>
+				<span
+					class="breathe absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-draft"
+					aria-hidden="true"
+				></span>
 			{/if}
 			{#if onSendMedia && !message.trim()}
 				<Button

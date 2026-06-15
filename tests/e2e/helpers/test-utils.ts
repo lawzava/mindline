@@ -66,10 +66,13 @@ export async function waitForConnectionStatus(
 ): Promise<void> {
 	const statusBadge = page.locator('[data-testid="connection-status"]');
 
-	const statusLocator = statuses.reduce((locator, status, index) => {
-		if (index === 0) return statusBadge.filter({ hasText: status });
-		return locator.or(statusBadge.filter({ hasText: status }));
-	}, statusBadge.filter({ hasText: statuses[0] }));
+	const statusLocator = statuses.reduce(
+		(locator, status, index) => {
+			if (index === 0) return statusBadge.filter({ hasText: status });
+			return locator.or(statusBadge.filter({ hasText: status }));
+		},
+		statusBadge.filter({ hasText: statuses[0] })
+	);
 
 	await expect(statusLocator).toBeVisible({ timeout: 15000 });
 }

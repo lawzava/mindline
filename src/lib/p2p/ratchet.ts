@@ -146,7 +146,10 @@ export async function verifyCert(cert: GrantCert, roomId: string): Promise<boole
  * gid must commit to the carried rk (no rk substitution under an honest
  * member's identity). Returns null on any failure.
  */
-export async function verifyGrant(grant: RekeyGrant, roomId: string): Promise<VerifiedGrant | null> {
+export async function verifyGrant(
+	grant: RekeyGrant,
+	roomId: string
+): Promise<VerifiedGrant | null> {
 	try {
 		const rk = fromB64url(grant.rk);
 		if (!rk || rk.length !== 32) return null;

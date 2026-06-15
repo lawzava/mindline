@@ -312,9 +312,10 @@ describe('per-device KEM grant wrapping (PROTOCOL.md §1.4 v4)', () => {
 		await a.acceptHello(await b.makeHello('B', bind('bind')), bind('bind'));
 		await b.acceptHello(await a.makeHello('A', bind('bind')), bind('bind'));
 		await a.mintGeneration();
-		const body = (await b.openMessage(
-			JSON.parse(await a.grantWireFor(b.deviceId, 0))
-		)) as Record<string, Record<string, unknown>>;
+		const body = (await b.openMessage(JSON.parse(await a.grantWireFor(b.deviceId, 0)))) as Record<
+			string,
+			Record<string, unknown>
+		>;
 		expect(body.grant.rk).toBeUndefined();
 		const wrap = body.grant.wrap as Record<string, string>;
 		expect(typeof wrap.ct).toBe('string');
@@ -329,10 +330,12 @@ describe('per-device KEM grant wrapping (PROTOCOL.md §1.4 v4)', () => {
 		await a.acceptHello(await b.makeHello('B', bind('bind')), bind('bind'));
 		await b.acceptHello(await a.makeHello('A', bind('bind')), bind('bind'));
 		await a.mintGeneration();
-		const body = (await b.openMessage(
-			JSON.parse(await a.grantWireFor(b.deviceId, 0))
-		)) as Record<string, Record<string, string>>;
-		body.grant.cert = body.grant.cert.slice(0, -4) + (body.grant.cert.endsWith('AAAA') ? 'BBBB' : 'AAAA');
+		const body = (await b.openMessage(JSON.parse(await a.grantWireFor(b.deviceId, 0)))) as Record<
+			string,
+			Record<string, string>
+		>;
+		body.grant.cert =
+			body.grant.cert.slice(0, -4) + (body.grant.cert.endsWith('AAAA') ? 'BBBB' : 'AAAA');
 		await expect(b.handleRekeyGrant(body as never)).rejects.toThrow(/cert/i);
 		expect(b.generation.g).toBe(0);
 	});
@@ -444,15 +447,21 @@ describe('session epoch (PROTOCOL.md §2 — monotonic device high-water)', () =
 		const s1 = await CryptoSession.create('room-epoch', key);
 		await verifier!.acceptHello(await s1!.makeHello('A', bind('bind')), bind('bind'));
 		const e1 = Number(
-			(await verifier!.openMessage(JSON.parse(await s1!.sealMessage({ type: 'chat', content: '1' }))))
-				.epoch
+			(
+				await verifier!.openMessage(
+					JSON.parse(await s1!.sealMessage({ type: 'chat', content: '1' }))
+				)
+			).epoch
 		);
 
 		const s2 = await CryptoSession.create('room-epoch', key);
 		await verifier!.acceptHello(await s2!.makeHello('A', bind('bind2')), bind('bind2'));
 		const e2 = Number(
-			(await verifier!.openMessage(JSON.parse(await s2!.sealMessage({ type: 'chat', content: '2' }))))
-				.epoch
+			(
+				await verifier!.openMessage(
+					JSON.parse(await s2!.sealMessage({ type: 'chat', content: '2' }))
+				)
+			).epoch
 		);
 
 		expect(e2).toBeGreaterThan(e1);

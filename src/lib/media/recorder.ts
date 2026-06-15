@@ -143,7 +143,10 @@ function resamplePeaks(peaks: number[], buckets: number): number[] {
 	const out: number[] = [];
 	const per = peaks.length / buckets;
 	for (let i = 0; i < buckets; i++) {
-		const slice = peaks.slice(Math.floor(i * per), Math.max(Math.floor((i + 1) * per), Math.floor(i * per) + 1));
+		const slice = peaks.slice(
+			Math.floor(i * per),
+			Math.max(Math.floor((i + 1) * per), Math.floor(i * per) + 1)
+		);
 		out.push(Number(Math.max(...slice, 0).toFixed(3)));
 	}
 	return out;

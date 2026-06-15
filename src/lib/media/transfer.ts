@@ -432,14 +432,24 @@ export class MediaTransferEngine {
 
 		const expectedCount = Math.max(1, Math.ceil(offer.size / CHUNK_SIZE));
 		const hash = await sha256b64url(assembled);
-		if (assembled.byteLength !== offer.size || indices.length !== expectedCount || hash !== offer.sha256) {
+		if (
+			assembled.byteLength !== offer.size ||
+			indices.length !== expectedCount ||
+			hash !== offer.sha256
+		) {
 			channel.close();
 			this.abort(offer.transferId, peerDeviceId, 'integrity check failed');
 			this.deps.events.onAborted(offer.transferId, 'integrity check failed', peerDeviceId);
 			return;
 		}
 
-		await putBlob(this.deps.session.roomKeys, this.deps.roomId, offer.transferId, assembled, offer.mime);
+		await putBlob(
+			this.deps.session.roomKeys,
+			this.deps.roomId,
+			offer.transferId,
+			assembled,
+			offer.mime
+		);
 		channel.close();
 
 		this.deps.events.onProgress({

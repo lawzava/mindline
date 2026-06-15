@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { createRoomKey, deriveMediaKey, deriveRoomKeys, importRoomKeyMaterial } from '$lib/crypto/keys';
+import {
+	createRoomKey,
+	deriveMediaKey,
+	deriveRoomKeys,
+	importRoomKeyMaterial
+} from '$lib/crypto/keys';
 import { decryptChunk, encryptChunk, FRAME_OVERHEAD } from '$lib/media/frame';
 
 async function mediaKey(transferId = 't-1') {

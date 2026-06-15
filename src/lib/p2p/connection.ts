@@ -238,7 +238,9 @@ export class P2PConnection {
 	}
 
 	/** An in-band media channel arrived from a verified peer (§5). */
-	onMediaChannel(cb: (peerDeviceId: string, transferId: string, channel: RTCDataChannel) => void): void {
+	onMediaChannel(
+		cb: (peerDeviceId: string, transferId: string, channel: RTCDataChannel) => void
+	): void {
 		this.onMediaChannelCallback = cb;
 	}
 
@@ -773,7 +775,11 @@ export class P2PConnection {
 	 * peer is behind (or a sibling we lack) prompts a grant; a generation
 	 * ahead of ours prompts a request. The hello itself never moves us.
 	 */
-	private async respondToAdvertisedGeneration(peer: Peer, peerG: number, peerGid: string): Promise<void> {
+	private async respondToAdvertisedGeneration(
+		peer: Peer,
+		peerG: number,
+		peerGid: string
+	): Promise<void> {
 		try {
 			const mine = this.session.generation;
 			if (peerG > mine.g) {

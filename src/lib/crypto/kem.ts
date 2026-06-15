@@ -61,9 +61,13 @@ function wrapAad(ctx: KemWrapContext): Uint8Array {
 }
 
 async function wrapKeyFrom(sharedSecret: Uint8Array, usage: KeyUsage): Promise<CryptoKey> {
-	return crypto.subtle.importKey('raw', sharedSecret as BufferSource, { name: 'AES-GCM', length: 256 }, false, [
-		usage
-	]);
+	return crypto.subtle.importKey(
+		'raw',
+		sharedSecret as BufferSource,
+		{ name: 'AES-GCM', length: 256 },
+		false,
+		[usage]
+	);
 }
 
 export async function wrapSecret(
