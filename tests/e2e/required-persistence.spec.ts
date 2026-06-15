@@ -16,7 +16,9 @@ test.describe('Required Persistence', () => {
 		await page.reload();
 
 		await page.locator('[data-testid="room-menu-btn"]').click();
-		await expect(page.getByPlaceholder('Your name')).toHaveValue('RequiredName', { timeout: 10000 });
+		await expect(page.getByPlaceholder('Your name')).toHaveValue('RequiredName', {
+			timeout: 10000
+		});
 	});
 
 	test('persists messages across reload', async ({ page }) => {

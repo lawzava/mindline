@@ -1,10 +1,5 @@
 import { test, expect } from '@playwright/test';
-import {
-	generateTestRoomId,
-	joinRoom,
-	sendMessage,
-	waitForMessage
-} from './helpers/test-utils';
+import { generateTestRoomId, joinRoom, sendMessage, waitForMessage } from './helpers/test-utils';
 
 // Override touch detection for desktop tests - Chromium reports maxTouchPoints > 0 even on desktop
 // and may have ontouchstart in window
@@ -71,7 +66,10 @@ test.describe('Message Edit', () => {
 		await sendMessage(page, 'Test message');
 		await waitForMessage(page, 'Test message');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -91,7 +89,10 @@ test.describe('Message Edit', () => {
 		await sendMessage(page, 'Edit this message');
 		await waitForMessage(page, 'Edit this message');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -111,7 +112,10 @@ test.describe('Message Edit', () => {
 		await sendMessage(page, 'Cancel edit test');
 		await waitForMessage(page, 'Cancel edit test');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -140,7 +144,10 @@ test.describe('Message Edit', () => {
 		await sendMessage(page, 'Cancel button test');
 		await waitForMessage(page, 'Cancel button test');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -166,7 +173,10 @@ test.describe('Message Edit', () => {
 		await sendMessage(page, 'Original content');
 		await waitForMessage(page, 'Original content');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -190,7 +200,10 @@ test.describe('Message Edit', () => {
 		await sendMessage(page, 'Save button test');
 		await waitForMessage(page, 'Save button test');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -214,7 +227,10 @@ test.describe('Message Edit', () => {
 		await sendMessage(page, 'Will be edited');
 		await waitForMessage(page, 'Will be edited');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -236,7 +252,10 @@ test.describe('Message Edit', () => {
 		await sendMessage(page, 'Keep this content');
 		await waitForMessage(page, 'Keep this content');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -260,7 +279,10 @@ test.describe('Message Edit', () => {
 		await sendMessage(page, 'Whitespace test');
 		await waitForMessage(page, 'Whitespace test');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -287,7 +309,10 @@ test.describe('Message Delete', () => {
 		await sendMessage(page, 'Delete option test');
 		await waitForMessage(page, 'Delete option test');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -305,7 +330,10 @@ test.describe('Message Delete', () => {
 		await sendMessage(page, 'Confirm delete test');
 		await waitForMessage(page, 'Confirm delete test');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -325,7 +353,10 @@ test.describe('Message Delete', () => {
 		await sendMessage(page, 'Cancel delete test');
 		await waitForMessage(page, 'Cancel delete test');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -347,7 +378,10 @@ test.describe('Message Delete', () => {
 		await sendMessage(page, 'Delete me');
 		await waitForMessage(page, 'Delete me');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -368,7 +402,10 @@ test.describe('Message Delete', () => {
 		await sendMessage(page, 'Style test');
 		await waitForMessage(page, 'Style test');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 		await message.hover();
@@ -388,7 +425,10 @@ test.describe('Message Delete', () => {
 		await sendMessage(page, 'No actions after delete');
 		await waitForMessage(page, 'No actions after delete');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Delete the message
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -415,7 +455,10 @@ test.describe('Message Delete', () => {
 		await sendMessage(page, 'No reactions after delete');
 		await waitForMessage(page, 'No reactions after delete');
 
-		if (!(await isActionsAvailable(page))) { test.skip(); return; }
+		if (!(await isActionsAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Delete the message
 		const message = page.locator('[data-testid="message-bubble"]').first();

@@ -44,31 +44,59 @@ describe('envelope seal/open (v4)', () => {
 		expect(env.g).toBe(0);
 		expect(env.s).toBe(alice.deviceId);
 		expect(env.sig).toBeTruthy();
-		const opened = await openEnvelope(env, { key: gen0.msg, roomId: ROOM, senderPublicKey: alice.publicKey });
+		const opened = await openEnvelope(env, {
+			key: gen0.msg,
+			roomId: ROOM,
+			senderPublicKey: alice.publicKey
+		});
 		expect(opened).toEqual(body);
 	});
 
 	test('ciphertext does not contain plaintext', async () => {
-		const env = await sealEnvelope(body, { key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 });
+		const env = await sealEnvelope(body, {
+			key: gen0.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 0
+		});
 		expect(JSON.stringify(env)).not.toContain('hello');
 	});
 
 	test('rejects envelope from another room (AAD mismatch)', async () => {
-		const env = await sealEnvelope(body, { key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 });
+		const env = await sealEnvelope(body, {
+			key: gen0.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 0
+		});
 		await expect(
 			openEnvelope(env, { key: gen0.msg, roomId: 'room-2', senderPublicKey: alice.publicKey })
 		).rejects.toThrow();
 	});
 
 	test('rejects envelope decrypted under another generation key', async () => {
-		const env = await sealEnvelope(body, { key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 });
+		const env = await sealEnvelope(body, {
+			key: gen0.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 0
+		});
 		await expect(
 			openEnvelope(env, { key: otherGen.msg, roomId: ROOM, senderPublicKey: alice.publicKey })
 		).rejects.toThrow();
 	});
 
 	test('rejects a generation swap (g bound into AAD)', async () => {
-		const env = await sealEnvelope(body, { key: gen1.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 1 });
+		const env = await sealEnvelope(body, {
+			key: gen1.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 1
+		});
 		// Re-label as g:0 and open with the real g0 key: AAD mismatch + wrong key.
 		const swapped: Envelope = { ...env, g: 0 };
 		await expect(
@@ -77,7 +105,13 @@ describe('envelope seal/open (v4)', () => {
 	});
 
 	test('rejects sender spoofing (s swapped, AAD binds sender)', async () => {
-		const env = await sealEnvelope(body, { key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 });
+		const env = await sealEnvelope(body, {
+			key: gen0.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 0
+		});
 		const forged: Envelope = { ...env, s: bob.deviceId };
 		await expect(
 			openEnvelope(forged, { key: gen0.msg, roomId: ROOM, senderPublicKey: bob.publicKey })
@@ -85,7 +119,13 @@ describe('envelope seal/open (v4)', () => {
 	});
 
 	test('rejects tampered ciphertext', async () => {
-		const env = await sealEnvelope(body, { key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 });
+		const env = await sealEnvelope(body, {
+			key: gen0.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 0
+		});
 		const c = Buffer.from(env.c, 'base64url');
 		c[0] ^= 0xff;
 		const tampered = { ...env, c: c.toString('base64url') };
@@ -95,7 +135,13 @@ describe('envelope seal/open (v4)', () => {
 	});
 
 	test('rejects signature from a different identity', async () => {
-		const env = await sealEnvelope(body, { key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 });
+		const env = await sealEnvelope(body, {
+			key: gen0.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 0
+		});
 		await expect(
 			openEnvelope(env, { key: gen0.msg, roomId: ROOM, senderPublicKey: bob.publicKey })
 		).rejects.toThrow(/signature/i);
@@ -103,7 +149,13 @@ describe('envelope seal/open (v4)', () => {
 
 	test('eph envelopes skip signatures and still round-trip', async () => {
 		const draft = { type: 'typing', content: 'partial dra', seq: 7 } as const;
-		const env = await sealEnvelope(draft, { key: gen0.eph, roomId: ROOM, identity: alice, klass: 'eph', g: 0 });
+		const env = await sealEnvelope(draft, {
+			key: gen0.eph,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'eph',
+			g: 0
+		});
 		expect(env.t).toBe('eph');
 		expect(env.sig).toBeUndefined();
 		const opened = await openEnvelope(env, { key: gen0.eph, roomId: ROOM });
@@ -112,16 +164,32 @@ describe('envelope seal/open (v4)', () => {
 
 	test('hs envelopes are signed and round-trip under the static handshake key', async () => {
 		const hello = { type: 'hello', deviceId: alice.deviceId, seq: 1 } as const;
-		const env = await sealEnvelope(hello, { key: link.hs, roomId: ROOM, identity: alice, klass: 'hs', g: 0 });
+		const env = await sealEnvelope(hello, {
+			key: link.hs,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'hs',
+			g: 0
+		});
 		expect(env.t).toBe('hs');
 		expect(env.g).toBe(0);
 		expect(env.sig).toBeTruthy();
-		const opened = await openEnvelope(env, { key: link.hs, roomId: ROOM, senderPublicKey: alice.publicKey });
+		const opened = await openEnvelope(env, {
+			key: link.hs,
+			roomId: ROOM,
+			senderPublicKey: alice.publicKey
+		});
 		expect(opened).toEqual(hello);
 	});
 
 	test('msg envelope without signature is rejected', async () => {
-		const env = await sealEnvelope(body, { key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 });
+		const env = await sealEnvelope(body, {
+			key: gen0.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 0
+		});
 		const stripped = { ...env };
 		delete stripped.sig;
 		await expect(
@@ -130,7 +198,13 @@ describe('envelope seal/open (v4)', () => {
 	});
 
 	test('rejects v2 envelopes (hard cutover)', async () => {
-		const env = await sealEnvelope(body, { key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 });
+		const env = await sealEnvelope(body, {
+			key: gen0.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 0
+		});
 		await expect(
 			openEnvelope({ ...env, v: 2 } as unknown as Envelope, {
 				key: gen0.msg,
@@ -143,7 +217,10 @@ describe('envelope seal/open (v4)', () => {
 	test('nonces are unique across many seals', async () => {
 		const seen = new Set<string>();
 		for (let i = 0; i < 2000; i++) {
-			const env = await sealEnvelope({ ...body, seq: i }, { key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 });
+			const env = await sealEnvelope(
+				{ ...body, seq: i },
+				{ key: gen0.msg, roomId: ROOM, identity: alice, klass: 'msg', g: 0 }
+			);
 			expect(seen.has(env.n)).toBe(false);
 			seen.add(env.n);
 		}

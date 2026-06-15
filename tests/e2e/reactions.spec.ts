@@ -64,7 +64,10 @@ test.describe('Reactions', () => {
 		await waitForMessage(page, 'Test message');
 
 		// Check if emoji picker is available
-		if (!(await isEmojiPickerAvailable(page))) { test.skip(); return; }
+		if (!(await isEmojiPickerAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Hover over message to trigger group-hover
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -91,7 +94,10 @@ test.describe('Reactions', () => {
 		await waitForMessage(page, 'React to this!');
 
 		// Check if emoji picker is available
-		if (!(await isEmojiPickerAvailable(page))) { test.skip(); return; }
+		if (!(await isEmojiPickerAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Hover and add a reaction
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -113,7 +119,10 @@ test.describe('Reactions', () => {
 		await waitForMessage(page, 'Count test');
 
 		// Check if emoji picker is available
-		if (!(await isEmojiPickerAvailable(page))) { test.skip(); return; }
+		if (!(await isEmojiPickerAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Add a reaction
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -137,7 +146,10 @@ test.describe('Reactions', () => {
 		await waitForMessage(page, 'Toggle test');
 
 		// Check if emoji picker is available
-		if (!(await isEmojiPickerAvailable(page))) { test.skip(); return; }
+		if (!(await isEmojiPickerAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Add a reaction
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -167,7 +179,10 @@ test.describe('Reactions', () => {
 		await waitForMessage(page, 'Multiple reactions');
 
 		// Check if emoji picker is available
-		if (!(await isEmojiPickerAvailable(page))) { test.skip(); return; }
+		if (!(await isEmojiPickerAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		const message = page.locator('[data-testid="message-bubble"]').first();
 
@@ -194,7 +209,10 @@ test.describe('Reactions', () => {
 		await waitForMessage(page, 'Close test');
 
 		// Check if emoji picker is available
-		if (!(await isEmojiPickerAvailable(page))) { test.skip(); return; }
+		if (!(await isEmojiPickerAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Open emoji picker
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -220,7 +238,10 @@ test.describe('Reactions', () => {
 		await waitForMessage(page, 'Keyboard nav test');
 
 		// Check if emoji picker is available
-		if (!(await isEmojiPickerAvailable(page))) { test.skip(); return; }
+		if (!(await isEmojiPickerAvailable(page))) {
+			test.skip();
+			return;
+		}
 
 		// Open emoji picker
 		const message = page.locator('[data-testid="message-bubble"]').first();

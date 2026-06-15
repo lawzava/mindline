@@ -4,12 +4,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { burnRoomData } from '$lib/storage/burn';
 import { loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
 import { getBlob, putBlob } from '$lib/media/blob-store';
-import {
-	loadReplayState,
-	loadRoomKeys,
-	saveReplayState,
-	saveRoomKeys
-} from '$lib/crypto/keystore';
+import { loadReplayState, loadRoomKeys, saveReplayState, saveRoomKeys } from '$lib/crypto/keystore';
 import { createRoomKey, deriveRoomKeys, importRoomKeyMaterial } from '$lib/crypto/keys';
 import type { Message } from '$lib/types/message';
 

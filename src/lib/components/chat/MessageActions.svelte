@@ -33,7 +33,10 @@
 			<span>Edit</span>
 		</DropdownMenu.Item>
 		<DropdownMenu.Separator />
-		<DropdownMenu.Item onclick={() => (showDeleteConfirm = true)} class="gap-2 text-destructive focus:text-destructive cursor-pointer">
+		<DropdownMenu.Item
+			onclick={() => (showDeleteConfirm = true)}
+			class="gap-2 text-destructive focus:text-destructive cursor-pointer"
+		>
 			<Trash2 class="h-4 w-4" />
 			<span>Delete</span>
 		</DropdownMenu.Item>
@@ -50,7 +53,10 @@
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={onDelete} class="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+			<AlertDialog.Action
+				onclick={onDelete}
+				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+			>
 				Delete
 			</AlertDialog.Action>
 		</AlertDialog.Footer>

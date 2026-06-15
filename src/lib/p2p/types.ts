@@ -234,7 +234,13 @@ export type ConnectionLostCallback = (reason: string) => void;
 // Connection State Types
 // ============================================
 
-export type PeerConnectionState = 'new' | 'connecting' | 'connected' | 'disconnected' | 'failed' | 'closed';
+export type PeerConnectionState =
+	| 'new'
+	| 'connecting'
+	| 'connected'
+	| 'disconnected'
+	| 'failed'
+	| 'closed';
 
 export interface PeerState {
 	id: string;

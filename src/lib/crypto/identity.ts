@@ -54,7 +54,11 @@ export async function createDeviceIdentity(): Promise<DeviceIdentity> {
 }
 
 export async function importPeerPublicKey(spki: Uint8Array): Promise<CryptoKey> {
-	return crypto.subtle.importKey('spki', spki as BufferSource, { name: 'ECDSA', namedCurve: 'P-256' }, true, [
-		'verify'
-	]);
+	return crypto.subtle.importKey(
+		'spki',
+		spki as BufferSource,
+		{ name: 'ECDSA', namedCurve: 'P-256' },
+		true,
+		['verify']
+	);
 }

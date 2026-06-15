@@ -128,7 +128,10 @@ export class CryptoSession {
 	 * previously persisted keys. Returns null when neither exists — the
 	 * caller is knocking on a room it has no key for.
 	 */
-	static async create(roomId: string, fragmentKey: Uint8Array | null): Promise<CryptoSession | null> {
+	static async create(
+		roomId: string,
+		fragmentKey: Uint8Array | null
+	): Promise<CryptoSession | null> {
 		let keys: RoomKeys | null;
 		let ratchet: GenerationRatchet;
 		if (fragmentKey) {
@@ -228,12 +231,7 @@ export class CryptoSession {
 	async verifySignalingAuth(deviceId: string, clientId: string, tag: string): Promise<boolean> {
 		const bytes = fromB64url(tag);
 		if (!bytes) return false;
-		return crypto.subtle.verify(
-			'HMAC',
-			this.keys.auth,
-			bytes,
-			lp(deviceId, clientId, this.roomId)
-		);
+		return crypto.subtle.verify('HMAC', this.keys.auth, bytes, lp(deviceId, clientId, this.roomId));
 	}
 
 	/** Key-confirmation hello (§3.4), serialized for the wire. */

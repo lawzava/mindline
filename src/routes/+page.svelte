@@ -114,7 +114,9 @@
 	<title>Mindline</title>
 </svelte:head>
 
-<div class="flex flex-1 items-start justify-center overflow-y-auto p-6 pt-[14vh] sm:items-center sm:pt-6">
+<div
+	class="flex flex-1 items-start justify-center overflow-y-auto p-6 pt-[14vh] sm:items-center sm:pt-6"
+>
 	<div class="w-full max-w-md space-y-8">
 		<!-- The promise, stated then demonstrated -->
 		<div class="space-y-3">
@@ -191,8 +193,8 @@
 		</div>
 
 		<p class="text-sm leading-relaxed text-muted-foreground">
-			Messages travel device to device, end-to-end encrypted. No accounts. Nothing is stored on
-			a server.
+			Messages travel device to device, end-to-end encrypted. No accounts. Nothing is stored on a
+			server.
 		</p>
 	</div>
 </div>

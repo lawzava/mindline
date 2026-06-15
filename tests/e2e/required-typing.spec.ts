@@ -109,9 +109,7 @@ test.describe('Required Live Typing + Wire Encryption', () => {
 		expect(frames.length).toBeGreaterThan(0);
 
 		// No plaintext marker in anything that left this device.
-		const leaked = frames.filter(
-			(f) => f.text.includes(marker) || f.text.includes(draftMarker)
-		);
+		const leaked = frames.filter((f) => f.text.includes(marker) || f.text.includes(draftMarker));
 		expect(leaked).toEqual([]);
 
 		// Both channels carried v3 envelopes (nonce + ciphertext + generation,

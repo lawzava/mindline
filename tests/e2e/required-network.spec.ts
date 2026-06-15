@@ -20,7 +20,9 @@ test.describe('Required Network', () => {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(window as any).__relayFrames = [];
 			const originalSend = WebSocket.prototype.send;
-			WebSocket.prototype.send = function (data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+			WebSocket.prototype.send = function (
+				data: string | ArrayBufferLike | Blob | ArrayBufferView
+			) {
 				try {
 					if (typeof data === 'string') {
 						const parsed = JSON.parse(data);
@@ -46,7 +48,9 @@ test.describe('Required Network', () => {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(window as any).__relayFrames = [];
 			const originalSend = WebSocket.prototype.send;
-			WebSocket.prototype.send = function (data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+			WebSocket.prototype.send = function (
+				data: string | ArrayBufferLike | Blob | ArrayBufferView
+			) {
 				try {
 					if (typeof data === 'string') {
 						const parsed = JSON.parse(data);

@@ -138,7 +138,11 @@ function createConnectionStore() {
 		/**
 		 * Set reconnection state
 		 */
-		setReconnecting: (isReconnecting: boolean, attemptCount: number = 0, nextRetryMs: number = 0) => {
+		setReconnecting: (
+			isReconnecting: boolean,
+			attemptCount: number = 0,
+			nextRetryMs: number = 0
+		) => {
 			update((state) => ({
 				...state,
 				reconnection: {

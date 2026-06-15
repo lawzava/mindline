@@ -90,13 +90,10 @@ function createMessagesStore() {
 export const messages = createMessagesStore();
 
 // Derived store for current room's messages
-export const currentRoomMessages = derived(
-	[messages, currentRoomId],
-	([$messages, $roomId]) => {
-		if (!$roomId) return [];
-		return $messages.get($roomId) || [];
-	}
-);
+export const currentRoomMessages = derived([messages, currentRoomId], ([$messages, $roomId]) => {
+	if (!$roomId) return [];
+	return $messages.get($roomId) || [];
+});
 
 // Derived store for message count in current room
 export const messageCount = derived(currentRoomMessages, ($messages) => $messages.length);

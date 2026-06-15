@@ -171,7 +171,9 @@ async function main() {
 		);
 	}
 	if (metrics.serverErrors > config.maxServerErrors) {
-		failures.push(`serverErrors ${metrics.serverErrors} > maxServerErrors ${config.maxServerErrors}`);
+		failures.push(
+			`serverErrors ${metrics.serverErrors} > maxServerErrors ${config.maxServerErrors}`
+		);
 	}
 
 	if (failures.length > 0) {

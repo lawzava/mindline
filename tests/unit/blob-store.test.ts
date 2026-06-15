@@ -1,7 +1,12 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { createRoomKey, deriveRoomKeys, importRoomKeyMaterial, type RoomKeys } from '$lib/crypto/keys';
+import {
+	createRoomKey,
+	deriveRoomKeys,
+	importRoomKeyMaterial,
+	type RoomKeys
+} from '$lib/crypto/keys';
 import { burnRoomBlobs, deleteBlob, getBlob, putBlob } from '$lib/media/blob-store';
 
 let keys: RoomKeys;

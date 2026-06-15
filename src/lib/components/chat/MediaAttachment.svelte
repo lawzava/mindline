@@ -64,7 +64,9 @@
 
 <div class="max-w-xs" data-testid="media-attachment" data-state={attachment.state}>
 	{#if isFailed}
-		<div class="flex items-center gap-2 rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
+		<div
+			class="flex items-center gap-2 rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive"
+		>
 			<TriangleAlert class="h-4 w-4 shrink-0" />
 			<span>Transfer failed: {attachment.name}</span>
 		</div>
@@ -83,7 +85,10 @@
 				<span class="ml-auto tabular-nums">{percent}%</span>
 			</div>
 			<div class="h-1 overflow-hidden rounded-full bg-muted">
-				<div class="h-full rounded-full bg-primary transition-[width]" style="width: {percent}%"></div>
+				<div
+					class="h-full rounded-full bg-primary transition-[width]"
+					style="width: {percent}%"
+				></div>
 			</div>
 		</div>
 	{:else if attachment.kind === 'image'}
@@ -105,13 +110,16 @@
 		{#if objectUrl}
 			<div class="flex items-center gap-2">
 				<audio controls src={objectUrl} class="h-10 max-w-full" data-testid="media-audio"></audio>
-				<span class="text-xs tabular-nums text-muted-foreground">{formatDuration(attachment.duration)}</span>
+				<span class="text-xs tabular-nums text-muted-foreground"
+					>{formatDuration(attachment.duration)}</span
+				>
 			</div>
 		{/if}
 	{:else if attachment.kind === 'video'}
 		{#if objectUrl}
 			<!-- svelte-ignore a11y_media_has_caption -->
-			<video controls src={objectUrl} class="max-h-80 w-full rounded-md" data-testid="media-video"></video>
+			<video controls src={objectUrl} class="max-h-80 w-full rounded-md" data-testid="media-video"
+			></video>
 		{/if}
 	{:else}
 		<a

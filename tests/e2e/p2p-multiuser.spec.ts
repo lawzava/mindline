@@ -52,7 +52,9 @@ test.describe('P2P Multi-User Messaging', () => {
 		await waitForP2PSync(2000);
 
 		// User A should see the message
-		await expect(page.locator('[data-testid="message-list"]').getByText('Hello from B!')).toBeVisible({ timeout: 10000 });
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('Hello from B!')
+		).toBeVisible({ timeout: 10000 });
 
 		await cleanup(contextB);
 	});
@@ -167,8 +169,12 @@ test.describe('P2P Multi-User Messaging', () => {
 		await waitForP2PSync(3000);
 
 		// Both B and C should receive it
-		await expect(pageB.locator('[data-testid="message-list"]').getByText('Message to all')).toBeVisible({ timeout: 10000 });
-		await expect(pageC.locator('[data-testid="message-list"]').getByText('Message to all')).toBeVisible({ timeout: 10000 });
+		await expect(
+			pageB.locator('[data-testid="message-list"]').getByText('Message to all')
+		).toBeVisible({ timeout: 10000 });
+		await expect(
+			pageC.locator('[data-testid="message-list"]').getByText('Message to all')
+		).toBeVisible({ timeout: 10000 });
 
 		await cleanup(contextB);
 		await cleanup(contextC);
@@ -230,7 +236,9 @@ test.describe('P2P Multi-User Messaging', () => {
 		// User B sends a message
 		await sendMessage(pageB, 'Before refresh');
 		await waitForP2PSync(2000);
-		await expect(page.locator('[data-testid="message-list"]').getByText('Before refresh')).toBeVisible({ timeout: 10000 });
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('Before refresh')
+		).toBeVisible({ timeout: 10000 });
 
 		// User B refreshes their page
 		await pageB.reload();
@@ -250,8 +258,12 @@ test.describe('P2P Multi-User Messaging', () => {
 		await waitForP2PSync(2000);
 
 		// User A should see both messages
-		await expect(page.locator('[data-testid="message-list"]').getByText('Before refresh')).toBeVisible();
-		await expect(page.locator('[data-testid="message-list"]').getByText('After refresh')).toBeVisible({ timeout: 10000 });
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('Before refresh')
+		).toBeVisible();
+		await expect(
+			page.locator('[data-testid="message-list"]').getByText('After refresh')
+		).toBeVisible({ timeout: 10000 });
 
 		await cleanup(contextB);
 	});
@@ -280,7 +292,9 @@ test.describe('P2P Multi-User Messaging', () => {
 		await waitForP2PSync(2000);
 
 		// User B should see it
-		await expect(pageB.locator('[data-testid="message-list"]').getByText('Original content')).toBeVisible({ timeout: 10000 });
+		await expect(
+			pageB.locator('[data-testid="message-list"]').getByText('Original content')
+		).toBeVisible({ timeout: 10000 });
 
 		// Skip edit test if actions not available (touch device)
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -305,8 +319,12 @@ test.describe('P2P Multi-User Messaging', () => {
 		await waitForP2PSync(2000);
 
 		// User B should see the edited content
-		await expect(pageB.locator('[data-testid="message-list"]').getByText('Edited content')).toBeVisible({ timeout: 10000 });
-		await expect(pageB.locator('[data-testid="message-bubble"]').first().getByText('(edited)')).toBeVisible();
+		await expect(
+			pageB.locator('[data-testid="message-list"]').getByText('Edited content')
+		).toBeVisible({ timeout: 10000 });
+		await expect(
+			pageB.locator('[data-testid="message-bubble"]').first().getByText('(edited)')
+		).toBeVisible();
 
 		await cleanup(contextB);
 	});
@@ -335,7 +353,9 @@ test.describe('P2P Multi-User Messaging', () => {
 		await waitForP2PSync(2000);
 
 		// User B should see it
-		await expect(pageB.locator('[data-testid="message-list"]').getByText('Will be deleted')).toBeVisible({ timeout: 10000 });
+		await expect(
+			pageB.locator('[data-testid="message-list"]').getByText('Will be deleted')
+		).toBeVisible({ timeout: 10000 });
 
 		// Skip delete test if actions not available
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -358,7 +378,9 @@ test.describe('P2P Multi-User Messaging', () => {
 		await waitForP2PSync(2000);
 
 		// User B should see the deletion
-		await expect(pageB.locator('[data-testid="message-bubble"]').first().getByText('[Message deleted]')).toBeVisible({ timeout: 10000 });
+		await expect(
+			pageB.locator('[data-testid="message-bubble"]').first().getByText('[Message deleted]')
+		).toBeVisible({ timeout: 10000 });
 
 		await cleanup(contextB);
 	});
@@ -387,7 +409,9 @@ test.describe('P2P Multi-User Messaging', () => {
 		await waitForP2PSync(2000);
 
 		// User B should see it
-		await expect(pageB.locator('[data-testid="message-list"]').getByText('React to me')).toBeVisible({ timeout: 10000 });
+		await expect(
+			pageB.locator('[data-testid="message-list"]').getByText('React to me')
+		).toBeVisible({ timeout: 10000 });
 
 		// Check if emoji picker is available
 		const message = page.locator('[data-testid="message-bubble"]').first();
@@ -409,7 +433,9 @@ test.describe('P2P Multi-User Messaging', () => {
 		await waitForP2PSync(2000);
 
 		// User B should see the reaction
-		await expect(pageB.locator('[data-testid="message-bubble"]').first().getByText('👍')).toBeVisible({ timeout: 10000 });
+		await expect(
+			pageB.locator('[data-testid="message-bubble"]').first().getByText('👍')
+		).toBeVisible({ timeout: 10000 });
 
 		await cleanup(contextB);
 	});

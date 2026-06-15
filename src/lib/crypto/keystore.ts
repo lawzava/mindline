@@ -275,7 +275,11 @@ async function sealKemRecord(kem: KemIdentity): Promise<StoredKemIdentity> {
 async function openKemRecord(stored: StoredKemIdentity): Promise<KemIdentity> {
 	const seed = new Uint8Array(
 		await crypto.subtle.decrypt(
-			{ name: 'AES-GCM', iv: stored.nonce as BufferSource, additionalData: KEM_SEED_AAD as BufferSource },
+			{
+				name: 'AES-GCM',
+				iv: stored.nonce as BufferSource,
+				additionalData: KEM_SEED_AAD as BufferSource
+			},
 			stored.wrapKey,
 			stored.wrappedSeed as BufferSource
 		)

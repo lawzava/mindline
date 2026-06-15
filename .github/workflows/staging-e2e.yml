@@ -4,20 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       run_deploy:
-        description: "Run staging deploy commands before tests"
+        description: 'Run staging deploy commands before tests'
         required: false
-        default: "true"
+        default: 'true'
       app_base_url:
-        description: "Staging app URL (optional override)"
+        description: 'Staging app URL (optional override)'
         required: false
       signaling_health_url:
-        description: "Staging signaling health URL (optional override)"
+        description: 'Staging signaling health URL (optional override)'
         required: false
       signaling_ws_url:
-        description: "Staging signaling WebSocket URL for soak test (optional override)"
+        description: 'Staging signaling WebSocket URL for soak test (optional override)'
         required: false
   schedule:
-    - cron: "0 9 * * *"
+    - cron: '0 9 * * *'
 
 jobs:
   deploy-staging:
@@ -34,8 +34,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "pnpm"
+          node-version: '20'
+          cache: 'pnpm'
 
       - name: Install Node dependencies
         run: pnpm install
@@ -65,12 +65,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: ["Desktop Chrome", "Mobile Safari", "Mobile Chrome"]
+        project: ['Desktop Chrome', 'Mobile Safari', 'Mobile Chrome']
     env:
       APP_BASE_URL: ${{ github.event.inputs.app_base_url || vars.STAGING_APP_BASE_URL }}
       SIGNALING_HEALTH_URL: ${{ github.event.inputs.signaling_health_url || vars.STAGING_SIGNALING_HEALTH_URL }}
-      E2E_STRICT_P2P: "1"
-      SKIP_SIGNALING_START: "1"
+      E2E_STRICT_P2P: '1'
+      SKIP_SIGNALING_START: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -85,8 +85,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "pnpm"
+          node-version: '20'
+          cache: 'pnpm'
 
       - name: Install Node dependencies
         run: pnpm install
@@ -121,8 +121,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "pnpm"
+          node-version: '20'
+          cache: 'pnpm'
 
       - name: Install Node dependencies
         run: pnpm install
@@ -157,7 +157,7 @@ jobs:
     env:
       APP_BASE_URL: ${{ github.event.inputs.app_base_url || vars.STAGING_APP_BASE_URL }}
       SIGNALING_HEALTH_URL: ${{ github.event.inputs.signaling_health_url || vars.STAGING_SIGNALING_HEALTH_URL }}
-      SKIP_SIGNALING_START: "1"
+      SKIP_SIGNALING_START: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -167,8 +167,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "pnpm"
+          node-version: '20'
+          cache: 'pnpm'
 
       - name: Install Node dependencies
         run: pnpm install
