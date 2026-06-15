@@ -42,5 +42,6 @@ jobs:
 
       - name: Verify build artifacts
         run: |
-          ls -la .svelte-kit/cloudflare/
-          test -f .svelte-kit/cloudflare/_worker.js
+          ls -la build/
+          test -f build/index.js
+          test -f build/handler.js
