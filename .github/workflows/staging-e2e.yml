@@ -21,6 +21,10 @@ on:
 
 jobs:
   deploy-staging:
+    # Only the canonical repo has the staging deploy/test secrets and vars.
+    # Forks skip this job — and, by dependency, every job below it — so the
+    # scheduled run shows as skipped instead of a recurring red failure.
+    if: github.repository == 'lawzava/mindline'
     runs-on: ubuntu-latest
     env:
       STAGING_APP_DEPLOY_CMD: ${{ vars.STAGING_APP_DEPLOY_CMD }}
