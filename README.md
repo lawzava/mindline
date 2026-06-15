@@ -5,6 +5,16 @@ typed**, character by character. Open a link, you're in a room. No accounts,
 no message servers: messages travel browser-to-browser over WebRTC,
 end-to-end encrypted with a key that lives only in the invite link.
 
+[![CI](https://github.com/lawzava/mindline/actions/workflows/ci.yml/badge.svg)](https://github.com/lawzava/mindline/actions/workflows/ci.yml)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](LICENSE)
+[![No tracking](https://img.shields.io/badge/tracking-none-success.svg)](PRIVACY.md)
+
+> **[Try it live →](https://mindline.chat)** — open two windows and watch the
+> draft form in real time.
+
+<!-- Add a demo here: drop `docs/demo.gif` in the repo and uncomment.
+![Mindline live-typing demo](docs/demo.gif) -->
+
 ## How it works
 
 - **The invite link is the key.** Creating a room generates a random 256-bit
@@ -13,17 +23,20 @@ end-to-end encrypted with a key that lives only in the invite link.
   else can, including the people running the infrastructure.
 - **Everything on the wire is ciphertext.** Every message, live draft,
   history sync, and media chunk is AES-256-GCM encrypted with keys derived
-  from the link key, signed with a per-device P-256 key. The signaling
-  server arranges introductions and, as a last resort, relays ciphertext it
-  cannot read.
+  from the link key, signed with a per-device P-256 key. Room keys are
+  distributed with a hybrid **post-quantum** key exchange (X-Wing:
+  X25519 + ML-KEM-768), so recorded traffic stays confidential against a
+  future quantum computer. The signaling server arranges introductions and,
+  as a last resort, relays ciphertext it cannot read.
 - **Live typing is the point.** Drafts stream over a dedicated lossy channel
   and form in the message stream as wet ink that dries into the sent
   message.
 - **Media is P2P too.** Files, photos (EXIF/GPS stripped by re-encode), and
   voice notes transfer directly between browsers in encrypted 15 KiB chunks
   with receiver consent. Nothing transits a server.
-- **History stays on devices.** Messages persist locally; new participants
-  receive history from peers, encrypted. There is no server copy.
+- **History stays on devices.** Messages persist locally, encrypted at rest;
+  new participants receive history from peers, encrypted. There is no server
+  copy.
 
 The full wire protocol, key schedule, and threat model live in
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md). If code and that document disagree,
@@ -45,8 +58,12 @@ one of them is a bug.
   identifiers, IP addresses, and timing — not content, not names. Peers
   connect directly, so room members see each other's IP addresses; on the
   relay path the operator additionally sees the sending device id and the
-  size and timing of each ciphertext. Cloudflare fronts the app and the
-  signaling host and sees the same connection metadata.
+  size and timing of each ciphertext. Any CDN or reverse proxy fronting the
+  app or the signaling host sees the same connection metadata.
+- **Classical signatures.** Message authenticity uses ECDSA P-256, which is
+  quantum-forgeable in principle — an authenticity risk against link-holders
+  only, with no harvest-now-decrypt-later exposure (content confidentiality
+  is post-quantum). See PROTOCOL.md §1.3.
 - **Presence-centric.** Both peers online is the normal mode; media
   transfers require a direct or TURN connection (the relay can't carry
   them).
@@ -62,20 +79,29 @@ one of them is a bug.
   is the full analysis and the genuine (reproducible-build / pinned-verifier)
   paths.
 
-## Architecture
+## Run with Docker
 
-Pure TypeScript + WebCrypto. No accounts, no databases, no WASM.
+The fastest way to self-host the whole thing (app + signaling):
 
+```bash
+git clone https://github.com/lawzava/mindline.git
+cd mindline
+docker compose up --build
 ```
-src/lib/crypto/    key schedule, envelopes, identity, replay, keystore
-src/lib/p2p/       WebRTC perfect negotiation, crypto session, signaling
-src/lib/media/     chunked encrypted transfer, blob store, image, recorder
-src/lib/stores/    Svelte stores (messages, drafts, connection, transfers)
-src/routes/        SvelteKit pages
-signaling-server.js  discovery + ciphertext relay of last resort
+
+Open <http://localhost:8080> — signaling runs alongside on `:9210`. Localhost
+works over plain `ws://` because browsers treat localhost as a secure context.
+
+For a real domain (cross-device needs HTTPS), build the app against your public
+signaling origin and put a TLS reverse proxy in front of both services:
+
+```bash
+VITE_SIGNALING_SERVER=wss://signal.example.com docker compose up --build
 ```
 
 ## Development
+
+Two processes: the app and the signaling server.
 
 ```bash
 pnpm install
@@ -83,30 +109,59 @@ pnpm dev              # app on :5173
 pnpm run signaling    # signaling server on :3000 (separate terminal)
 ```
 
-### Verification
+### Tests & checks
 
 ```bash
-pnpm run test:unit    # crypto/protocol unit tests (vitest)
-pnpm run verify:web   # typecheck + production build
-pnpm run test:e2e:ci  # blocking Playwright suite (real two-browser P2P)
-pnpm run verify:ai    # all of the above
+pnpm run test:unit            # fast: crypto/protocol unit tests (vitest)
+pnpm run check                # types + svelte-check
+pnpm run lint                 # prettier + eslint
+pnpm exec playwright install  # one-time: browsers for the e2e suite
+pnpm run test:e2e:ci          # blocking Playwright suite (real two-browser P2P)
+pnpm run verify:ai            # unit + web build + e2e (the full gate)
 ```
 
-### Deployment
+## Self-hosting
 
-- App: Cloudflare (adapter-cloudflare), `pnpm run build`.
-- Signaling: `node signaling-server.js` anywhere WebSockets work.
-- **Self-hosted signaling host:** set `VITE_SIGNALING_SERVER` (host or full
-  `wss://` origin) at **build time** and rebuild. The production CSP pins
-  `connect-src` to `self` + that origin, so a different signaling host must
-  be baked into the build — the runtime `MINDLINE_ENV.SIGNALING_SERVER`
-  override no longer bypasses CSP (that scheme-wide `ws:` allowance was an
-  any-host exfil channel for any script that ran).
-- TURN (recommended for reliability across carrier NATs): provision coturn
-  or a paid service and set `VITE_TURN_URLS`, `VITE_TURN_USERNAME`,
-  `VITE_TURN_CREDENTIAL` (or runtime `MINDLINE_ENV.TURN_SERVERS`). Without
-  TURN, peers behind symmetric NATs fall back to the ciphertext relay for
-  text and cannot transfer media.
+The app is a standard SvelteKit (`adapter-node`) build: `pnpm build` emits
+`build/`, run it with `node build`. It runs anywhere Node runs — there is no
+platform lock-in. [`.env.example`](.env.example) documents every variable.
+
+- **The signaling origin is baked in at build time.** The strict CSP pins
+  `connect-src` to `self` + your signaling origin, so set `VITE_SIGNALING_SERVER`
+  (a host, or a full `wss://` origin) before building, and rebuild to change it.
+  A runtime override cannot loosen the CSP (that scheme-wide `ws:` allowance was
+  an any-host exfil channel for any script that ran).
+- **TURN (recommended across carrier NATs):** set `VITE_TURN_URLS`,
+  `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL` at build time. Without TURN,
+  peers behind symmetric NATs fall back to the encrypted relay for text and
+  cannot transfer media.
+- **The signaling server** (`node signaling-server.js`) is stateless and never
+  sees plaintext; set `ALLOWED_ORIGINS` to your app origin.
+
+## Architecture
+
+Pure TypeScript + WebCrypto. No accounts, no databases, no WASM.
+
+```
+src/lib/crypto/      key schedule, envelopes, identity, replay, keystore
+src/lib/p2p/         WebRTC perfect negotiation, crypto session, signaling
+src/lib/media/       chunked encrypted transfer, blob store, image, recorder
+src/lib/stores/      Svelte stores (messages, drafts, connection, transfers)
+src/routes/          SvelteKit pages
+signaling-server.js  discovery + ciphertext relay of last resort
+```
+
+New here? [`ARCHITECTURE.md`](ARCHITECTURE.md) is the one-page orientation.
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md) is the full wire protocol and threat
+model, and [`docs/CLAIMS.md`](docs/CLAIMS.md) grades every security claim
+against the code that enforces it.
+
+## Contributing
+
+Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). For security issues, please follow
+the private disclosure process in [`SECURITY.md`](SECURITY.md) rather than
+opening a public issue.
 
 ## License
 

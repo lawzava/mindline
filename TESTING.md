@@ -19,6 +19,8 @@ store, message storage merge semantics + legacy format.
 
 ## E2E tests (Playwright, blocking tier)
 
+First time only, install the browsers: `pnpm exec playwright install`.
+
 ```bash
 pnpm run test:e2e:ci
 ```
