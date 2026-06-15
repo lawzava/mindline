@@ -85,8 +85,11 @@ export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void 
 				handleDeliveryAck(message, peerId);
 				break;
 			case 'media-offer':
-				handleMediaOffer(message, peerId);
-				mediaControlFn?.(message, peerId);
+				// Only let the transfer engine act if the offer passed the
+				// session-room check; a mismatched-room offer is dropped entirely.
+				if (handleMediaOffer(message, peerId)) {
+					mediaControlFn?.(message, peerId);
+				}
 				break;
 			case 'media-accept':
 			case 'media-abort':
@@ -167,14 +170,24 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
  * A media offer arrived: place a Media message in the stream so the
  * receiver sees the incoming item with progress; the engine moves the bytes.
  */
-function handleMediaOffer(offer: MediaOffer, peerId: string): void {
-	const targetRoomId = offer.roomId || get(currentRoomId);
-	if (!targetRoomId) return;
+function handleMediaOffer(offer: MediaOffer, peerId: string): boolean {
+	// Place the message in the cryptographically-bound session room, not the
+	// attacker-settable offer.roomId. Drop offers that claim a different room;
+	// returning false makes the caller skip the transfer engine too.
+	const sessionRoomId = get(currentRoomId);
+	if (!sessionRoomId) return false;
+	if (offer.roomId && offer.roomId !== sessionRoomId) {
+		console.warn('[P2P Handler] Media offer roomId mismatch; ignoring');
+		return false;
+	}
+	const targetRoomId = sessionRoomId;
 	if (offer.senderName) connection.setPeerName(peerId, offer.senderName);
 
 	const messageObj: Message = {
 		id: offer.messageId,
-		sender_id: offer.senderId || peerId,
+		// Bind identity to the envelope-verified peerId; offer.senderId is
+		// self-asserted and not trusted. sender_name below is display-only.
+		sender_id: peerId,
 		sender_name: offer.senderName || peerId,
 		message_type: 'Media',
 		content: offer.name,
@@ -206,6 +219,7 @@ function handleMediaOffer(offer: MediaOffer, peerId: string): void {
 	};
 	messages.addMessage(targetRoomId, messageObj);
 	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+	return true;
 }
 
 /**
@@ -301,7 +315,8 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 			// Message exists - check if synced version has important updates
 			// Prefer deleted state: if synced message is deleted but local isn't, update local
 			const syncedIsDeleted = msg.message_type === 'Deleted' || msg.content === '[Message deleted]';
-			const localIsDeleted = existingMsg.message_type === 'Deleted' || existingMsg.content === '[Message deleted]';
+			const localIsDeleted =
+				existingMsg.message_type === 'Deleted' || existingMsg.content === '[Message deleted]';
 
 			if (syncedIsDeleted && !localIsDeleted) {
 				// Synced version is deleted but local isn't - apply deletion
@@ -314,7 +329,9 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 			if (msg.reactions && Object.keys(msg.reactions).length > 0) {
 				const mergedReactions = { ...existingMsg.reactions, ...msg.reactions };
 				if (JSON.stringify(mergedReactions) !== JSON.stringify(existingMsg.reactions)) {
-					messages.updateMessage(targetRoomId, msg.id, { reactions: mergedReactions });
+					messages.updateMessage(targetRoomId, msg.id, {
+						reactions: mergedReactions
+					});
 				}
 			}
 		}
@@ -339,7 +356,7 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
  * Handle user connected notifications
  */
 function handleUserConnected(message: UserConnectedMessage, peerId: string): void {
-	const { senderName, senderId } = message;
+	const { senderName } = message;
 
 	// Store the peer's name using the WebRTC peerId (not senderId)
 	// This ensures $peerNames matches $connectedPeers which uses WebRTC peer IDs
@@ -454,7 +471,10 @@ function handleDeliveryAck(message: DeliveryAckMessage, peerId: string): void {
 /**
  * Emit a toast notification
  */
-export function emitToast(type: 'peer-joined' | 'peer-left' | 'error' | 'success' | 'info', message: string): void {
+export function emitToast(
+	type: 'peer-joined' | 'peer-left' | 'error' | 'success' | 'info',
+	message: string
+): void {
 	switch (type) {
 		case 'peer-joined':
 		case 'success':
