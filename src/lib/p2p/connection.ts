@@ -92,6 +92,10 @@ export class P2PConnection {
 
 	private ws: WebSocket | null = null;
 	private myClientId: string | null = null;
+	// TURN servers minted by the signaling server, delivered on the 'client-id'
+	// welcome (the static frontend can't hold the Cloudflare secret). Combined
+	// with any static config.turnServers in buildRtcConfig.
+	private managedIceServers: RTCIceServer[] = [];
 	private peers = new Map<string, Peer>(); // by clientId
 	private deviceToClient = new Map<string, string>();
 	private relayPeers = new Map<string, { deviceId: string; verified: boolean }>();
@@ -414,6 +418,8 @@ export class P2PConnection {
 		switch (message.type) {
 			case 'client-id':
 				this.myClientId = message.clientId ?? null;
+				// Replace (not append) so reconnects refresh rather than accumulate.
+				this.managedIceServers = message.iceServers ?? [];
 				break;
 
 			case 'room-joined': {
@@ -564,8 +570,9 @@ export class P2PConnection {
 
 	private buildRtcConfig(): RTCConfiguration {
 		const iceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
-		if (!this.config.strictDirect && this.config.turnServers?.length) {
-			iceServers.push(...this.config.turnServers);
+		if (!this.config.strictDirect) {
+			if (this.config.turnServers?.length) iceServers.push(...this.config.turnServers);
+			if (this.managedIceServers.length) iceServers.push(...this.managedIceServers);
 		}
 		return {
 			iceServers,
