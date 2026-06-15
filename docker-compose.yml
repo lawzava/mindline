@@ -1,33 +1,18 @@
-# Full self-host stack: the web app + the signaling/relay server.
+# Production signaling + TURN server for mindline. The web app is hosted
+# separately (e.g. Cloudflare Pages); this stack runs only the signaling/relay
+# server that pairs peers and mints Cloudflare TURN credentials.
 #
-#   docker compose up --build      # app: http://localhost:8080  signaling: :9210
+#   docker compose up -d --build        # signaling on :9210
 #
-# For a real domain (cross-device needs TLS), build the app against your public
-# signaling origin and put a TLS reverse proxy in front of both services:
-#   VITE_SIGNALING_SERVER=wss://signal.example.com docker compose up --build
+# Put a TLS reverse proxy (Cloudflare, nginx, Caddy) in front, routing your
+# public signaling origin (e.g. wss://signal.example.com) to this container's
+# :9210. Configure origins/secrets in a local .env file (see .env.example) —
+# never commit it. To enable managed TURN, set CF_TURN_TOKEN_ID + CF_TURN_API_TOKEN.
+#
+# Optional local full stack (also runs the web app, for testing only):
+#   ALLOWED_ORIGINS=http://localhost:9921 \
+#     docker compose --profile local up --build    # app: http://localhost:9921
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile.app
-      args:
-        # Browser-reachable signaling origin, baked into the CSP at build time.
-        VITE_SIGNALING_SERVER: ${VITE_SIGNALING_SERVER:-ws://localhost:9210}
-    ports:
-      - '8080:3000'
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-    depends_on:
-      signaling:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3000/']
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
   signaling:
     build:
       context: .
@@ -38,15 +23,43 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
-      # Origins allowed to open the signaling WebSocket / call /health.
-      # Override for a real domain, e.g. ALLOWED_ORIGINS=https://mindline.chat
+      # Browser origin(s) allowed to open the signaling WebSocket / call /health.
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://mindline.chat}
+      # Cloudflare Realtime TURN — set both in .env to enable managed NAT
+      # traversal. Left empty, clients fall back to STUN-only.
+      - CF_TURN_TOKEN_ID=${CF_TURN_TOKEN_ID:-}
+      - CF_TURN_API_TOKEN=${CF_TURN_API_TOKEN:-}
       - RATE_LIMIT_MESSAGES_PER_SECOND=50
       - RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE=240
       - RATE_LIMIT_ROOM_JOINS_PER_MINUTE=30
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: the web app, for local full-stack testing only (production app is
+  # hosted separately). Enable with `--profile local`; not started by default.
+  app:
+    profiles: ['local']
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+      args:
+        # Browser-reachable signaling origin, baked into the CSP at build time.
+        VITE_SIGNALING_SERVER: ${VITE_SIGNALING_SERVER:-ws://localhost:9210}
+    ports:
+      - '9921:3000'
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    depends_on:
+      signaling:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/']
       interval: 30s
       timeout: 10s
       retries: 3
