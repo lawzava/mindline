@@ -9,8 +9,10 @@
 		messages,
 		user,
 		drafts,
-		mediaConsent
+		mediaConsent,
+		recentRooms
 	} from '$lib/stores';
+	import { senderHue } from '$lib/utils';
 	import { clearRoomMessages, loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
 	import { burnRoomData } from '$lib/storage/burn';
 	import {
@@ -76,6 +78,7 @@
 				disconnectP2P();
 				void clearRoomMessages(roomId); // drops this tab's cached keys + any rewrite
 				messages.clearRoom(roomId);
+				recentRooms.remove(roomId); // burned: drop the rejoin entry too
 				currentRoomId.clear();
 				toast.info('This room was burned in another tab');
 				goto('/');
@@ -138,6 +141,14 @@
 			toast.error('Failed to join room');
 		} finally {
 			isLoading = false;
+			// Remember this room locally (for the landing "Recent rooms" list) once
+			// we're actually in it — never for the knocking state, where we have no
+			// key and never entered. The key fragment is stored so rejoin is one tap.
+			if (!isKnocking && roomId) {
+				const hash = typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : '';
+				const key = /^k=[A-Za-z0-9_-]+$/.test(hash) ? hash : '';
+				recentRooms.record(roomId, key, Date.now());
+			}
 		}
 	});
 
@@ -231,7 +242,19 @@
 		toast.success('Invite link copied! Anyone with this link can read the room.');
 	}
 
+	// Local-only room label + monogram tint, shared with the Recent Rooms list.
+	const roomEntry = $derived($recentRooms.find((r) => r.id === roomId));
+	const roomLabel = $derived(roomEntry?.name?.trim() || `${roomId?.slice(0, 8) ?? ''}...`);
+	const roomHue = $derived(roomId ? senderHue(roomId) : 262);
+
 	let menuName = $state($user.name);
+	// Writable derived: seeds from the stored room label and stays in sync with
+	// it, while still accepting edits via bind:value in the menu.
+	let menuRoomName = $derived(roomEntry?.name ?? '');
+
+	function saveRoomName() {
+		if (roomId) recentRooms.rename(roomId, menuRoomName);
+	}
 
 	function saveMenuName() {
 		const trimmed = menuName.trim();
@@ -264,6 +287,7 @@
 				return;
 			}
 			messages.clearRoom(id);
+			recentRooms.remove(id); // burned: drop the rejoin entry too
 		}
 		currentRoomId.clear();
 		goto('/');
@@ -356,7 +380,7 @@
 {:else}
 	<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden min-h-0">
 		<!-- Room header: one row of chrome above the stream. -->
-		<div class="border-b border-border bg-background">
+		<div class="elevate-bar z-10 border-b border-border bg-background">
 			<div class="flex h-14 items-center gap-1 px-1 sm:px-2">
 				<Button
 					variant="ghost"
@@ -368,15 +392,22 @@
 				>
 					<ChevronLeft class="h-5 w-5" />
 				</Button>
-				<div class="flex min-w-0 flex-1 flex-col items-start">
+				<span
+					class="peer-shade peer-name ml-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-semibold"
+					style={`--u-hue:${roomHue}`}
+					aria-hidden="true"
+				>
+					{roomLabel.charAt(0).toUpperCase()}
+				</span>
+				<div class="ml-1 flex min-w-0 flex-1 flex-col items-start leading-tight">
 					<button
 						onclick={copyRoomId}
 						aria-label="Copy invite link"
 						title="Tap to copy the invite link"
-						class="max-w-full truncate rounded-sm text-sm font-semibold tabular-nums outline-ring/50 hover:text-primary"
+						class="max-w-full truncate rounded-sm text-sm font-semibold outline-ring/50 hover:text-primary"
 						data-testid="copy-room-btn"
 					>
-						{roomId?.slice(0, 8)}...
+						{roomLabel}
 					</button>
 					<ConnectionStatus />
 				</div>
@@ -412,6 +443,20 @@
 									bind:value={menuName}
 									onblur={saveMenuName}
 									onkeydown={(e) => e.key === 'Enter' && saveMenuName()}
+								/>
+							</div>
+							<div class="space-y-1.5">
+								<label for="room-name" class="text-xs font-medium text-muted-foreground">
+									Name this room <span class="font-normal">(only you see it)</span>
+								</label>
+								<Input
+									id="room-name"
+									type="text"
+									placeholder="e.g. Weekend trip"
+									aria-label="Room name, visible only on this device"
+									bind:value={menuRoomName}
+									onblur={saveRoomName}
+									onkeydown={(e) => e.key === 'Enter' && saveRoomName()}
 								/>
 							</div>
 							<div class="space-y-0.5 border-t border-border pt-2">
@@ -490,8 +535,9 @@
 			<AlertDialog.Header>
 				<AlertDialog.Title>Leave Room?</AlertDialog.Title>
 				<AlertDialog.Description>
-					Leave keeps this room's history on this device. Burn also deletes the room's keys,
-					history, and media from this device — other participants keep their copies.
+					Leave keeps this room's history on this device — you can step back in anytime from
+					<strong>Recent rooms</strong>. Burn erases this room's messages, media, and keys from this
+					device (others keep their copies) and removes it from Recent rooms.
 				</AlertDialog.Description>
 			</AlertDialog.Header>
 			<AlertDialog.Footer>

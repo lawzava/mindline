@@ -4,9 +4,17 @@
 	import { toggleMode, mode } from 'mode-watcher';
 </script>
 
-<header class="border-b border-border bg-background">
-	<div class="mx-auto flex h-12 max-w-4xl items-center justify-between px-4">
-		<span class="text-sm font-semibold tracking-tight">Mindline</span>
+<header class="elevate-bar border-b border-border bg-background">
+	<div class="mx-auto flex h-14 max-w-4xl items-center justify-between px-4">
+		<a
+			href="/"
+			class="flex items-center gap-2 rounded-md outline-ring/50"
+			aria-label="Mindline home"
+		>
+			<!-- The wire: the brand mark is the one cobalt dot. -->
+			<span class="h-2.5 w-2.5 rounded-full bg-primary"></span>
+			<span class="text-base font-semibold tracking-tight">Mindline</span>
+		</a>
 
 		<Button
 			variant="ghost"
