@@ -60,12 +60,23 @@
 		autogrow();
 	}
 
+	/** Tallest the input grows before it scrolls internally (matches max-h-40). */
+	const MAX_INPUT_PX = 160;
+
 	/** Grow 1-6 rows with the content (audit fix: no more single-line cage). */
 	function autogrow() {
 		const el = inputRef;
 		if (!el) return;
 		el.style.height = 'auto';
-		el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+		// The textarea is border-box, so scrollHeight excludes the 1px top/bottom
+		// border. Setting height = scrollHeight then leaves the content box ~2px
+		// short, which overflows by a pixel and flickers a scrollbar in on a
+		// single line (mobile). Add the border back, and only ever let it scroll
+		// once we've actually hit the cap.
+		const borderY = el.offsetHeight - el.clientHeight;
+		const fit = el.scrollHeight + borderY;
+		el.style.height = `${Math.min(fit, MAX_INPUT_PX)}px`;
+		el.style.overflowY = fit > MAX_INPUT_PX ? 'auto' : 'hidden';
 	}
 
 	async function handleFiles(files: FileList | null, forcedKind?: MediaKind) {
@@ -266,7 +277,7 @@
 				onkeydown={handleKeydown}
 				oninput={handleInput}
 				{disabled}
-				class={`flex max-h-40 min-h-10 w-full resize-none rounded-[1.25rem] border border-input bg-input/60 px-4 py-2 text-base leading-[1.45] text-foreground outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[2px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 ${onSendMedia && !message.trim() ? 'pr-11' : 'pr-4'}`}
+				class={`flex max-h-40 min-h-10 w-full resize-none overflow-y-hidden rounded-[1.25rem] border border-input bg-input/60 px-4 py-2 text-base leading-[1.45] text-foreground outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[2px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 ${onSendMedia && !message.trim() ? 'pr-11' : 'pr-4'}`}
 				data-testid="message-input"
 			></textarea>
 			<!-- The wire dot: glows only when your words are actually on a wire
