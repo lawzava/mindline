@@ -206,6 +206,10 @@ export class P2PConnection {
 	 */
 	async reconnectSignaling(): Promise<void> {
 		if (this.disposed || this.isWebSocketConnected()) return;
+		// Offers/candidates queued before the drop were authenticated against the
+		// old server clientId; the server mints a fresh one on rejoin, so they
+		// would be rejected. Drop them — room-joined regenerates what's needed.
+		this.wsQueue.length = 0;
 		await this.connect();
 	}
 
@@ -424,9 +428,32 @@ export class P2PConnection {
 
 			case 'room-joined': {
 				this.myClientId = message.yourId ?? this.myClientId;
+				const listed = new Set(message.peers ?? []);
+				// On the initial join `peers`/`relayPeers` are empty and these loops
+				// are no-ops. On a reconnect they are the fix for the "everyone must
+				// refresh" bug: the server minted us a fresh clientId, and every other
+				// member already saw our old socket close (peer-left) and tore us
+				// down, so NONE of our existing connections can still be live from the
+				// remote side — no matter what our local pc state reports, which can
+				// lag a remote teardown by seconds. So every peer must be rebuilt.
+				// A member the server STILL lists is the same person we're
+				// re-handshaking, not a departure: tear the stale pc down WITHOUT
+				// firing peer-disconnected (no "X left" toast, no peer-list flicker,
+				// no key rotation) and rebuild it fresh below. A member the server no
+				// longer lists genuinely left while we were gone, so remove it fully.
+				for (const clientId of [...this.peers.keys()]) {
+					if (listed.has(clientId)) this.removePeerConnectionOnly(clientId);
+					else this.removePeer(clientId);
+				}
+				// Relay bindings are keyed to the pre-drop clientId and can't survive
+				// it; drop them so the rebuild below re-attempts direct (or a fresh
+				// relay hello). Unlisted relay peers genuinely left.
+				for (const clientId of [...this.relayPeers.keys()]) this.removePeer(clientId);
 				// The newcomer (us) initiates toward every existing member;
-				// collisions are handled by perfect negotiation.
-				for (const peerId of message.peers ?? []) {
+				// collisions are handled by perfect negotiation. ensurePeer() builds
+				// a fresh connection for every clientId (the quiet teardown above left
+				// none in the map), each of which re-verifies via hello.
+				for (const peerId of listed) {
 					try {
 						this.ensurePeer(peerId);
 					} catch (error) {
