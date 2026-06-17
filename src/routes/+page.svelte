@@ -2,11 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { user } from '$lib/stores';
+	import RecentRooms from '$lib/components/RecentRooms.svelte';
+	import { user, recentRooms } from '$lib/stores';
 	import { cn } from '$lib/utils';
 	import { onMount } from 'svelte';
 	import { createRoomKey, toKeyFragment } from '$lib/crypto/keys';
 	import { Plus, ArrowRight } from 'lucide-svelte';
+	import { toast } from 'svelte-sonner';
 
 	let joinRoomId = $state('');
 
@@ -55,8 +57,14 @@
 	}
 
 	async function joinRoom() {
+		// Validate on submit, not by disabling the button: a disabled-until-valid
+		// button drops the click that lands in the same tick as the paste (before
+		// Svelte re-renders), which read as "pasting the link does nothing".
 		const room = extractRoomId(joinRoomId);
-		if (!room) return;
+		if (!room) {
+			toast.error('Paste an invite link or room code to join.');
+			return;
+		}
 
 		ensureUser();
 		const fragment = extractKeyFragment(joinRoomId);
@@ -115,22 +123,22 @@
 </svelte:head>
 
 <div
-	class="flex flex-1 items-start justify-center overflow-y-auto p-6 pt-[14vh] sm:items-center sm:pt-6"
+	class="flex flex-1 items-start justify-center overflow-y-auto p-6 pt-[12vh] sm:items-center sm:pt-6"
 >
-	<div class="w-full max-w-md space-y-8">
+	<div class="w-full max-w-md space-y-7">
 		<!-- The promise, stated then demonstrated -->
 		<div class="space-y-3">
-			<h2 class="text-[1.424rem] font-semibold tracking-[-0.01em] sm:text-[2.027rem]">
+			<h2 class="text-[1.55rem] font-semibold tracking-[-0.02em] sm:text-[2.1rem] sm:leading-[1.1]">
 				Talk on a live wire.
 			</h2>
-			<p class="text-lg text-muted-foreground">
+			<p class="text-[1.0625rem] leading-relaxed text-muted-foreground">
 				A private line for two or a few people. You see each other's words as they're typed.
 			</p>
 		</div>
 
 		<!-- The specimen: the product demos its own hero -->
 		<div
-			class="rounded-[1.25rem] border border-border bg-card p-4"
+			class="elevate-bar rounded-[1.25rem] border border-border/80 bg-card p-4"
 			aria-label="See messages as they are typed"
 		>
 			<span class="mb-1 ml-1 flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
@@ -156,7 +164,7 @@
 			<Button
 				onclick={createRoom}
 				disabled={!ready}
-				class="h-12 w-full rounded-[0.875rem] text-base"
+				class="elevate-bar h-12 w-full rounded-[0.875rem] text-base font-semibold"
 				size="lg"
 				data-testid="create-room-btn"
 			>
@@ -164,7 +172,7 @@
 				Start a room
 			</Button>
 
-			<div class="flex items-center gap-3 text-xs text-muted-foreground">
+			<div class="flex items-center gap-3 text-xs font-medium text-muted-foreground">
 				<span class="h-px flex-1 bg-border"></span>
 				or join with an invite
 				<span class="h-px flex-1 bg-border"></span>
@@ -176,23 +184,33 @@
 					placeholder="Paste an invite link..."
 					bind:value={joinRoomId}
 					onkeydown={handleKeydown}
-					class="h-11 flex-1 rounded-[0.875rem]"
+					class="h-12 flex-1 rounded-[0.875rem] text-base md:h-12"
 					data-testid="join-room-input"
 				/>
 				<Button
 					onclick={joinRoom}
-					disabled={!ready || !extractRoomId(joinRoomId)}
+					disabled={!ready}
 					size="icon"
-					class="h-11 w-11 rounded-[0.875rem]"
+					class="h-12 w-12 shrink-0 rounded-[0.875rem]"
 					data-testid="join-room-btn"
 				>
-					<ArrowRight class="h-4 w-4" />
+					<ArrowRight class="h-5 w-5" />
 					<span class="sr-only">Join room</span>
 				</Button>
 			</div>
 		</div>
 
-		<p class="text-sm leading-relaxed text-muted-foreground">
+		<!-- Rooms this device has been in (local only, never synced) -->
+		{#if $recentRooms.length > 0}
+			<div class="space-y-2.5">
+				<h3 class="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+					Recent rooms
+				</h3>
+				<RecentRooms />
+			</div>
+		{/if}
+
+		<p class="px-1 text-sm leading-relaxed text-muted-foreground">
 			Messages travel device to device, end-to-end encrypted. No accounts. Nothing is stored on a
 			server.
 		</p>
