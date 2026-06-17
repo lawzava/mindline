@@ -211,4 +211,49 @@
 			animation: none;
 		}
 	}
+
+	/*
+	 * Per-sender shade (group chats). A peer's bubble and byline carry a stable,
+	 * low-chroma tint keyed by --u-hue (see senderHue() in utils.ts) so speakers
+	 * are distinguishable at a glance without turning the thread into a color
+	 * wheel. The hue is the only thing that varies; lightness tracks the neutral
+	 * peer bubble so the tint reads as a shade, not a new surface.
+	 */
+	.peer-shade {
+		background-color: oklch(0.935 0.022 var(--u-hue, 262));
+	}
+	.dark .peer-shade {
+		background-color: oklch(0.265 0.026 var(--u-hue, 262));
+	}
+	.peer-name {
+		color: oklch(0.52 0.13 var(--u-hue, 262));
+	}
+	.dark .peer-name {
+		color: oklch(0.8 0.1 var(--u-hue, 262));
+	}
+
+	/*
+	 * Soft, hue-tinted elevation — barely there, just enough to lift bars and
+	 * sheets off the canvas (Telegram/iOS feel, not Material drop-shadows).
+	 */
+	.elevate-bar {
+		box-shadow:
+			0 1px 0 oklch(0.5 0.03 262 / 0.04),
+			0 1px 3px oklch(0.45 0.05 262 / 0.05);
+	}
+	.dark .elevate-bar {
+		box-shadow:
+			0 1px 0 oklch(0 0 0 / 0.25),
+			0 1px 3px oklch(0 0 0 / 0.3);
+	}
+	.elevate-pop {
+		box-shadow:
+			0 10px 34px oklch(0.4 0.06 262 / 0.13),
+			0 3px 10px oklch(0.4 0.06 262 / 0.08);
+	}
+	.dark .elevate-pop {
+		box-shadow:
+			0 10px 34px oklch(0 0 0 / 0.55),
+			0 3px 10px oklch(0 0 0 / 0.4);
+	}
 }

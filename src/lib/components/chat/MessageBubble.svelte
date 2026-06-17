@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn, senderHue } from '$lib/utils';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -168,6 +168,11 @@
 	// Tap-to-reveal only applies to plain text bubbles: while editing or on
 	// attachments the bubble must not swallow clicks from inner controls.
 	const revealable = $derived(!isEditing && !message.attachment);
+
+	// A stable per-sender hue tints a peer's bubble and byline so speakers are
+	// distinguishable in group chats (see senderHue / .peer-shade). Only peers
+	// are tinted; your own messages stay the cobalt "sent" wash.
+	const hue = $derived(senderHue(message.sender_id));
 </script>
 
 <div
@@ -176,11 +181,14 @@
 		isMe ? 'items-end' : 'items-start',
 		groupedAbove ? 'mt-0.5' : sameSenderAbove ? 'mt-3' : 'mt-4'
 	)}
+	style={!isMe ? `--u-hue:${hue}` : undefined}
 	data-testid="message-bubble"
 >
 	<!-- Byline (others only, first message of a group) -->
 	{#if !isMe && !groupedAbove}
-		<span class="ml-1 max-w-[200px] truncate text-sm font-medium text-muted-foreground">
+		<span
+			class="peer-name ml-1 max-w-[60vw] truncate text-[0.8125rem] font-semibold sm:max-w-[260px]"
+		>
 			{message.sender_name}
 		</span>
 	{/if}
@@ -205,10 +213,10 @@
 			tabindex={revealable ? 0 : undefined}
 			aria-label={revealable ? 'Show message time' : undefined}
 			class={cn(
-				'min-w-0 break-words px-3.5 py-2.5',
+				'min-w-0 break-words px-3.5 py-2.5 text-foreground',
 				corners,
 				message.attachment ? 'max-w-full' : '',
-				isMe ? 'bg-wash-sent' : 'bg-wash-peer',
+				isMe ? 'bg-wash-sent' : 'peer-shade',
 				settle ? 'settle' : animate ? 'msg-in' : '',
 				isDeleted && 'text-muted-foreground'
 			)}
