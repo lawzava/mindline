@@ -230,7 +230,9 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		// Update delivery tracking - adjust totals for this peer
 		delivery.handlePeerDisconnect(peerId);
 
-		// Emit toast notification with name if available
+		// Emit toast notification with name if available. A reconnect rebuilds
+		// still-present peers via removePeerConnectionOnly (no disconnect fired),
+		// so this only runs for peers who genuinely left — safe to always announce.
 		const displayName = peerName || `Peer ${peerId.slice(0, 8)}...`;
 		emitToast('peer-left', `${displayName} left the room`);
 
