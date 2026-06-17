@@ -87,28 +87,34 @@ test.describe('Landing Page', () => {
 		await waitForConnectionStatus(page);
 	});
 
-	test('should disable join button when room ID is empty', async ({ page }) => {
+	test('join button stays enabled and validates on submit', async ({ page }) => {
 		await page.goto('/');
 
 		// Wait for WASM
 		await expect(page.locator('[data-testid="create-room-btn"]')).toBeEnabled({ timeout: 10000 });
 
-		// Join button should be disabled with empty input
 		const joinBtn = page.locator('[data-testid="join-room-btn"]');
-		await expect(joinBtn).toBeDisabled();
-
-		// Type something
 		const input = page.locator('[data-testid="join-room-input"]');
-		await input.fill('test-room');
+
+		// The button is intentionally NOT gated on input content: a
+		// disabled-until-valid button drops the click that lands in the same tick
+		// as a paste (before the reactive re-enable), which reads as "pasting the
+		// link does nothing". Validation happens on submit instead.
 		await expect(joinBtn).toBeEnabled();
 
-		// Clear input
-		await input.fill('');
-		await expect(joinBtn).toBeDisabled();
+		// Empty submit surfaces a hint and stays on the landing page.
+		await joinBtn.click();
+		await expect(input).toBeVisible();
+		await expect(page.getByText('Paste an invite link or room code to join.')).toBeVisible();
 
-		// Whitespace only should also be disabled
+		// Whitespace-only is treated as empty too — still no navigation.
 		await input.fill('   ');
-		await expect(joinBtn).toBeDisabled();
+		await joinBtn.click();
+		await expect(input).toBeVisible();
+
+		// A real value keeps the button enabled and ready to navigate.
+		await input.fill('test-room');
+		await expect(joinBtn).toBeEnabled();
 	});
 
 	test('should join room via Enter key', async ({ page }) => {
