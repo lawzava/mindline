@@ -361,6 +361,7 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
  */
 function handleUserConnected(message: UserConnectedMessage, peerId: string): void {
 	const { senderName } = message;
+	const alreadyAnnounced = connection.getPeerName(peerId) !== undefined;
 
 	// Store the peer's name using the WebRTC peerId (not senderId)
 	// This ensures $peerNames matches $connectedPeers which uses WebRTC peer IDs
@@ -368,8 +369,9 @@ function handleUserConnected(message: UserConnectedMessage, peerId: string): voi
 		connection.setPeerName(peerId, senderName);
 	}
 
-	// Show toast notification
-	if (senderName) {
+	// The peer repeats its announcement to cover channel startup races.
+	// Its name is removed on departure, allowing a real rejoin notice.
+	if (senderName && !alreadyAnnounced) {
 		toast.success(`${senderName} joined the room`);
 	}
 }

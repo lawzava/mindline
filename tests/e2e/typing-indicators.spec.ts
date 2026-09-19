@@ -138,7 +138,7 @@ test.describe('Typing Indicators', () => {
 		const pageC = await contextC.newPage();
 		await joinRoom(pageC, roomId);
 
-		// Wait for all peers to connect
+		// Each participant must see both others before either starts typing.
 		const isConnected = await waitForPeersConnected(page, pageB);
 		if (!isConnected) {
 			await cleanup(contextB);
@@ -146,6 +146,11 @@ test.describe('Typing Indicators', () => {
 			test.skip();
 			return;
 		}
+		await Promise.all(
+			[page, pageB, pageC].map((peer) =>
+				expect(peer.getByTestId('peer-count')).toContainText('2 peers', { timeout: 25000 })
+			)
+		);
 
 		await waitForP2PSync(2000);
 
