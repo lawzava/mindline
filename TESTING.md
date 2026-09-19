@@ -53,6 +53,13 @@ Real two-browser-context WebRTC against a local signaling server:
   large-file consent, delivery after a declined transfer, and delivery
   when encryption delays a key-rotation grant.
 
+Message-delivery assertions target committed bubbles, not live drafts that
+can remain in the DOM briefly during their outgoing animation. The media byte
+test attaches bounded signaling and connection-state diagnostics on failure,
+without SDP, room keys, authentication values, or encrypted message bodies.
+CI retains failed-attempt traces and signaling logs for seven days, separately
+for the required and best-effort suites.
+
 ## Best-effort tier (non-blocking)
 
 ```bash
@@ -82,6 +89,7 @@ without asserting.
 - Helpers in `tests/e2e/helpers/test-utils.ts` mint a per-room key
   fragment; every room navigation must carry `#k=...` or the app
   (correctly) locks you out.
-- `?fastConnect=true` shortens connection timers in test mode.
-- The signaling server rate-limits per IP; helpers throttle room
-  navigations to stay under it.
+- `?fastConnect=true` is a legacy test parameter; the current transport
+  does not use it to shorten connection timers.
+- The signaling server rate-limits per IP. Helpers throttle room
+  navigations, but reloads and reconnects also consume connection attempts.

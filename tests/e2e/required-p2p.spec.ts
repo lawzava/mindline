@@ -30,19 +30,13 @@ test.describe('Required P2P', () => {
 
 		await sendMessage(page, 'message-from-a');
 		await waitForMessage(page, 'message-from-a');
-		await expect(
-			pageB.locator('[data-testid="message-list"]').getByText('message-from-a')
-		).toBeVisible({
-			timeout: 10000
-		});
+		await waitForMessage(pageB, 'message-from-a');
+		await expect(pageB.getByTestId('draft-indicator')).toBeHidden();
 
 		await sendMessage(pageB, 'message-from-b');
 		await waitForMessage(pageB, 'message-from-b');
-		await expect(
-			page.locator('[data-testid="message-list"]').getByText('message-from-b')
-		).toBeVisible({
-			timeout: 10000
-		});
+		await waitForMessage(page, 'message-from-b');
+		await expect(page.getByTestId('draft-indicator')).toBeHidden();
 
 		await cleanup(contextB);
 	});
@@ -79,9 +73,8 @@ test.describe('Required P2P', () => {
 		}
 
 		await waitForP2PSync(3000);
-		const listB2 = pageB2.locator('[data-testid="message-list"]');
-		await expect(listB2.getByText('before-disconnect')).toBeVisible({ timeout: 10000 });
-		await expect(listB2.getByText('while-peer-away')).toBeVisible({ timeout: 10000 });
+		await waitForMessage(pageB2, 'before-disconnect');
+		await waitForMessage(pageB2, 'while-peer-away');
 
 		await cleanup(contextB2);
 	});

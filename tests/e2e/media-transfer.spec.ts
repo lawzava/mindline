@@ -40,6 +40,92 @@ async function delayGrantEncryption(page: Page) {
 	});
 }
 
+async function recordConnectionDiagnostics(
+	page: Page,
+	label: string,
+	record: (event: Record<string, unknown>) => void
+) {
+	const append = (event: Record<string, unknown>) => record({ page: label, ...event });
+	page.on('websocket', (socket) => {
+		append({ event: 'socket-created', url: new URL(socket.url()).origin });
+		for (const direction of ['framesent', 'framereceived'] as const) {
+			socket.on(direction, ({ payload }) => {
+				try {
+					const message = JSON.parse(String(payload));
+					// Keep discovery and ordering evidence without SDP, room keys,
+					// authentication values, ICE addresses, or encrypted payloads.
+					append({
+						event: direction,
+						type: message.type,
+						clientId: message.clientId,
+						fromId: message.fromId,
+						targetId: message.targetId,
+						yourId: message.yourId,
+						peers: message.peers,
+						descriptionType: message.data?.description?.type
+					});
+				} catch {
+					append({ event: direction, type: 'non-json' });
+				}
+			});
+		}
+		socket.on('close', () => append({ event: 'socket-closed' }));
+		socket.on('socketerror', () => append({ event: 'socket-error' }));
+	});
+	page.on('console', (message) => {
+		if (message.type() === 'warning' || message.type() === 'error') {
+			append({
+				event: 'console',
+				level: message.type(),
+				text: message.text().split('\n')[0].slice(0, 500)
+			});
+		}
+	});
+	page.on('pageerror', (error) => append({ event: 'page-error', name: error.name }));
+	await page.exposeFunction('__recordMediaConnection', append);
+	await page.addInitScript(() => {
+		const record = (
+			window as unknown as {
+				__recordMediaConnection: (event: Record<string, unknown>) => Promise<void>;
+			}
+		).__recordMediaConnection;
+		let nextId = 0;
+		const NativePeerConnection = window.RTCPeerConnection;
+		window.RTCPeerConnection = class extends NativePeerConnection {
+			constructor(configuration?: RTCConfiguration) {
+				super(configuration);
+				const id = ++nextId;
+				const snapshot = (event: string, extra: Record<string, unknown> = {}) => {
+					void record({
+						event,
+						id,
+						connection: this.connectionState,
+						ice: this.iceConnectionState,
+						gathering: this.iceGatheringState,
+						signaling: this.signalingState,
+						localType: this.localDescription?.type,
+						remoteType: this.remoteDescription?.type,
+						...extra
+					}).catch(() => {});
+				};
+				for (const event of [
+					'connectionstatechange',
+					'iceconnectionstatechange',
+					'icegatheringstatechange',
+					'signalingstatechange',
+					'negotiationneeded'
+				]) {
+					this.addEventListener(event, () => snapshot(event));
+				}
+				this.addEventListener('icecandidate', ({ candidate }) =>
+					snapshot('icecandidate', { present: candidate !== null })
+				);
+				snapshot('rtc-created');
+			}
+		};
+	});
+}
+
 test('a file offered during key rotation arrives after delayed grant encryption', async ({
 	page,
 	browser
@@ -85,11 +171,19 @@ test('a file offered during key rotation arrives after delayed grant encryption'
 test('file transfer preserves every byte and survives receiver reload', async ({
 	page,
 	browser
-}) => {
+}, testInfo) => {
 	const room = generateTestRoomId('media-bytes');
 	const receiver = await createSecondContext(browser);
+	const diagnostics: Record<string, unknown>[] = [];
+	let dropped = 0;
+	const record = (event: Record<string, unknown>) => {
+		if (diagnostics.length < 1000) diagnostics.push({ time: Date.now(), ...event });
+		else dropped++;
+	};
 	try {
 		const peer = await receiver.newPage();
+		await recordConnectionDiagnostics(page, 'sender', record);
+		await recordConnectionDiagnostics(peer, 'receiver', record);
 		await joinRoom(page, room);
 		await joinRoom(peer, room);
 		expect(await waitForPeersConnected(page, peer)).toBe(true);
@@ -115,6 +209,12 @@ test('file transfer preserves every byte and survives receiver reload', async ({
 		const chunks: Buffer[] = [];
 		for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
 		expect(Buffer.concat(chunks).equals(payload)).toBe(true);
+	} catch (error) {
+		await testInfo.attach('connection-diagnostics', {
+			body: JSON.stringify({ diagnostics, dropped }, null, 2),
+			contentType: 'application/json'
+		});
+		throw error;
 	} finally {
 		await receiver.close();
 	}
