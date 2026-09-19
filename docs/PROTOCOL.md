@@ -592,6 +592,14 @@ pattern (rollback on collision), `restartIce()` on `connectionState:
 'failed'` with re-signaling, exponential backoff, full teardown guards
 (callbacks check peer and socket identity after asynchronous work).
 
+Candidates are gathered on demand by default. An ICE attempt also has a
+15-second deadline, so a browser stuck in `new`, `connecting`, or `disconnected`
+without a `failed` event still enters recovery. Each restart gets a fresh
+deadline; signaling progress does not replenish the five-restart budget.
+Connected or removed peers cancel both deadlines and pending restarts.
+Exhaustion uses the existing authenticated relay fallback when permitted;
+strict-direct peers are removed instead.
+
 ### 3.3 Channels
 
 | Label   | Options                               | Carries                     |

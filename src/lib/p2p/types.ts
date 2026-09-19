@@ -22,9 +22,9 @@ export interface P2PConfig {
 	forceRelay?: boolean; // Force TURN relay mode
 	maxReconnectAttempts?: number; // Max reconnection attempts
 	reconnectBackoffBase?: number; // Base delay for exponential backoff (ms)
+	offerTimeout?: number; // ICE connection attempt deadline (ms), default 15000
 	// Test mode settings
 	fastConnect?: boolean; // Reduces delays for test environments
-	offerTimeout?: number; // Offer response timeout (ms), default 15000
 	meshCheckInterval?: number; // Mesh monitoring interval (ms), default 10000
 }
 
@@ -35,7 +35,7 @@ export const DEFAULT_CONFIG: P2PConfig = {
 	allowRelayFallback: true,
 	strictDirect: false,
 	connectionTimeout: 2000,
-	icePoolSize: 10,
+	icePoolSize: 0,
 	forceRelay: false,
 	maxReconnectAttempts: 5,
 	reconnectBackoffBase: 1000
