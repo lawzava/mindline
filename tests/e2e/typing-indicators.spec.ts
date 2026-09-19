@@ -155,9 +155,11 @@ test.describe('Typing Indicators', () => {
 
 		await waitForP2PSync(1000);
 
-		// User A should see the draft indicator with content
-		const draftIndicator = page.locator('[data-testid="draft-indicator"]');
-		await expect(draftIndicator).toBeVisible({ timeout: 10000 });
+		// Each remote peer has its own visible draft.
+		const drafts = page.getByTestId('draft-indicator');
+		await expect(drafts).toHaveCount(2);
+		await expect(drafts.filter({ hasText: 'Message from B' })).toBeVisible();
+		await expect(drafts.filter({ hasText: 'Message from C' })).toBeVisible();
 
 		await cleanup(contextB);
 		await cleanup(contextC);
