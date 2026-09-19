@@ -31,6 +31,7 @@ class FakePeerConnection {
 	restartIce = vi.fn();
 	setLocalDescription = vi.fn(async () => {});
 	setRemoteDescription = vi.fn(async () => {});
+	addIceCandidate = vi.fn(async () => {});
 	constructor() {
 		FakePeerConnection.instances.push(this);
 	}
@@ -56,7 +57,10 @@ class FakeSocket {
 	constructor() {
 		FakeSocket.instance = this;
 	}
-	close() {
+	close(code?: number) {
+		if (code !== undefined && code !== 1000 && (code < 3000 || code > 4999)) {
+			throw new DOMException('Invalid WebSocket close code', 'InvalidAccessError');
+		}
 		this.onclose?.();
 	}
 	async receive(message: object) {
@@ -236,6 +240,11 @@ describe('P2P peer callback lifecycle', () => {
 				description: { type: 'offer', sdp: '' }
 			}
 		});
+		socket.close();
+		const reconnecting = connection.reconnectSignaling();
+		socket = FakeSocket.instance;
+		socket.onopen?.();
+		await reconnecting;
 		await join();
 		socket.send.mockClear();
 		finish();
@@ -494,6 +503,7 @@ describe('P2P peer callback lifecycle', () => {
 		socket.onmessage?.({
 			data: JSON.stringify({ type: 'room-joined', yourId: 'local', peers: ['remote'] })
 		});
+		await vi.waitFor(() => expect(FakePeerConnection.instances).toHaveLength(1));
 		const pc = FakePeerConnection.instances.at(-1)!;
 		const connected = vi.fn();
 		connection.onPeerConnected(connected);
@@ -586,6 +596,217 @@ describe('P2P peer callback lifecycle', () => {
 		try {
 			await connection.sendToPeer('remote-device', { type: 'media-offer' } as TypedP2PMessage);
 			expect(socket.send).not.toHaveBeenCalled();
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	test('a candidate cannot overtake authentication of the preceding offer', async () => {
+		let finish!: (valid: boolean) => void;
+		session.verifySignalingAuth.mockImplementationOnce(
+			() => new Promise((resolve) => (finish = resolve))
+		);
+		const auth = { deviceId: 'remote-device', hmac: 'valid' };
+		await socket.receive({
+			type: 'offer',
+			fromId: 'remote',
+			data: { auth, description: { type: 'offer', sdp: '' } }
+		});
+		await socket.receive({
+			type: 'ice-candidate',
+			fromId: 'remote',
+			data: { auth, candidate: { candidate: 'host-candidate' } }
+		});
+		finish(true);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(FakePeerConnection.instances).toHaveLength(1);
+		expect(FakePeerConnection.instances[0].addIceCandidate).toHaveBeenCalledExactlyOnceWith({
+			candidate: 'host-candidate'
+		});
+	});
+
+	test('same-device tabs have complementary roles when their local offers collide', async () => {
+		const left = await join();
+		left.signalingState = 'have-local-offer';
+		const other = new P2PConnection(session as unknown as CryptoSession, {}, () => 'Other tab');
+		const opening = other.connect();
+		const otherSocket = FakeSocket.instance;
+		otherSocket.onopen?.();
+		await opening;
+		try {
+			await otherSocket.receive({ type: 'room-joined', yourId: 'remote', peers: ['local'] });
+			const right = FakePeerConnection.instances.at(-1)!;
+			right.signalingState = 'have-local-offer';
+			const data = {
+				auth: { deviceId: session.deviceId, hmac: 'valid' },
+				description: { type: 'offer', sdp: '' }
+			};
+			await socket.receive({ type: 'offer', fromId: 'remote', data });
+			await otherSocket.receive({ type: 'offer', fromId: 'local', data });
+			expect(
+				left.setRemoteDescription.mock.calls.length + right.setRemoteDescription.mock.calls.length
+			).toBe(1);
+			expect(session.verifySignalingAuth).toHaveBeenCalledTimes(2);
+		} finally {
+			other.disconnect();
+		}
+	});
+
+	test('disconnect cancels authentication and signaling queued behind it', async () => {
+		let finish!: (valid: boolean) => void;
+		session.verifySignalingAuth.mockImplementationOnce(
+			() => new Promise((resolve) => (finish = resolve))
+		);
+		const data = {
+			auth: { deviceId: 'remote-device', hmac: 'valid' },
+			description: { type: 'offer', sdp: '' }
+		};
+		await socket.receive({ type: 'offer', fromId: 'remote', data });
+		await socket.receive({ type: 'offer', fromId: 'another', data });
+		connection.disconnect();
+		finish(true);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(FakePeerConnection.instances).toHaveLength(0);
+		expect(session.verifySignalingAuth).toHaveBeenCalledTimes(1);
+	});
+
+	test('authentication from an obsolete socket cannot act on a newly joined peer', async () => {
+		let finish!: (valid: boolean) => void;
+		session.verifySignalingAuth.mockImplementationOnce(
+			() => new Promise((resolve) => (finish = resolve))
+		);
+		await socket.receive({
+			type: 'offer',
+			fromId: 'remote',
+			data: {
+				auth: { deviceId: 'remote-device', hmac: 'valid' },
+				description: { type: 'offer', sdp: '' }
+			}
+		});
+		socket.close();
+		const reconnecting = connection.reconnectSignaling();
+		socket = FakeSocket.instance;
+		socket.onopen?.();
+		await reconnecting;
+		const replacement = await join();
+		finish(true);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(FakePeerConnection.instances).toHaveLength(1);
+		expect(replacement.setRemoteDescription).not.toHaveBeenCalled();
+	});
+
+	test('queued candidates still require authentication', async () => {
+		const pc = await join();
+		const data = {
+			auth: { deviceId: 'remote-device', hmac: 'valid' },
+			candidate: { candidate: 'host-candidate' }
+		};
+		session.verifySignalingAuth.mockResolvedValueOnce(false);
+		await socket.receive({ type: 'ice-candidate', fromId: 'remote', data });
+		expect(pc.addIceCandidate).not.toHaveBeenCalled();
+		await socket.receive({ type: 'ice-candidate', fromId: 'remote', data });
+		expect(pc.addIceCandidate).toHaveBeenCalledExactlyOnceWith(data.candidate);
+		expect(session.verifySignalingAuth).toHaveBeenCalledTimes(2);
+	});
+
+	test('signaling overflow closes its socket without disrupting an established direct peer', async () => {
+		const pc = await join();
+		await verify(pc);
+		let finish!: (valid: boolean) => void;
+		session.verifySignalingAuth.mockImplementationOnce(
+			() => new Promise((resolve) => (finish = resolve))
+		);
+		const data = {
+			auth: { deviceId: 'new-device', hmac: 'valid' },
+			description: { type: 'offer', sdp: '' }
+		};
+		await socket.receive({ type: 'offer', fromId: 'new-remote', data });
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			for (let i = 0; i < 128; i++)
+				socket.onmessage?.({ data: JSON.stringify({ type: 'offer', fromId: 'new-remote', data }) });
+			expect(connection.isWebSocketConnected()).toBe(false);
+			expect(connection.getDirectPeers()).toEqual(['remote-device']);
+			finish(true);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(FakePeerConnection.instances).toHaveLength(1);
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	test('outgoing candidate authentication cannot put ICE ahead of its local offer', async () => {
+		const pc = await join();
+		socket.send.mockClear();
+		let finish!: (auth: string) => void;
+		session.signalingAuth.mockImplementationOnce(
+			() => new Promise((resolve) => (finish = resolve))
+		);
+		const offer = pc.onnegotiationneeded?.();
+		await vi.advanceTimersByTimeAsync(0);
+		const candidate = pc.onicecandidate?.({
+			candidate: { toJSON: () => ({ candidate: 'host-candidate' }) }
+		});
+		await vi.advanceTimersByTimeAsync(0);
+		finish('auth');
+		await Promise.all([offer, candidate]);
+		await vi.advanceTimersByTimeAsync(100);
+		expect(socket.send.mock.calls.map(([wire]) => JSON.parse(wire).type)).toEqual([
+			'offer',
+			'ice-candidate'
+		]);
+	});
+
+	test('different device IDs keep their original collision ordering', async () => {
+		session.deviceId = 'z-device';
+		const pc = await join();
+		pc.signalingState = 'have-local-offer';
+		await socket.receive({
+			type: 'offer',
+			fromId: 'remote',
+			data: {
+				auth: { deviceId: 'a-device', hmac: 'valid' },
+				description: { type: 'offer', sdp: '' }
+			}
+		});
+		// Our clientId sorts first, but the distinct deviceId remains the authority.
+		expect(pc.setRemoteDescription).not.toHaveBeenCalled();
+		expect(session.verifySignalingAuth).toHaveBeenCalledExactlyOnceWith(
+			'a-device',
+			'remote',
+			'valid'
+		);
+	});
+
+	test('a rejected offer cannot create a peer or poison later authenticated signaling', async () => {
+		session.verifySignalingAuth.mockResolvedValueOnce(false);
+		const offer = {
+			type: 'offer',
+			fromId: 'remote',
+			data: {
+				auth: { deviceId: 'remote-device', hmac: 'valid' },
+				description: { type: 'offer', sdp: '' }
+			}
+		};
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			await socket.receive(offer);
+			expect(FakePeerConnection.instances).toHaveLength(0);
+			await socket.receive(offer);
+			expect(FakePeerConnection.instances).toHaveLength(1);
+			expect(FakePeerConnection.instances[0].setRemoteDescription).toHaveBeenCalledTimes(1);
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	test('oversized signaling is rejected before authentication', async () => {
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			socket.onmessage?.({ data: 'x'.repeat(2 * 1024 * 1024 + 1) });
+			await vi.advanceTimersByTimeAsync(0);
+			expect(connection.isWebSocketConnected()).toBe(false);
+			expect(session.verifySignalingAuth).not.toHaveBeenCalled();
 		} finally {
 			warning.mockRestore();
 		}

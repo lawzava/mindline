@@ -241,7 +241,7 @@
 />
 
 <div
-	class="flex shrink-0 items-end gap-1 border-t border-border bg-background px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:gap-1.5 sm:px-3"
+	class="flex shrink-0 flex-wrap items-end gap-1 border-t border-border bg-background px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:gap-1.5 sm:px-3"
 >
 	{#if recorder && !isStartingRecording}
 		<div class="flex h-11 flex-1 items-center gap-3 rounded-[1.375rem] bg-destructive/5 px-4">
@@ -272,6 +272,9 @@
 			<span class="sr-only">Stop and send</span>
 		</Button>
 	{:else}
+		<p id="live-typing-note" class="w-full px-1 text-xs text-muted-foreground">
+			Others see your typing before you send.
+		</p>
 		{#if onSendMedia}
 			<Button
 				variant="ghost"
@@ -305,6 +308,7 @@
 				bind:this={inputRef}
 				placeholder="Message"
 				aria-label="Message input"
+				aria-describedby="live-typing-note"
 				enterkeyhint="send"
 				rows={1}
 				bind:value={message}

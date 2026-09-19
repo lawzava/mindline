@@ -15,6 +15,7 @@ interface MessageDeliveryState {
 
 function createDeliveryStore() {
 	const { subscribe, set, update } = writable<Map<string, MessageDeliveryState>>(new Map());
+	const recipients = new Map<string, Set<string>>();
 
 	return {
 		subscribe,
@@ -23,12 +24,14 @@ function createDeliveryStore() {
 		 * Initialize delivery tracking for a sent message
 		 */
 		trackMessage: (messageId: string, roomId: string, connectedPeers: string[]) => {
+			const intendedPeers = new Set(connectedPeers);
+			recipients.set(messageId, intendedPeers);
 			update((state) => {
 				state.set(messageId, {
 					messageId,
 					roomId,
 					sentAt: Date.now(),
-					totalPeers: connectedPeers.length,
+					totalPeers: intendedPeers.size,
 					deliveredTo: new Set()
 				});
 				return new Map(state);
@@ -41,7 +44,7 @@ function createDeliveryStore() {
 		recordDelivery: (messageId: string, peerId: string) => {
 			update((state) => {
 				const tracking = state.get(messageId);
-				if (tracking) {
+				if (tracking && recipients.get(messageId)?.has(peerId)) {
 					tracking.deliveredTo.add(peerId);
 					state.set(messageId, { ...tracking, deliveredTo: new Set(tracking.deliveredTo) });
 				}
@@ -63,19 +66,11 @@ function createDeliveryStore() {
 		},
 
 		/**
-		 * Handle peer disconnect - adjust totals
+		 * Preserve acknowledgment truth when a peer disconnects.
 		 */
-		handlePeerDisconnect: (peerId: string) => {
-			update((state) => {
-				state.forEach((tracking, messageId) => {
-					// If peer hadn't delivered yet, reduce total
-					if (!tracking.deliveredTo.has(peerId) && tracking.totalPeers > 0) {
-						tracking.totalPeers = Math.max(0, tracking.totalPeers - 1);
-						state.set(messageId, { ...tracking });
-					}
-				});
-				return new Map(state);
-			});
+		handlePeerDisconnect: (_peerId: string) => {
+			// Disconnecting neither proves delivery nor removes an intended recipient.
+			// Keep this hook for callers; a later acknowledgment can still count.
 		},
 
 		/**
@@ -87,6 +82,7 @@ function createDeliveryStore() {
 				state.forEach((tracking, messageId) => {
 					if (now - tracking.sentAt > maxAgeMs) {
 						state.delete(messageId);
+						recipients.delete(messageId);
 					}
 				});
 				return new Map(state);
@@ -96,7 +92,10 @@ function createDeliveryStore() {
 		/**
 		 * Clear all tracking
 		 */
-		clear: () => set(new Map()),
+		clear: () => {
+			recipients.clear();
+			set(new Map());
+		},
 
 		/**
 		 * Get raw state

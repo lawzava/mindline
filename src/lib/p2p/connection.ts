@@ -64,6 +64,8 @@ const MAX_RESTART_ATTEMPTS = 5;
 const MAX_QUEUED_CHAT_MESSAGES = 512;
 const MAX_QUEUED_CHAT_BYTES = MAX_QUEUED_CHAT_MESSAGES * 64 * 1024;
 const MAX_QUEUED_RELIABLE_SENDS = 128;
+const MAX_QUEUED_SIGNALING_MESSAGES = 128;
+const MAX_QUEUED_SIGNALING_BYTES = 2 * 1024 * 1024;
 /** Consecutive non-anchoring segmented rounds before we stop asking a peer (§1.4). */
 const SEGMENT_NO_PROGRESS_LIMIT = 4;
 
@@ -113,6 +115,8 @@ export class P2PConnection {
 	private wsDrainTimer: ReturnType<typeof setTimeout> | null = null;
 	private reliableSendTail: Promise<void> = Promise.resolve();
 	private queuedReliableSends = 0;
+	private signalingSendTail: Promise<void> = Promise.resolve();
+	private queuedSignalingSends = 0;
 
 	private onMessageCallback: MessageCallback | null = null;
 	private onPeerConnectedCallback: PeerCallback | null = null;
@@ -164,6 +168,9 @@ export class P2PConnection {
 
 		await new Promise<void>((resolve, reject) => {
 			const ws = new WebSocket(url);
+			let receiving = Promise.resolve();
+			let queuedMessages = 0;
+			let queuedBytes = 0;
 			const timeout = setTimeout(() => {
 				ws.close();
 				reject(new Error('signaling connection timeout'));
@@ -179,7 +186,30 @@ export class P2PConnection {
 				clearTimeout(timeout);
 				reject(new Error('signaling connection failed'));
 			};
-			ws.onmessage = (event) => void this.handleSignaling(String(event.data));
+			ws.onmessage = (event) => {
+				if (!this.isCurrentSignaling(ws)) return;
+				const raw = String(event.data);
+				const bytes = new TextEncoder().encode(raw).byteLength;
+				if (
+					queuedMessages >= MAX_QUEUED_SIGNALING_MESSAGES ||
+					queuedBytes + bytes > MAX_QUEUED_SIGNALING_BYTES
+				) {
+					console.warn('[P2P] signaling receive queue exceeded; closing socket');
+					ws.close(4009, 'signaling receive queue exceeded');
+					return;
+				}
+				queuedMessages++;
+				queuedBytes += bytes;
+				// WebSocket events are ordered; async authentication must preserve
+				// that order so candidates cannot overtake the offer creating a peer.
+				receiving = receiving
+					.then(() => this.handleSignaling(raw, ws))
+					.catch((error) => console.warn('[P2P] signaling message failed:', error))
+					.finally(() => {
+						queuedMessages--;
+						queuedBytes -= bytes;
+					});
+			};
 			ws.onclose = () => {
 				if (this.ws === ws) this.ws = null;
 				// Healthy DataChannels survive; manager reconnects signaling.
@@ -453,6 +483,32 @@ export class P2PConnection {
 		};
 	}
 
+	private async sendAuthedSignaling(
+		peer: Peer,
+		type: 'offer' | 'answer' | 'ice-candidate',
+		extra: Omit<AuthedPayload, 'auth'>
+	): Promise<void> {
+		const ws = this.ws;
+		if (!ws || !this.isCurrentSignaling(ws) || !this.isCurrentPeer(peer)) return;
+		if (this.queuedSignalingSends >= MAX_QUEUED_SIGNALING_MESSAGES) {
+			console.warn('[P2P] signaling send queue exceeded; closing socket');
+			ws.close(4009, 'signaling send queue exceeded');
+			return;
+		}
+		this.queuedSignalingSends++;
+		const pending = this.signalingSendTail
+			.then(async () => {
+				if (!this.isCurrentSignaling(ws) || !this.isCurrentPeer(peer)) return;
+				const data = await this.authedData(extra);
+				if (!this.isCurrentSignaling(ws) || !this.isCurrentPeer(peer)) return;
+				this.sendSignaling({ type, targetId: peer.clientId, data: data as never });
+			})
+			.catch((error) => console.warn('[P2P] signaling authentication failed:', error))
+			.finally(() => this.queuedSignalingSends--);
+		this.signalingSendTail = pending;
+		await pending;
+	}
+
 	private async verifyAuth(
 		fromId: string,
 		payload: AuthedPayload | undefined
@@ -463,7 +519,12 @@ export class P2PConnection {
 		return valid ? auth.deviceId : null;
 	}
 
-	private async handleSignaling(raw: string): Promise<void> {
+	private isCurrentSignaling(source?: WebSocket): boolean {
+		return !this.disposed && (source === undefined || this.ws === source);
+	}
+
+	private async handleSignaling(raw: string, source?: WebSocket): Promise<void> {
+		if (!this.isCurrentSignaling(source)) return;
 		let message: SignalingMessage;
 		try {
 			message = JSON.parse(raw);
@@ -528,19 +589,19 @@ export class P2PConnection {
 			case 'offer':
 			case 'answer':
 				if (message.fromId && message.data) {
-					await this.handleDescription(message.fromId, message.data as AuthedPayload);
+					await this.handleDescription(message.fromId, message.data as AuthedPayload, source);
 				}
 				break;
 
 			case 'ice-candidate':
 				if (message.fromId && message.data) {
-					await this.handleCandidate(message.fromId, message.data as AuthedPayload);
+					await this.handleCandidate(message.fromId, message.data as AuthedPayload, source);
 				}
 				break;
 
 			case 'relay':
 				if (message.fromId && message.data) {
-					await this.handleRelay(message.fromId, message.data as unknown as AuthedPayload);
+					await this.handleRelay(message.fromId, message.data as unknown as AuthedPayload, source);
 				}
 				break;
 
@@ -608,13 +669,7 @@ export class P2PConnection {
 				peer.makingOffer = true;
 				await pc.setLocalDescription();
 				if (!this.isCurrentPeer(peer)) return;
-				const data = await this.authedData({ description: pc.localDescription! });
-				if (!this.isCurrentPeer(peer)) return;
-				this.sendSignaling({
-					type: 'offer',
-					targetId: peer.clientId,
-					data: data as never
-				});
+				await this.sendAuthedSignaling(peer, 'offer', { description: pc.localDescription! });
 			} catch (error) {
 				console.warn('[P2P] negotiation failed:', error);
 			} finally {
@@ -624,13 +679,7 @@ export class P2PConnection {
 
 		pc.onicecandidate = async ({ candidate }) => {
 			if (candidate && this.isCurrentPeer(peer)) {
-				const data = await this.authedData({ candidate: candidate.toJSON() });
-				if (!this.isCurrentPeer(peer)) return;
-				this.sendSignaling({
-					type: 'ice-candidate',
-					targetId: peer.clientId,
-					data: data as never
-				});
+				await this.sendAuthedSignaling(peer, 'ice-candidate', { candidate: candidate.toJSON() });
 			}
 		};
 
@@ -675,8 +724,13 @@ export class P2PConnection {
 		};
 	}
 
-	private async handleDescription(fromId: string, payload: AuthedPayload): Promise<void> {
+	private async handleDescription(
+		fromId: string,
+		payload: AuthedPayload,
+		source?: WebSocket
+	): Promise<void> {
 		const deviceId = await this.verifyAuth(fromId, payload);
+		if (!this.isCurrentSignaling(source)) return;
 		if (!deviceId) {
 			console.warn(`[P2P] dropping unauthenticated description from ${fromId}`);
 			return;
@@ -712,8 +766,12 @@ export class P2PConnection {
 			return;
 		}
 		peer.deviceId = deviceId;
-		// Stable politeness once deviceIds are known (survives clientId churn).
-		peer.polite = this.session.deviceId < deviceId;
+		// Device ordering survives reconnects; tabs sharing an identity need
+		// the connection-specific clientIds to choose complementary roles.
+		peer.polite =
+			this.session.deviceId === deviceId
+				? (this.myClientId ?? '') < fromId
+				: this.session.deviceId < deviceId;
 
 		const pc = peer.pc;
 		const readyForOffer =
@@ -729,7 +787,7 @@ export class P2PConnection {
 		} finally {
 			peer.isSettingRemoteAnswerPending = false;
 		}
-		if (!this.isCurrentPeer(peer)) return;
+		if (!this.isCurrentPeer(peer) || !this.isCurrentSignaling(source)) return;
 
 		for (const candidate of peer.queuedCandidates.splice(0)) {
 			try {
@@ -737,24 +795,23 @@ export class P2PConnection {
 			} catch (error) {
 				if (!peer.ignoreOffer) console.warn('[P2P] queued candidate failed:', error);
 			}
-			if (!this.isCurrentPeer(peer)) return;
+			if (!this.isCurrentPeer(peer) || !this.isCurrentSignaling(source)) return;
 		}
 
 		if (description.type === 'offer') {
 			await pc.setLocalDescription();
-			if (!this.isCurrentPeer(peer)) return;
-			const data = await this.authedData({ description: pc.localDescription! });
-			if (!this.isCurrentPeer(peer)) return;
-			this.sendSignaling({
-				type: 'answer',
-				targetId: peer.clientId,
-				data: data as never
-			});
+			if (!this.isCurrentPeer(peer) || !this.isCurrentSignaling(source)) return;
+			await this.sendAuthedSignaling(peer, 'answer', { description: pc.localDescription! });
 		}
 	}
 
-	private async handleCandidate(fromId: string, payload: AuthedPayload): Promise<void> {
+	private async handleCandidate(
+		fromId: string,
+		payload: AuthedPayload,
+		source?: WebSocket
+	): Promise<void> {
 		const deviceId = await this.verifyAuth(fromId, payload);
+		if (!this.isCurrentSignaling(source)) return;
 		if (!deviceId) return;
 		const candidate = payload.candidate;
 		if (!candidate) return;
@@ -1116,9 +1173,14 @@ export class P2PConnection {
 		return { label: 'hello-relay-v4', fields: [pair[0], pair[1], this.roomId] };
 	}
 
-	private async handleRelay(fromId: string, payload: AuthedPayload): Promise<void> {
+	private async handleRelay(
+		fromId: string,
+		payload: AuthedPayload,
+		source?: WebSocket
+	): Promise<void> {
 		if (payload.hello) {
 			const info = await this.session.acceptHello(payload.hello, this.relayBinding(fromId));
+			if (!this.isCurrentSignaling(source)) return;
 			if (info) {
 				const existing = this.relayPeers.get(fromId);
 				this.relayPeers.set(fromId, { deviceId: info.deviceId, verified: true });
@@ -1127,6 +1189,7 @@ export class P2PConnection {
 					// Their side initiated relay mode; reciprocate the hello.
 					await this.offerRelay(fromId);
 				}
+				if (!this.isCurrentSignaling(source)) return;
 				this.onPeerConnectedCallback?.(info.deviceId, 'relay');
 			} else {
 				this.onKnockingCallback?.(fromId);
@@ -1144,6 +1207,7 @@ export class P2PConnection {
 		if (!relay?.verified) return;
 		try {
 			const body = (await this.session.openMessage(envelope)) as unknown as TypedP2PMessage;
+			if (!this.isCurrentSignaling(source)) return;
 			if (RELAY_FORBIDDEN_TYPES.has(body.type)) {
 				console.warn('[P2P] dropping relay-forbidden body type:', body.type);
 				return;

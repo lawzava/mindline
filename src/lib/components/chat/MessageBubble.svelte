@@ -141,6 +141,11 @@
 			deliveryStatus.delivered > 0 &&
 			deliveryStatus.delivered < deliveryStatus.total
 	);
+	const deliveryLabel = $derived(
+		deliveryStatus?.total === 0
+			? 'Local message; no recipients were connected'
+			: `Delivered to ${deliveryStatus?.delivered ?? 0}/${deliveryStatus?.total ?? 0} peers`
+	);
 
 	// Corner-radius arithmetic: within a group the corners facing an adjacent
 	// same-group bubble tighten; the asymmetry carries direction without tails.
@@ -302,20 +307,22 @@
 			{:else if isMe && deliveryStatus}
 				<Tooltip.Provider>
 					<Tooltip.Root>
-						<Tooltip.Trigger>
+						<Tooltip.Trigger aria-label={deliveryLabel}>
 							<span class="inline-flex cursor-help items-center">
-								{#if isFullyDelivered}
-									<CheckCheck class="h-3 w-3 text-primary" />
+								{#if deliveryStatus.total === 0}
+									Local
+								{:else if isFullyDelivered}
+									<CheckCheck class="h-3 w-3 text-primary" aria-hidden="true" />
 								{:else if isPartiallyDelivered}
-									<CheckCheck class="h-3 w-3 text-muted-foreground" />
+									<CheckCheck class="h-3 w-3 text-muted-foreground" aria-hidden="true" />
 								{:else}
-									<Check class="h-3 w-3 text-muted-foreground" />
+									<Check class="h-3 w-3 text-muted-foreground" aria-hidden="true" />
 								{/if}
 							</span>
 						</Tooltip.Trigger>
 						<Tooltip.Content>
 							{#if deliveryStatus.total === 0}
-								<p>Sent (no peers connected)</p>
+								<p>No one was connected when you sent this message.</p>
 							{:else}
 								<p>
 									Delivered to {deliveryStatus.delivered}/{deliveryStatus.total} peer{deliveryStatus.total !==
@@ -328,7 +335,7 @@
 					</Tooltip.Root>
 				</Tooltip.Provider>
 			{:else if isMe}
-				<Check class="h-3 w-3 text-muted-foreground" />
+				<span class="sr-only">Delivery status unavailable</span>
 			{/if}
 		</span>
 	{/if}

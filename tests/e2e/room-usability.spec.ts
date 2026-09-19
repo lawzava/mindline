@@ -1,6 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { generateTestRoomId, keyFragmentFor, joinRoom } from './helpers/test-utils';
 
+test('a message with no recipients is labelled local rather than delivered', async ({ page }) => {
+	await joinRoom(page, generateTestRoomId('local-receipt'));
+	await page.getByTestId('message-input').fill('A note before anyone joins');
+	await page.getByTestId('send-btn').click();
+	await expect(page.getByLabel('Local message; no recipients were connected')).toHaveText('Local');
+});
+
 test('a burn notification removes media committed before this tab received it', async ({
 	page,
 	context

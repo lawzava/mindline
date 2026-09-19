@@ -270,6 +270,8 @@
 	function saveMenuName() {
 		const trimmed = menuName.trim();
 		if (trimmed) {
+			menuName = trimmed;
+			if (trimmed === $user.name) return;
 			user.setName(trimmed);
 			toast.success('Name updated!');
 		} else {
