@@ -34,9 +34,10 @@ import { toast } from 'svelte-sonner';
  * Get P2P manager reference for sending responses
  * This is set by the manager module to avoid circular dependencies
  */
-let sendToPeerFn: ((peerId: string, message: TypedP2PMessage) => void) | null = null;
+type SendToPeer = (peerId: string, message: TypedP2PMessage) => void | Promise<void>;
+let sendToPeerFn: SendToPeer | null = null;
 
-export function setSendToPeerFn(fn: (peerId: string, message: TypedP2PMessage) => void): void {
+export function setSendToPeerFn(fn: SendToPeer): void {
 	sendToPeerFn = fn;
 }
 
@@ -64,7 +65,7 @@ export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void 
 				handleTypingMessage(message, peerId);
 				break;
 			case 'sync-request':
-				handleSyncRequest(message, peerId);
+				void handleSyncRequest(message, peerId);
 				break;
 			case 'sync-response':
 				handleSyncResponse(message, peerId);
@@ -247,7 +248,7 @@ function handleTypingMessage(message: TypingMessage, peerId: string): void {
 /**
  * Handle sync request from peer
  */
-function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
+async function handleSyncRequest(message: SyncRequestMessage, peerId: string): Promise<void> {
 	const roomId = message.roomId || get(currentRoomId);
 	if (!roomId) {
 		console.warn('[P2P Handler] No room ID for sync request');
@@ -256,7 +257,10 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 
 	try {
 		const roomMessages = messages.getRoomMessages(roomId);
-		if (sendToPeerFn) {
+		// Keep this room's connection while awaiting pages; a room switch may
+		// replace the global callback before the previous history finishes.
+		const send = sendToPeerFn;
+		if (send) {
 			for (const page of paginateSyncMessages(roomMessages)) {
 				const syncResponse: SyncResponseMessage = {
 					type: 'sync-response',
@@ -264,7 +268,7 @@ function handleSyncRequest(message: SyncRequestMessage, peerId: string): void {
 					messages: page,
 					timestamp: Date.now()
 				};
-				sendToPeerFn(peerId, syncResponse);
+				await send(peerId, syncResponse);
 			}
 		}
 	} catch (error) {

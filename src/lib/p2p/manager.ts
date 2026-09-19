@@ -102,8 +102,7 @@ async function mintAndBroadcast(): Promise<void> {
 	const conn = p2pConnection;
 	if (!session || !conn) return;
 	try {
-		await session.mintGeneration();
-		await conn.broadcastGrant();
+		await conn.mintAndBroadcastGrant();
 		console.log('[P2P Manager] Ratcheted to generation', session.generation.g);
 	} catch (error) {
 		console.error('[P2P Manager] Mint failed:', error);
@@ -189,11 +188,7 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 	p2pConnection = new P2PConnection(cryptoSession, config, () => get(user).name);
 
 	// Set up the sendToPeer function for handlers
-	setSendToPeerFn((peerId: string, message: TypedP2PMessage) => {
-		if (p2pConnection) {
-			p2pConnection.sendToPeer(peerId, message);
-		}
-	});
+	setSendToPeerFn(p2pConnection.sendToPeer.bind(p2pConnection));
 
 	// Set up handlers
 	p2pConnection.onMessage((message, peerId) => {

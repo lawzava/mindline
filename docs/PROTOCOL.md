@@ -262,7 +262,17 @@ converge without the minter reaching everyone. The transport `hs`
 envelope is re-signed by each forwarder (envelope `s` = forwarder); the
 inner `cert` is never re-signed. Grants never relay (§3.6) — since v4 a
 defense-in-depth and metadata rule (§1.2), with the wrap as the
-confidentiality boundary. A member that sees an envelope it cannot decrypt at a known
+confidentiality boundary.
+
+Reliable direct-channel receives run in order, including asynchronous
+hello verification and grant adoption. Reliable direct-channel sends serialize
+sealing and sending with hellos and grants, preserving the shared replay sequence.
+Minting and grant distribution use the same send queue. Before sending a
+message under a new generation, the sender first sends that destination's
+grant. Queues are bounded, and history sync awaits each page's send before
+submitting the next page. Drafts remain on the independent lossy channel.
+
+A member that sees an envelope it cannot decrypt at a known
 `g`, or a hello advertising a `gid` it lacks, sends
 `rekey-request { g, gid?, haveG, haveGid }` direct-only; the answer is a
 grant for the responder's **current** generation carrying the rk-free
