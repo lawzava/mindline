@@ -31,6 +31,9 @@ export class Recorder {
 	private peaks: number[] = [];
 	private analyserStop: (() => void) | null = null;
 	private limitTimer: ReturnType<typeof setTimeout> | null = null;
+	private starting = false;
+	private generation = 0;
+	private stopped: Promise<Recording | null> | null = null;
 	readonly kind: 'voice' | 'video';
 
 	constructor(kind: 'voice' | 'video') {
@@ -46,28 +49,42 @@ export class Recorder {
 	}
 
 	async start(): Promise<MediaStream> {
+		if (this.starting || this.recorder) throw new Error('Recording already started');
+		this.starting = true;
+		const generation = ++this.generation;
+		this.stopped = null;
 		const constraints: MediaStreamConstraints =
 			this.kind === 'voice'
 				? { audio: true }
 				: { audio: true, video: { facingMode: 'user', width: { ideal: 1280 } } };
-		this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia(constraints);
+			if (generation !== this.generation) {
+				stream.getTracks().forEach((track) => track.stop());
+				throw new DOMException('Recording cancelled', 'AbortError');
+			}
+			this.stream = stream;
+			const mime = pickMime(this.kind === 'voice' ? VOICE_MIMES : VIDEO_MIMES);
+			this.recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+			this.chunks = [];
+			this.peaks = [];
+			this.recorder.ondataavailable = (e) => {
+				if (generation === this.generation && e.data.size > 0) this.chunks.push(e.data);
+			};
+			this.recorder.start(250);
+			this.startedAt = Date.now();
 
-		const mime = pickMime(this.kind === 'voice' ? VOICE_MIMES : VIDEO_MIMES);
-		this.recorder = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
-		this.chunks = [];
-		this.peaks = [];
-		this.recorder.ondataavailable = (e) => {
-			if (e.data.size > 0) this.chunks.push(e.data);
-		};
-		this.recorder.start(250);
-		this.startedAt = Date.now();
+			if (this.kind === 'voice') this.sampleWaveform(stream);
 
-		if (this.kind === 'voice') this.sampleWaveform(this.stream);
-
-		const maxSeconds = this.kind === 'voice' ? VOICE_MAX_SECONDS : VIDEO_MAX_SECONDS;
-		this.limitTimer = setTimeout(() => void this.stop(), maxSeconds * 1000);
-
-		return this.stream;
+			const maxSeconds = this.kind === 'voice' ? VOICE_MAX_SECONDS : VIDEO_MAX_SECONDS;
+			this.limitTimer = setTimeout(() => void this.stop(), maxSeconds * 1000);
+			return stream;
+		} catch (error) {
+			this.cleanup();
+			throw error;
+		} finally {
+			this.starting = false;
+		}
 	}
 
 	/** 64 normalized peaks sampled while recording (§5.3). */
@@ -94,7 +111,12 @@ export class Recorder {
 		}
 	}
 
-	async stop(): Promise<Recording | null> {
+	stop(): Promise<Recording | null> {
+		// Keep the result: the duration limit can finish before the UI asks for it.
+		return (this.stopped ??= this.finish());
+	}
+
+	private async finish(): Promise<Recording | null> {
 		const recorder = this.recorder;
 		if (!recorder || recorder.state === 'inactive') {
 			this.cleanup();
@@ -104,18 +126,22 @@ export class Recorder {
 		const stopped = new Promise<void>((resolve) => {
 			recorder.onstop = () => resolve();
 		});
+		const generation = this.generation;
+		const duration = this.elapsedSeconds;
 		recorder.stop();
 		await stopped;
+		if (generation !== this.generation) return null;
 
-		const duration = this.elapsedSeconds;
 		const blob = new Blob(this.chunks, { type: recorder.mimeType });
 		const waveform =
 			this.kind === 'voice' && this.peaks.length > 0 ? resamplePeaks(this.peaks, 64) : undefined;
 		this.cleanup();
 
 		if (blob.size === 0) return null;
+		const data = new Uint8Array(await blob.arrayBuffer());
+		if (generation !== this.generation) return null;
 		return {
-			data: new Uint8Array(await blob.arrayBuffer()),
+			data,
 			mime: blob.type || recorder.mimeType,
 			duration,
 			waveform
@@ -123,6 +149,8 @@ export class Recorder {
 	}
 
 	cancel(): void {
+		this.generation++;
+		this.stopped = null;
 		if (this.recorder && this.recorder.state !== 'inactive') this.recorder.stop();
 		this.cleanup();
 	}

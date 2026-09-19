@@ -41,13 +41,32 @@ function openDb(): Promise<IDBDatabase> {
 
 async function withStore<T>(
 	mode: IDBTransactionMode,
-	fn: (s: IDBObjectStore) => IDBRequest<T>
+	fn: (s: IDBObjectStore) => IDBRequest<T>,
+	signal?: AbortSignal
 ): Promise<T> {
 	const db = await openDb();
 	try {
+		signal?.throwIfAborted();
 		return await new Promise<T>((resolve, reject) => {
 			const tx = db.transaction(STORE, mode);
-			const request = fn(tx.objectStore(STORE));
+			const cancel = () => {
+				try {
+					tx.abort();
+				} catch {
+					/* transaction already committed or aborted */
+				}
+			};
+			signal?.addEventListener('abort', cancel, { once: true });
+			const cleanup = () => signal?.removeEventListener('abort', cancel);
+			let request: IDBRequest<T>;
+			try {
+				request = fn(tx.objectStore(STORE));
+			} catch (error) {
+				cleanup();
+				cancel();
+				reject(error);
+				return;
+			}
 			let result: T;
 			request.onsuccess = () => {
 				result = request.result;
@@ -55,8 +74,14 @@ async function withStore<T>(
 			request.onerror = () => reject(request.error);
 			// Resolve only on durable commit: burn must not report blob
 			// deletion that a late transaction abort then rolls back.
-			tx.oncomplete = () => resolve(result);
-			tx.onabort = () => reject(tx.error ?? request.error);
+			tx.oncomplete = () => {
+				cleanup();
+				resolve(result);
+			};
+			tx.onabort = () => {
+				cleanup();
+				reject(signal?.reason ?? tx.error ?? request.error);
+			};
 			tx.onerror = () => reject(tx.error ?? request.error);
 		});
 	} finally {
@@ -69,8 +94,10 @@ export async function putBlob(
 	roomId: string,
 	transferId: string,
 	data: Uint8Array,
-	mime: string
+	mime: string,
+	signal?: AbortSignal
 ): Promise<void> {
+	signal?.throwIfAborted();
 	const nonce = crypto.getRandomValues(new Uint8Array(12));
 	const ciphertext = await crypto.subtle.encrypt(
 		{ name: 'AES-GCM', iv: nonce, additionalData: lp(roomId, 'blob', transferId) },
@@ -84,7 +111,7 @@ export async function putBlob(
 		size: data.byteLength,
 		storedAt: Date.now()
 	};
-	await withStore('readwrite', (s) => s.put(record, slotKey(roomId, transferId)));
+	await withStore('readwrite', (s) => s.put(record, slotKey(roomId, transferId)), signal);
 }
 
 export interface LoadedBlob {

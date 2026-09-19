@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import {
 	createRoomKey,
@@ -19,6 +19,49 @@ beforeEach(async () => {
 const bytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
 
 describe('encrypted blob store (PROTOCOL.md §4)', () => {
+	test('cancellation rolls back an active write before burn completes', async () => {
+		const cancel = new AbortController();
+		const put = IDBObjectStore.prototype.put;
+		const spy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (...args) {
+			const request = put.apply(this, args);
+			request.addEventListener('success', () => cancel.abort(), { once: true });
+			return request;
+		});
+		try {
+			await expect(
+				putBlob(keys, 'room-1', 't-1', bytes(16), 'a/b', cancel.signal)
+			).rejects.toMatchObject({ name: 'AbortError' });
+			await burnRoomBlobs('room-1');
+			expect(await getBlob(keys, 'room-1', 't-1')).toBeNull();
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	test('cancellation while encryption is pending prevents any later write', async () => {
+		const cancel = new AbortController();
+		let release!: () => void;
+		const blocked = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+		const spy = vi.spyOn(crypto.subtle, 'encrypt').mockImplementation(async (...args) => {
+			await blocked;
+			return encrypt(...args);
+		});
+		try {
+			const pending = putBlob(keys, 'room-1', 't-1', bytes(16), 'a/b', cancel.signal);
+			cancel.abort();
+			await burnRoomBlobs('room-1');
+			release();
+			await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+			expect(await getBlob(keys, 'room-1', 't-1')).toBeNull();
+		} finally {
+			release();
+			spy.mockRestore();
+		}
+	});
+
 	test('round-trips a blob with its mime type', async () => {
 		const data = bytes(1024 * 64);
 		await putBlob(keys, 'room-1', 't-1', data, 'image/jpeg');

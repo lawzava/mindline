@@ -15,6 +15,7 @@
 	import { senderHue } from '$lib/utils';
 	import { clearRoomMessages, loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
 	import { burnRoomData } from '$lib/storage/burn';
+	import { burnRoomBlobs } from '$lib/media/blob-store';
 	import {
 		initializeP2P,
 		disconnectP2P,
@@ -47,7 +48,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Popover from '$lib/components/ui/popover';
 	import { ChevronLeft, Share2, EllipsisVertical, Loader2, Sun, Moon, Link } from 'lucide-svelte';
-	import { shareInvite } from '$lib/share';
+	import { copyInvite, shareInvite } from '$lib/share';
 	import { toggleMode, mode } from 'mode-watcher';
 
 	// Get room ID from URL params
@@ -56,6 +57,7 @@
 	let isSending = $state(false);
 	let showLeaveDialog = $state(false);
 	let isKnocking = $state(false);
+	let destroyed = false;
 
 	// Debounced typing broadcast to reduce network traffic
 	let typingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,14 +75,23 @@
 
 		try {
 			burnChannel = new BroadcastChannel('mindline_burn');
-			burnChannel.onmessage = (event) => {
+			burnChannel.onmessage = async (event) => {
 				if (!roomId || event.data?.roomId !== roomId) return;
+				const burnedRoomId = roomId;
 				disconnectP2P();
-				void clearRoomMessages(roomId); // drops this tab's cached keys + any rewrite
-				messages.clearRoom(roomId);
-				recentRooms.remove(roomId); // burned: drop the rejoin entry too
+				try {
+					// A write may have committed after the other tab deleted its media,
+					// but before this notification arrived. Cancel first, then erase it.
+					await Promise.all([clearRoomMessages(burnedRoomId), burnRoomBlobs(burnedRoomId)]);
+					toast.info('This room was burned in another tab');
+				} catch (error) {
+					console.error('[Room] cross-tab burn cleanup failed:', error);
+					toast.error('Burn incomplete: some data may remain on this device.');
+				}
+				messages.clearRoom(burnedRoomId);
+				recentRooms.remove(burnedRoomId);
+				if (destroyed || roomId !== burnedRoomId) return;
 				currentRoomId.clear();
-				toast.info('This room was burned in another tab');
 				goto('/');
 			};
 		} catch {
@@ -153,6 +164,7 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		burnChannel?.close();
 		burnChannel = null;
 		// Cleanup typing debounce timer
@@ -238,8 +250,7 @@
 	async function copyRoomId() {
 		if (!roomId) return;
 		// The invite is the full URL: room id in the path, key in the fragment.
-		await navigator.clipboard.writeText(window.location.href);
-		toast.success('Invite link copied! Anyone with this link can read the room.');
+		await copyInvite();
 	}
 
 	// Local-only room label + monogram tint, shared with the Recent Rooms list.

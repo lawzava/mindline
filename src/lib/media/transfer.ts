@@ -10,7 +10,7 @@
 import { toB64url, fromB64url } from '$lib/crypto/b64';
 import type { CryptoSession } from '$lib/p2p/crypto-session';
 import { CHUNK_SIZE, decryptChunk, encryptChunk } from './frame';
-import { hasQuotaFor, putBlob } from './blob-store';
+import { getBlob, hasQuotaFor, putBlob } from './blob-store';
 
 export type MediaKind = 'file' | 'image' | 'voice' | 'video';
 
@@ -76,6 +76,8 @@ export interface TransferDeps {
 const AUTO_ACCEPT_BYTES = 5 * 1024 * 1024;
 const BUFFERED_LOW = 256 * 1024;
 const BUFFERED_HIGH = 1024 * 1024;
+const OFFER_LIFETIME_MS = 10 * 60 * 1000;
+const MAX_PENDING_OFFERS = 64;
 /** Caps per kind (§5.1). */
 export const SIZE_CAPS: Record<MediaKind, number> = {
 	image: 25 * 1024 * 1024,
@@ -86,9 +88,11 @@ export const SIZE_CAPS: Record<MediaKind, number> = {
 
 interface OutgoingTransfer {
 	offer: MediaOffer;
-	data: Uint8Array;
 	salt: Uint8Array;
 	accepted: Set<string>; // peerDeviceIds already served
+	pending: Set<string>;
+	expiresAt: number;
+	expiry: ReturnType<typeof setTimeout>;
 }
 
 interface IncomingTransfer {
@@ -97,6 +101,7 @@ interface IncomingTransfer {
 	salt: Uint8Array;
 	chunks: Map<number, Uint8Array>;
 	bytesDone: number;
+	queue: Promise<void>;
 }
 
 export async function sha256b64url(data: Uint8Array): Promise<string> {
@@ -107,11 +112,38 @@ export class MediaTransferEngine {
 	private deps: TransferDeps;
 	private outgoing = new Map<string, OutgoingTransfer>();
 	private incoming = new Map<string, IncomingTransfer>();
+	private lifetime = new AbortController();
+	private channels = new Set<RTCDataChannel>();
 	/** Offers awaiting explicit user consent, keyed by transferId. */
 	readonly pendingConsent = new Map<string, { offer: MediaOffer; peerDeviceId: string }>();
 
 	constructor(deps: TransferDeps) {
 		this.deps = deps;
+	}
+
+	/** Cancel before room burn: pending encryption/IDB writes cannot commit afterwards. */
+	destroy(): void {
+		if (this.lifetime.signal.aborted) return;
+		this.lifetime.abort();
+		this.incoming.clear();
+		this.pendingConsent.clear();
+		for (const id of this.outgoing.keys()) this.releaseOffer(id);
+		for (const channel of this.channels) channel.close();
+		this.channels.clear();
+	}
+
+	private releaseOffer(transferId: string): void {
+		const transfer = this.outgoing.get(transferId);
+		if (!transfer) return;
+		clearTimeout(transfer.expiry);
+		this.outgoing.delete(transferId);
+	}
+
+	private expireOffer(transferId: string): void {
+		const transfer = this.outgoing.get(transferId);
+		if (!transfer) return;
+		this.releaseOffer(transferId);
+		for (const peer of transfer.pending) this.abort(transferId, peer, 'offer expired');
 	}
 
 	/** Build and broadcast an offer; serves each peer that accepts. */
@@ -130,6 +162,7 @@ export class MediaTransferEngine {
 		sender: { id: string; name: string },
 		messageId: string
 	): Promise<MediaOffer> {
+		this.lifetime.signal.throwIfAborted();
 		if (data.byteLength > SIZE_CAPS[meta.kind]) {
 			throw new Error(`${meta.kind} exceeds the ${SIZE_CAPS[meta.kind] / 1024 / 1024} MB cap`);
 		}
@@ -157,10 +190,29 @@ export class MediaTransferEngine {
 			timestamp: Date.now()
 		};
 
-		this.outgoing.set(transferId, { offer, data, salt, accepted: new Set() });
-
 		// Persist locally so the sender can re-render their own media.
-		await putBlob(this.deps.session.roomKeys, this.deps.roomId, transferId, data, meta.mime);
+		await putBlob(
+			this.deps.session.roomKeys,
+			this.deps.roomId,
+			transferId,
+			data,
+			meta.mime,
+			this.lifetime.signal
+		);
+		this.lifetime.signal.throwIfAborted();
+		// Keep bounded offer metadata only; accepted peers load their bytes from storage.
+		if (recipients.length > 0) {
+			while (this.outgoing.size >= MAX_PENDING_OFFERS)
+				this.expireOffer(this.outgoing.keys().next().value!);
+			this.outgoing.set(transferId, {
+				offer,
+				salt,
+				accepted: new Set(),
+				pending: new Set(recipients),
+				expiresAt: Date.now() + OFFER_LIFETIME_MS,
+				expiry: setTimeout(() => this.expireOffer(transferId), OFFER_LIFETIME_MS)
+			});
+		}
 
 		for (const peer of recipients) {
 			this.deps.sendControl(peer, offer);
@@ -173,6 +225,7 @@ export class MediaTransferEngine {
 		message: MediaOffer | MediaAccept | MediaAbort,
 		peerDeviceId: string
 	): Promise<void> {
+		if (this.lifetime.signal.aborted) return;
 		switch (message.type) {
 			case 'media-offer':
 				await this.handleOffer(message, peerDeviceId);
@@ -181,6 +234,9 @@ export class MediaTransferEngine {
 				await this.serve(message.transferId, peerDeviceId);
 				break;
 			case 'media-abort': {
+				const outgoing = this.outgoing.get(message.transferId);
+				if (outgoing?.pending.delete(peerDeviceId) && outgoing.pending.size === 0)
+					this.releaseOffer(message.transferId);
 				this.incoming.delete(message.transferId);
 				this.pendingConsent.delete(message.transferId);
 				this.deps.events.onAborted(message.transferId, message.reason, peerDeviceId);
@@ -198,6 +254,7 @@ export class MediaTransferEngine {
 			this.abort(offer.transferId, peerDeviceId, 'not enough storage space');
 			return;
 		}
+		if (this.lifetime.signal.aborted) return;
 
 		if (offer.size <= AUTO_ACCEPT_BYTES) {
 			this.accept(offer, peerDeviceId);
@@ -216,6 +273,7 @@ export class MediaTransferEngine {
 
 	/** Receiver consent (called directly for auto-accept, or from UI). */
 	accept(offer: MediaOffer, peerDeviceId: string): void {
+		if (this.lifetime.signal.aborted) return;
 		this.pendingConsent.delete(offer.transferId);
 		const salt = fromB64url(offer.nonceSalt);
 		if (!salt || salt.length !== 8) {
@@ -227,7 +285,8 @@ export class MediaTransferEngine {
 			peerDeviceId,
 			salt,
 			chunks: new Map(),
-			bytesDone: 0
+			bytesDone: 0,
+			queue: Promise.resolve()
 		});
 		this.deps.sendControl(peerDeviceId, {
 			type: 'media-accept',
@@ -248,6 +307,7 @@ export class MediaTransferEngine {
 
 	abort(transferId: string, peerDeviceId: string, reason: string): void {
 		this.incoming.delete(transferId);
+		if (this.lifetime.signal.aborted) return;
 		this.deps.sendControl(peerDeviceId, {
 			type: 'media-abort',
 			transferId,
@@ -259,8 +319,15 @@ export class MediaTransferEngine {
 	/** Sender side: pump chunks to an accepting peer with backpressure. */
 	private async serve(transferId: string, peerDeviceId: string): Promise<void> {
 		const transfer = this.outgoing.get(transferId);
-		if (!transfer || transfer.accepted.has(peerDeviceId)) return;
+		if (!transfer || !transfer.pending.has(peerDeviceId) || transfer.accepted.has(peerDeviceId))
+			return;
+		if (Date.now() >= transfer.expiresAt) {
+			this.expireOffer(transferId);
+			return;
+		}
 		transfer.accepted.add(peerDeviceId);
+		transfer.pending.delete(peerDeviceId);
+		if (transfer.pending.size === 0) this.releaseOffer(transferId);
 
 		const channel = this.deps.openChannel(peerDeviceId, `media-${transferId}`);
 		if (!channel) {
@@ -268,42 +335,80 @@ export class MediaTransferEngine {
 			return;
 		}
 		channel.binaryType = 'arraybuffer';
+		this.channels.add(channel);
+		channel.addEventListener('close', () => this.channels.delete(channel), { once: true });
 		channel.bufferedAmountLowThreshold = BUFFERED_LOW;
-
-		const key = await this.deps.session.mediaKey(transferId);
-		const total = transfer.data.byteLength;
-		const chunkCount = Math.max(1, Math.ceil(total / CHUNK_SIZE));
 
 		const waitOpen = () =>
 			new Promise<void>((resolve, reject) => {
+				if (this.lifetime.signal.aborted || channel.readyState === 'closed')
+					return reject(new Error('media channel closed'));
 				if (channel.readyState === 'open') return resolve();
-				channel.onopen = () => resolve();
-				channel.onerror = () => reject(new Error('media channel failed to open'));
-				setTimeout(() => reject(new Error('media channel open timeout')), 20000);
+				const cleanup = () => {
+					clearTimeout(timeout);
+					channel.removeEventListener('open', opened);
+					channel.removeEventListener('close', failed);
+					channel.removeEventListener('error', failed);
+					this.lifetime.signal.removeEventListener('abort', failed);
+				};
+				const opened = () => {
+					cleanup();
+					resolve();
+				};
+				const failed = () => {
+					cleanup();
+					reject(new Error('media channel failed to open'));
+				};
+				const timeout = setTimeout(failed, 20000);
+				channel.addEventListener('open', opened);
+				channel.addEventListener('close', failed);
+				channel.addEventListener('error', failed);
+				this.lifetime.signal.addEventListener('abort', failed, { once: true });
 			});
 
 		// Attach the persistent low-watermark waiter BEFORE sending (§5.2):
 		// bufferedamountlow only fires on downward crossings.
 		let lowResolve: (() => void) | null = null;
-		channel.addEventListener('bufferedamountlow', () => {
+		let lowReject: ((error: Error) => void) | null = null;
+		const onLow = () => {
 			lowResolve?.();
 			lowResolve = null;
-		});
+			lowReject = null;
+		};
+		const onClosed = () => {
+			lowReject?.(new Error('media channel closed mid-transfer'));
+			lowResolve = null;
+			lowReject = null;
+		};
+		channel.addEventListener('bufferedamountlow', onLow);
+		channel.addEventListener('close', onClosed);
+		this.lifetime.signal.addEventListener('abort', onClosed, { once: true });
 		const drain = () =>
-			new Promise<void>((resolve) => {
+			new Promise<void>((resolve, reject) => {
+				if (this.lifetime.signal.aborted || channel.readyState !== 'open')
+					return reject(new Error('media channel closed mid-transfer'));
 				if (channel.bufferedAmount <= BUFFERED_HIGH) return resolve();
 				lowResolve = resolve;
+				lowReject = reject;
 				// Re-check after attach: the buffer may have drained already.
 				if (channel.bufferedAmount <= BUFFERED_LOW) {
 					lowResolve = null;
+					lowReject = null;
 					resolve();
 				}
 			});
 
 		try {
+			const stored = await getBlob(this.deps.session.roomKeys, this.deps.roomId, transferId);
+			if (!stored) throw new Error('media no longer available');
+			this.lifetime.signal.throwIfAborted();
+			const key = await this.deps.session.mediaKey(transferId);
+			const total = stored.data.byteLength;
+			const chunkCount = Math.max(1, Math.ceil(total / CHUNK_SIZE));
 			await waitOpen();
 			for (let i = 0; i < chunkCount; i++) {
-				const slice = transfer.data.subarray(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+				this.lifetime.signal.throwIfAborted();
+				const slice = stored.data.subarray(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
 				const frame = await encryptChunk(key, transferId, i, transfer.salt, slice);
 				await drain();
 				if (channel.readyState !== 'open') throw new Error('media channel closed mid-transfer');
@@ -329,6 +434,7 @@ export class MediaTransferEngine {
 			// Close after the receiver had a moment to drain (§3.3 close discipline).
 			setTimeout(() => channel.close(), 3000);
 		} catch (error) {
+			if (this.lifetime.signal.aborted) return;
 			console.warn('[Media] send failed:', error);
 			try {
 				channel.close();
@@ -337,6 +443,10 @@ export class MediaTransferEngine {
 			}
 			this.abort(transferId, peerDeviceId, 'send failed');
 			this.deps.events.onAborted(transferId, 'send failed', peerDeviceId);
+		} finally {
+			channel.removeEventListener('bufferedamountlow', onLow);
+			channel.removeEventListener('close', onClosed);
+			this.lifetime.signal.removeEventListener('abort', onClosed);
 		}
 	}
 
@@ -348,14 +458,20 @@ export class MediaTransferEngine {
 			return;
 		}
 		channel.binaryType = 'arraybuffer';
-
-		channel.onmessage = (event) => void this.onFrame(transfer, channel, event.data);
+		this.channels.add(channel);
+		// Ordered DataChannel delivery does not serialize asynchronous WebCrypto work.
+		channel.onmessage = (event) => {
+			transfer.queue = transfer.queue.then(() => this.onFrame(transfer, channel, event.data));
+		};
 		channel.onclose = () => {
-			// Closed before completion: drop partials (no resume in v1).
-			if (this.incoming.has(transferId)) {
-				this.incoming.delete(transferId);
-				this.deps.events.onAborted(transferId, 'peer closed mid-transfer', peerDeviceId);
-			}
+			this.channels.delete(channel);
+			// Process already delivered frames, including complete, before deciding it failed.
+			transfer.queue = transfer.queue.then(() => {
+				if (this.incoming.get(transferId) === transfer) {
+					this.incoming.delete(transferId);
+					this.deps.events.onAborted(transferId, 'peer closed mid-transfer', peerDeviceId);
+				}
+			});
 		};
 	}
 
@@ -365,14 +481,22 @@ export class MediaTransferEngine {
 		raw: unknown
 	): Promise<void> {
 		const { offer, peerDeviceId } = transfer;
+		if (!this.isActive(transfer)) return;
 
 		if (typeof raw === 'string') {
 			// Control frame: complete
+			let control;
 			try {
-				const control = JSON.parse(raw);
-				if (control.type === 'complete') await this.finalize(transfer, channel);
+				control = JSON.parse(raw);
 			} catch {
-				/* ignore noise */
+				return; // ignore malformed control frames, not persistence failures
+			}
+			if (control?.type === 'complete') {
+				try {
+					await this.finalize(transfer, channel);
+				} catch {
+					if (this.isActive(transfer)) this.failIncoming(transfer, channel, 'could not save media');
+				}
 			}
 			return;
 		}
@@ -386,6 +510,7 @@ export class MediaTransferEngine {
 				transfer.salt,
 				new Uint8Array(raw)
 			);
+			if (!this.isActive(transfer)) return;
 			if (!transfer.chunks.has(chunkIndex)) {
 				transfer.chunks.set(chunkIndex, plaintext);
 				transfer.bytesDone += plaintext.byteLength;
@@ -400,17 +525,26 @@ export class MediaTransferEngine {
 				status: 'transferring'
 			});
 		} catch (error) {
+			if (!this.isActive(transfer)) return;
 			console.warn('[Media] dropping transfer:', error);
-			this.incoming.delete(offer.transferId);
-			channel.close();
-			this.abort(offer.transferId, peerDeviceId, 'chunk verification failed');
-			this.deps.events.onAborted(offer.transferId, 'chunk verification failed', peerDeviceId);
+			this.failIncoming(transfer, channel, 'chunk verification failed');
 		}
+	}
+
+	private isActive(transfer: IncomingTransfer): boolean {
+		return (
+			!this.lifetime.signal.aborted && this.incoming.get(transfer.offer.transferId) === transfer
+		);
+	}
+
+	private failIncoming(transfer: IncomingTransfer, channel: RTCDataChannel, reason: string): void {
+		this.abort(transfer.offer.transferId, transfer.peerDeviceId, reason);
+		channel.close();
+		this.deps.events.onAborted(transfer.offer.transferId, reason, transfer.peerDeviceId);
 	}
 
 	private async finalize(transfer: IncomingTransfer, channel: RTCDataChannel): Promise<void> {
 		const { offer, peerDeviceId } = transfer;
-		this.incoming.delete(offer.transferId);
 
 		this.deps.events.onProgress({
 			transferId: offer.transferId,
@@ -432,14 +566,13 @@ export class MediaTransferEngine {
 
 		const expectedCount = Math.max(1, Math.ceil(offer.size / CHUNK_SIZE));
 		const hash = await sha256b64url(assembled);
+		if (!this.isActive(transfer)) return;
 		if (
 			assembled.byteLength !== offer.size ||
 			indices.length !== expectedCount ||
 			hash !== offer.sha256
 		) {
-			channel.close();
-			this.abort(offer.transferId, peerDeviceId, 'integrity check failed');
-			this.deps.events.onAborted(offer.transferId, 'integrity check failed', peerDeviceId);
+			this.failIncoming(transfer, channel, 'integrity check failed');
 			return;
 		}
 
@@ -448,8 +581,11 @@ export class MediaTransferEngine {
 			this.deps.roomId,
 			offer.transferId,
 			assembled,
-			offer.mime
+			offer.mime,
+			this.lifetime.signal
 		);
+		if (!this.isActive(transfer)) return;
+		this.incoming.delete(offer.transferId);
 		channel.close();
 
 		this.deps.events.onProgress({

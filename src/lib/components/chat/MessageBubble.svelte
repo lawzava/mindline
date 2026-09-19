@@ -107,7 +107,7 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter' && !e.shiftKey) {
+		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
 			e.preventDefault();
 			saveEdit();
 		} else if (e.key === 'Escape') {
@@ -222,13 +222,13 @@
 			)}
 		>
 			{#if isEditing}
-				<div class="flex items-center gap-2">
+				<div class="flex min-w-0 items-center gap-2">
 					<Input
 						type="text"
 						bind:value={editContent}
 						onkeydown={handleKeydown}
 						aria-label="Edit message content"
-						class="h-7 min-w-[200px] bg-background text-sm text-foreground"
+						class="h-9 min-w-0 flex-1 bg-background text-base text-foreground"
 						autofocus
 					/>
 					<Button
@@ -267,19 +267,18 @@
 				<EmojiPicker onSelectEmoji={handleReaction} />
 			{/if}
 		{/if}
+		<LongPressMenu
+			{isMe}
+			{isDeleted}
+			{isEditing}
+			showTrigger={isTouchDevice && !isDeleted && !isEditing}
+			bind:open={showLongPressMenu}
+			onOpenChange={(open) => (showLongPressMenu = open)}
+			onEdit={message.attachment ? undefined : startEdit}
+			onDelete={handleDelete}
+			onReaction={handleReaction}
+		/>
 	</div>
-
-	<!-- Long press menu for mobile -->
-	<LongPressMenu
-		{isMe}
-		{isDeleted}
-		{isEditing}
-		bind:open={showLongPressMenu}
-		onOpenChange={(open) => (showLongPressMenu = open)}
-		onEdit={startEdit}
-		onDelete={handleDelete}
-		onReaction={handleReaction}
-	/>
 
 	<!-- Reactions -->
 	{#if !isDeleted && message.reactions && Object.keys(message.reactions).length > 0}

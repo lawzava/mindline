@@ -347,6 +347,7 @@ export function disconnectP2P(): void {
 	// Mark as disconnecting
 	isDisconnecting = true;
 	clearRekeyState();
+	mediaEngine?.destroy();
 
 	if (reconnectInterval) {
 		clearInterval(reconnectInterval);
@@ -390,6 +391,11 @@ async function disconnectP2PAsync(): Promise<void> {
 		// from the room being left survives the switch and suppresses the
 		// next room's rekey (stale baseline + occupied fallback slot).
 		clearRekeyState();
+		mediaEngine?.destroy();
+		mediaEngine = null;
+		setMediaControlFn(null);
+		transfers.clear();
+		mediaConsent.clear();
 
 		if (reconnectInterval) {
 			clearInterval(reconnectInterval);
