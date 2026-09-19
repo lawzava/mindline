@@ -768,8 +768,14 @@ abort    ⇄  { transferId, reason }    // chat channel, either side
   into every chunk nonce (§5.2) — belt-and-suspenders so nonce uniqueness
   never rests on transferId discipline alone.
 - Caps: image 25 MB, file 100 MB, voice 10 min, video 90 s / 50 MB.
-  Multi-peer fan-out is sender-pays: sequential per peer on mobile, 2-way
-  parallel on desktop.
+  The sender uploads separately to each accepting peer; there is currently
+  no device-specific limit on concurrent recipients.
+- Offers serve each original recipient at most once. Pending acceptance
+  expires after 10 minutes. Each session retains at most 64 pending offers;
+  exceeding that limit expires the oldest offer. Expiration sends
+  `media-abort` with reason `offer expired` to pending recipients. Transfers
+  already accepted continue. Offers retain metadata; each accepted transfer
+  reads its payload from encrypted local storage.
 
 ### 5.2 Chunk framing (binary, not JSON)
 
@@ -793,13 +799,20 @@ AAD   = lp(transferId, str(chunkIndex))
   near its ~16 MB internal buffer cap.
 - Integrity: GCM per chunk + whole-file SHA-256 verified against the offer
   before the blob is committed; mismatch → abort + UI error.
+- Receivers process frames, completion, and channel closure in order,
+  including asynchronous decryption. A storage failure aborts the transfer
+  and produces a failed attachment instead of leaving progress stalled.
+- Room teardown cancels pending media writes, including active IndexedDB
+  transactions. Burn notifications also erase media in observing tabs, so
+  a write committed before notification cannot survive their cleanup.
 - Failure: peer loss or refresh mid-transfer aborts (no resume in v1);
   receiver discards partials. Deferred explicitly: resume, multi-source,
   relay media.
 
 ### 5.3 Capture paths
 
-- **Photos**: `<input type=file accept=image/*>` (+ `capture` on mobile).
+- **Photos**: `<input type=file accept="image/*,video/*">`; no forced
+  capture, so mobile users can choose their gallery or camera.
   Re-encode **every** image — PNG (eXIf chunk) and WebP carry GPS metadata
   too, so no size-based skip: `createImageBitmap` (pass
   `imageOrientation: 'from-image'` where supported — feature-detect; it is
@@ -811,12 +824,14 @@ AAD   = lp(transferId, str(chunkIndex))
 - **Voice**: MediaRecorder, `audio/webm;codecs=opus` where supported, else
   `audio/mp4` (Safari/AAC). Honest cross-engine reality: Safari-recorded
   mp4 plays everywhere; Chrome/Firefox-recorded webm/opus requires a
-  reasonably current Safari to play — verified by a cross-engine E2E test
-  (record on Chromium, assert playback on WebKit), with a UI "can't play
-  this voice note" fallback offering download. Waveform: 64 normalized
-  peaks sampled during recording, sent in the offer.
-- **Video**: MediaRecorder camera capture, `video/webm` or `video/mp4` by
-  engine, hard 90 s timer, same cross-engine playback caveat and test.
+  reasonably current Safari to play. Cross-engine playback remains
+  unverified. Waveform: 64 normalized peaks sampled during recording,
+  sent in the offer. The 10-minute limit stops capture and sends the
+  completed recording. Cancel or room exit releases microphone tracks,
+  including permission requests that complete after exit.
+- **Video**: the composer sends selected video files, limited to 50 MB.
+  The recorder supports a 90-second video limit, but the composer does not
+  currently expose that capture path. Cross-engine playback remains unverified.
 
 ## 6. Threat model (honest version)
 

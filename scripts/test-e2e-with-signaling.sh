@@ -107,7 +107,7 @@ normalize_playwright_args "$@"
 
 if [ "$SKIP_SIGNALING_START" != "1" ]; then
   fail_if_stale_local_signaling_port
-  bash -lc "exec ${SIGNALING_START_CMD}" > /tmp/mindline-signaling.log 2>&1 &
+  bash -lc "exec ${SIGNALING_START_CMD}" > "${TMPDIR:-/var/tmp}/mindline-signaling.log" 2>&1 &
   SIGNALING_PID=$!
 fi
 

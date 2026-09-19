@@ -1,4 +1,16 @@
 import { toast } from 'svelte-sonner';
+import { recentRooms } from '$lib/stores/recent-rooms';
+
+function inviteUrl(): string {
+	const url = new URL(window.location.href);
+	if (!url.hash) {
+		const room = recentRooms
+			.get()
+			.find((entry) => `/${encodeURIComponent(entry.id)}` === url.pathname);
+		if (room?.key) url.hash = room.key;
+	}
+	return url.href;
+}
 
 /**
  * Share the current room invite. The full URL carries the key fragment;
@@ -6,7 +18,7 @@ import { toast } from 'svelte-sonner';
  * then the execCommand fallback.
  */
 export async function shareInvite(): Promise<void> {
-	const url = window.location.href;
+	const url = inviteUrl();
 
 	if (navigator.share) {
 		try {
@@ -16,11 +28,15 @@ export async function shareInvite(): Promise<void> {
 				url
 			});
 			return;
-		} catch {
-			// User cancelled or share failed - fall through to clipboard
+		} catch (error) {
+			// Cancellation must not copy a bearer capability without consent.
+			if (error instanceof Error && error.name === 'AbortError') return;
 		}
 	}
+	await copyInvite(url);
+}
 
+export async function copyInvite(url = inviteUrl()): Promise<void> {
 	try {
 		await navigator.clipboard.writeText(url);
 		toast.success('Invite link copied! Anyone with this link can read the room.');
@@ -30,6 +46,7 @@ export async function shareInvite(): Promise<void> {
 	}
 
 	const textArea = document.createElement('textarea');
+	const focused = document.activeElement;
 	try {
 		textArea.value = url;
 		textArea.style.position = 'fixed';
@@ -48,5 +65,6 @@ export async function shareInvite(): Promise<void> {
 		toast.error('Failed to copy link');
 	} finally {
 		textArea.parentNode?.removeChild(textArea);
+		if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
 	}
 }
