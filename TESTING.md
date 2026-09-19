@@ -17,7 +17,7 @@ channel-binding replay rejection, keystore round-trips (fake-indexeddb),
 media frame round-trip/reorder/corruption/salt rules, encrypted blob
 store, connection lifecycle and reliable message ordering, signaling
 authentication ordering, same-device offer collisions, delivery acknowledgments,
-duplicate presence announcements, message storage
+bounded recovery from stalled ICE attempts, duplicate presence announcements, message storage
 merge semantics + legacy format.
 
 ## E2E tests (Playwright, blocking tier)
@@ -89,7 +89,7 @@ without asserting.
 - Helpers in `tests/e2e/helpers/test-utils.ts` mint a per-room key
   fragment; every room navigation must carry `#k=...` or the app
   (correctly) locks you out.
-- `?fastConnect=true` is a legacy test parameter; the current transport
-  does not use it to shorten connection timers.
+- `?fastConnect=true` shortens the ICE attempt deadline to five seconds.
+  Normal room visits use fifteen seconds before entering restart backoff.
 - The signaling server rate-limits per IP. Helpers throttle room
   navigations, but reloads and reconnects also consume connection attempts.
