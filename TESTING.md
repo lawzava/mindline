@@ -15,7 +15,9 @@ spoof/tamper/signature rejection, (epoch, seq) replay rejection incl.
 reload epochs and serialize/hydrate, session hello verification and
 channel-binding replay rejection, keystore round-trips (fake-indexeddb),
 media frame round-trip/reorder/corruption/salt rules, encrypted blob
-store, connection lifecycle and reliable message ordering, message storage
+store, connection lifecycle and reliable message ordering, signaling
+authentication ordering, same-device offer collisions, delivery acknowledgments,
+duplicate presence announcements, message storage
 merge semantics + legacy format.
 
 ## E2E tests (Playwright, blocking tier)
@@ -42,7 +44,8 @@ Real two-browser-context WebRTC against a local signaling server:
 - `required-persistence.spec.ts`, `room-page`, `landing-page`,
   `messaging`, `connection-status` — core flows.
 - `room-usability.spec.ts` covers keyboard and touch actions, long room
-  lists, invite copying, share cancellation, and cross-tab media cleanup.
+  lists, invite copying, share cancellation, cross-tab media cleanup, and honest
+  local-message labels when nobody was connected.
 - `composer-reliability.spec.ts` covers IME composition and capture
   cancellation with controlled media streams, including delayed permission
   and the recording duration limit.

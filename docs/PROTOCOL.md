@@ -577,13 +577,19 @@ deviceId↔clientId binding is established by the first authenticated
 offer/answer or relay broadcast, including after signaling reconnects.
 Healthy DataChannels are never torn down by signaling loss.
 
+Incoming signaling preserves event order through asynchronous authentication.
+Outgoing offers, answers, and ICE candidates preserve order through signing
+and dispatch. Both queues are bounded and discard work from obsolete sockets
+or peers, so candidate authentication cannot overtake the offer creating a peer.
+
 ### 3.2 Perfect negotiation
 
 Polite/impolite role per pair: `polite = deviceId_self < deviceId_peer`
-(lexicographic, stable across reconnects). Standard perfect-negotiation
+(lexicographic, stable across reconnects). If device IDs match, as for two tabs
+on one device, compare their server-assigned client IDs instead. Standard perfect-negotiation
 pattern (rollback on collision), `restartIce()` on `connectionState:
 'failed'` with re-signaling, exponential backoff, full teardown guards
-(every timer/listener registered in a per-peer AbortController).
+(callbacks check peer and socket identity after asynchronous work).
 
 ### 3.3 Channels
 
@@ -703,6 +709,11 @@ Reaction state arriving via sync (§3.5) is the serving member's asserted
 full map: a malicious member can misrepresent past reaction state (and
 deleted-state) to a device that syncs from it — the same trust extended
 to all served history.
+
+Delivery receipts count only acknowledgments from the original, deduplicated
+recipient set. Disconnecting does not remove an intended recipient or prove
+delivery; a later valid acknowledgment can still count. Messages sent without
+recipients are labelled local. Missing receipt history does not imply delivery.
 
 ## 4. Storage at rest
 
