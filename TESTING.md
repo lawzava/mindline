@@ -15,7 +15,8 @@ spoof/tamper/signature rejection, (epoch, seq) replay rejection incl.
 reload epochs and serialize/hydrate, session hello verification and
 channel-binding replay rejection, keystore round-trips (fake-indexeddb),
 media frame round-trip/reorder/corruption/salt rules, encrypted blob
-store, message storage merge semantics + legacy format.
+store, connection lifecycle and reliable message ordering, message storage
+merge semantics + legacy format.
 
 ## E2E tests (Playwright, blocking tier)
 
@@ -30,7 +31,7 @@ Real two-browser-context WebRTC against a local signaling server:
 - `required-typing.spec.ts` — the flagship: a peer's draft grows
   progressively across three mid-flight assertions, holds without
   vanishing, and resolves into the sent message; a DataChannel send hook
-  asserts every frame on `chat`/`eph` is a v2 envelope and no plaintext
+  asserts every frame on `chat`/`eph` is a v4 envelope and no plaintext
   marker ever leaves the device; key-less visitors land in the knocking
   state and see nothing; fragment-less revisits open history from stored
   keys.
@@ -46,7 +47,8 @@ Real two-browser-context WebRTC against a local signaling server:
   cancellation with controlled media streams, including delayed permission
   and the recording duration limit.
 - `media-transfer.spec.ts` checks file bytes after transfer and reload,
-  large-file consent, and delivery after a declined transfer.
+  large-file consent, delivery after a declined transfer, and delivery
+  when encryption delays a key-rotation grant.
 
 ## Best-effort tier (non-blocking)
 

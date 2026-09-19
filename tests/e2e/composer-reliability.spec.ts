@@ -21,7 +21,8 @@ async function mockCapture(page: Page, pending = false) {
 				resolvePermission: () => {},
 				finishLimit: () => {}
 			});
-			Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+			// Patch the prototype so every MediaDevices wrapper uses the fixture in WebKit.
+			Object.defineProperty(Object.getPrototypeOf(navigator.mediaDevices), 'getUserMedia', {
 				value: () => {
 					capture.requests++;
 					const stream = {
@@ -112,6 +113,7 @@ test('leaving the room releases an active microphone', async ({ page }) => {
 	await mockCapture(page);
 	await joinRoom(page, generateTestRoomId());
 	await page.getByTestId('voice-btn').click();
+	await expect.poll(() => page.evaluate(() => window.composerCapture.requests)).toBe(1);
 	await expect(page.getByTestId('voice-stop-btn')).toBeVisible();
 	await leaveRoom(page);
 	await expect.poll(() => page.evaluate(() => window.composerCapture.stoppedTracks)).toBe(1);
@@ -121,6 +123,7 @@ test('leaving during microphone permission releases the eventual stream', async 
 	await mockCapture(page, true);
 	await joinRoom(page, generateTestRoomId());
 	await page.getByTestId('voice-btn').click();
+	await expect.poll(() => page.evaluate(() => window.composerCapture.requests)).toBe(1);
 	await leaveRoom(page);
 	await page.evaluate(() => window.composerCapture.resolvePermission());
 	await expect.poll(() => page.evaluate(() => window.composerCapture.stoppedTracks)).toBe(1);
@@ -132,6 +135,7 @@ test('the voice duration limit sends one completed note and restores the compose
 	await mockCapture(page);
 	await joinRoom(page, generateTestRoomId());
 	await page.getByTestId('voice-btn').click();
+	await expect.poll(() => page.evaluate(() => window.composerCapture.requests)).toBe(1);
 	await expect(page.getByTestId('voice-stop-btn')).toBeVisible();
 	await page.evaluate(() => window.composerCapture.finishLimit());
 	await expect(page.getByTestId('voice-stop-btn')).toBeHidden();

@@ -50,11 +50,20 @@ interface Peer {
 	queuedCandidates: RTCIceCandidateInit[];
 	restartTimer: ReturnType<typeof setTimeout> | null;
 	restartAttempts: number;
+	chatQueue: { raw: string; bytes: number }[];
+	chatQueueBytes: number;
+	chatDraining: boolean;
+	grantedGeneration: { g: number; gid: string } | null;
 }
 
 const CHAT_CHANNEL_ID = 0;
 const EPH_CHANNEL_ID = 1;
 const MAX_RESTART_ATTEMPTS = 5;
+// One full retained history (500 single-message pages) plus controls can
+// arrive while the receiver is busy. Allow up to 64 KiB per wire page.
+const MAX_QUEUED_CHAT_MESSAGES = 512;
+const MAX_QUEUED_CHAT_BYTES = MAX_QUEUED_CHAT_MESSAGES * 64 * 1024;
+const MAX_QUEUED_RELIABLE_SENDS = 128;
 /** Consecutive non-anchoring segmented rounds before we stop asking a peer (§1.4). */
 const SEGMENT_NO_PROGRESS_LIMIT = 4;
 
@@ -102,6 +111,8 @@ export class P2PConnection {
 	private disposed = false;
 	private wsQueue: string[] = [];
 	private wsDrainTimer: ReturnType<typeof setTimeout> | null = null;
+	private reliableSendTail: Promise<void> = Promise.resolve();
+	private queuedReliableSends = 0;
 
 	private onMessageCallback: MessageCallback | null = null;
 	private onPeerConnectedCallback: PeerCallback | null = null;
@@ -289,75 +300,116 @@ export class P2PConnection {
 	}
 
 	broadcast(message: TypedP2PMessage): number {
-		void this.broadcastAsync(message);
+		const send = async () => {
+			for (const deviceId of new Set(this.getConnectedPeers())) {
+				try {
+					await this.sendToPeerAsync(deviceId, message);
+				} catch (error) {
+					console.warn(`[P2P] broadcast failed to ${deviceId}:`, error);
+				}
+			}
+		};
+		void (message.type === 'typing' ? send() : this.queueReliableSend(send)).catch((error) => {
+			console.warn('[P2P] broadcast failed:', error);
+		});
 		return this.getConnectedPeers().length;
 	}
 
-	private async broadcastAsync(message: TypedP2PMessage): Promise<void> {
-		const isDraft = message.type === 'typing';
-		const wire = isDraft
-			? await this.session.sealDraft(message as unknown as Record<string, unknown>)
-			: await this.session.sealMessage(message as unknown as Record<string, unknown>);
+	private queueReliableSend(send: () => Promise<void>): Promise<void> {
+		if (this.disposed) return Promise.resolve();
+		if (this.queuedReliableSends >= MAX_QUEUED_RELIABLE_SENDS) {
+			return Promise.reject(new Error('reliable send queue exceeded'));
+		}
+		this.queuedReliableSends++;
+		const pending = this.reliableSendTail
+			.then(async () => {
+				if (!this.disposed) await send();
+			})
+			.finally(() => this.queuedReliableSends--);
+		// A failed send must not poison subsequent reliable traffic.
+		this.reliableSendTail = pending.catch(() => {});
+		return pending;
+	}
 
-		for (const peer of this.peers.values()) {
-			if (!peer.verified) continue;
+	sendToPeer(peerDeviceId: string, message: TypedP2PMessage): Promise<void> {
+		const send = () => this.sendToPeerAsync(peerDeviceId, message);
+		return (message.type === 'typing' ? send() : this.queueReliableSend(send)).catch((error) => {
+			console.warn(`[P2P] send failed to ${peerDeviceId}:`, error);
+		});
+	}
+
+	/** Called inside the reliable queue, or independently for lossy drafts. */
+	private async sendToPeerAsync(peerDeviceId: string, message: TypedP2PMessage): Promise<void> {
+		if (this.disposed) return;
+		const isDraft = message.type === 'typing';
+		const clientId = this.deviceToClient.get(peerDeviceId);
+		const peer = clientId ? this.peers.get(clientId) : undefined;
+		let wire = isDraft
+			? await this.session.sealDraft(message as unknown as Record<string, unknown>)
+			: peer?.verified
+				? await this.sealForPeer(peer, message)
+				: await this.session.sealMessage(message as unknown as Record<string, unknown>);
+		if (wire === null) {
+			// The remote may already have established relay while our old direct
+			// peer still exists. Only eligible bodies can use that fallback.
+			if (
+				!clientId ||
+				!this.relayPeers.get(clientId)?.verified ||
+				RELAY_FORBIDDEN_TYPES.has(message.type)
+			)
+				return;
+			wire = await this.session.sealMessage(message as unknown as Record<string, unknown>);
+		}
+		if (this.disposed) return;
+		if (peer?.verified && this.isCurrentPeer(peer)) {
 			const channel = isDraft ? peer.eph : peer.chat;
 			if (channel.readyState === 'open') {
 				try {
 					channel.send(wire);
+					return;
 				} catch (error) {
-					console.warn(`[P2P] send failed to ${peer.clientId}:`, error);
+					console.warn(`[P2P] direct send failed to ${peerDeviceId}:`, error);
 				}
 			}
 		}
-
 		if (
-			this.relayPeers.size > 0 &&
+			clientId &&
+			this.relayPeers.get(clientId)?.verified &&
 			relayEligible(message.type, new TextEncoder().encode(wire).length)
 		) {
-			for (const [clientId, relay] of this.relayPeers) {
-				if (!relay.verified) continue;
-				this.sendSignaling({
-					type: 'relay',
-					targetId: clientId,
-					data: { envelope: JSON.parse(wire) as Envelope } as never
-				});
-			}
+			this.sendSignaling({
+				type: 'relay',
+				targetId: clientId,
+				data: { envelope: JSON.parse(wire) as Envelope } as never
+			});
 		}
 	}
 
-	sendToPeer(peerDeviceId: string, message: TypedP2PMessage): void {
-		void (async () => {
-			const isDraft = message.type === 'typing';
-			const wire = isDraft
-				? await this.session.sealDraft(message as unknown as Record<string, unknown>)
-				: await this.session.sealMessage(message as unknown as Record<string, unknown>);
-
-			const clientId = this.deviceToClient.get(peerDeviceId);
-			const peer = clientId ? this.peers.get(clientId) : undefined;
-			if (peer && peer.verified) {
-				const channel = isDraft ? peer.eph : peer.chat;
-				if (channel.readyState === 'open') {
-					try {
-						channel.send(wire);
-						return;
-					} catch (error) {
-						console.warn(`[P2P] direct send failed to ${peerDeviceId}:`, error);
-					}
-				}
-			}
+	/** A newly adopted or minted generation must reach this peer before its messages. */
+	private async sealForPeer(peer: Peer, message: TypedP2PMessage): Promise<string | null> {
+		while (this.isCurrentPeer(peer) && peer.chat.readyState === 'open') {
+			const current = this.session.generation;
 			if (
-				clientId &&
-				this.relayPeers.get(clientId)?.verified &&
-				relayEligible(message.type, new TextEncoder().encode(wire).length)
+				current.g === 0 ||
+				(peer.grantedGeneration?.g === current.g && peer.grantedGeneration.gid === current.gid)
 			) {
-				this.sendSignaling({
-					type: 'relay',
-					targetId: clientId,
-					data: { envelope: JSON.parse(wire) as Envelope } as never
-				});
+				// No await between checking the generation and sealMessage capturing
+				// its key: another peer can adopt a grant while crypto is pending.
+				return this.session.sealMessage(message as unknown as Record<string, unknown>);
 			}
-		})();
+			await this.sendCurrentGrant(peer);
+		}
+		return null;
+	}
+
+	/** Must run inside queueReliableSend, so the grant's seq cannot be overtaken. */
+	private async sendCurrentGrant(peer: Peer, peerG = 0, peerGid?: string): Promise<void> {
+		if (!this.isCurrentPeer(peer) || !peer.deviceId || peer.chat.readyState !== 'open') return;
+		const generation = this.session.generation;
+		const wire = await this.session.grantWireFor(peer.deviceId, peerG, peerGid);
+		if (!this.isCurrentPeer(peer) || peer.chat.readyState !== 'open') return;
+		peer.chat.send(wire);
+		peer.grantedGeneration = generation;
 	}
 
 	// ============ signaling ============
@@ -542,7 +594,11 @@ export class P2PConnection {
 			helloSent: false,
 			queuedCandidates: [],
 			restartTimer: null,
-			restartAttempts: 0
+			restartAttempts: 0,
+			chatQueue: [],
+			chatQueueBytes: 0,
+			chatDraining: false,
+			grantedGeneration: null
 		};
 		this.peers.set(clientId, peer);
 
@@ -590,7 +646,7 @@ export class P2PConnection {
 		};
 
 		chat.onopen = () => void this.sendHello(peer);
-		chat.onmessage = (event) => void this.handleChannelMessage(peer, event.data);
+		chat.onmessage = (event) => this.enqueueChatMessage(peer, event.data);
 		eph.onmessage = (event) => void this.handleChannelMessage(peer, event.data);
 
 		// In-band media channels (§5): created per transfer by the sender.
@@ -742,14 +798,51 @@ export class P2PConnection {
 
 	// ============ channel data ============
 
+	private enqueueChatMessage(peer: Peer, raw: unknown): void {
+		if (!this.isCurrentPeer(peer) || typeof raw !== 'string') return;
+		const bytes = new TextEncoder().encode(raw).byteLength;
+		if (
+			peer.chatQueue.length >= MAX_QUEUED_CHAT_MESSAGES ||
+			peer.chatQueueBytes + bytes > MAX_QUEUED_CHAT_BYTES
+		) {
+			console.warn('[P2P] reliable receive queue exceeded; closing peer');
+			this.removePeer(peer.clientId);
+			return;
+		}
+		peer.chatQueue.push({ raw, bytes });
+		peer.chatQueueBytes += bytes;
+		if (!peer.chatDraining) void this.drainChatMessages(peer);
+	}
+
+	private async drainChatMessages(peer: Peer): Promise<void> {
+		peer.chatDraining = true;
+		try {
+			while (this.isCurrentPeer(peer)) {
+				const next = peer.chatQueue.shift();
+				if (!next) break;
+				peer.chatQueueBytes -= next.bytes;
+				try {
+					await this.handleChannelMessage(peer, next.raw);
+				} catch (error) {
+					console.warn('[P2P] reliable message failed:', error);
+				}
+			}
+		} finally {
+			peer.chatDraining = false;
+		}
+	}
+
 	private async sendHello(peer: Peer): Promise<void> {
 		if (peer.helloSent || !this.isCurrentPeer(peer)) return;
 		peer.helloSent = true;
 		try {
-			const binding = this.channelBinding(peer.pc);
-			const wire = await this.session.makeHello(this.displayName(), binding);
-			if (!this.isCurrentPeer(peer)) return;
-			peer.chat.send(wire);
+			await this.queueReliableSend(async () => {
+				if (!this.isCurrentPeer(peer)) return;
+				const binding = this.channelBinding(peer.pc);
+				const wire = await this.session.makeHello(this.displayName(), binding);
+				if (!this.isCurrentPeer(peer)) return;
+				peer.chat.send(wire);
+			});
 		} catch (error) {
 			console.warn('[P2P] hello send failed:', error);
 			peer.helloSent = false;
@@ -783,6 +876,7 @@ export class P2PConnection {
 			if (info) {
 				peer.deviceId = info.deviceId;
 				peer.verified = true;
+				peer.grantedGeneration = { g: info.g, gid: info.gid };
 				this.deviceToClient.set(info.deviceId, peer.clientId);
 				// Direct supersedes relay: a stale verified relay entry would
 				// keep ciphertext flowing through the server while the UI
@@ -856,8 +950,8 @@ export class P2PConnection {
 				// encapsulation per hello. Shared gate caps total grant-serving
 				// per peer across both triggers; the first hello always passes.
 				if (!this.rekeyRespondGate.allow(peer.deviceId)) return;
-				const wire = await this.session.grantWireFor(peer.deviceId, peerG, peerGid);
-				if (peer.chat.readyState === 'open') peer.chat.send(wire);
+				await this.queueReliableSend(() => this.sendCurrentGrant(peer, peerG, peerGid));
+				if (!this.isCurrentPeer(peer)) return;
 				// A peer still at the link generation is a newcomer (§1.4
 				// trigger a): grant it the current generation for immediate
 				// readability, then let the join trigger ratchet the room.
@@ -877,7 +971,11 @@ export class P2PConnection {
 		if (this.session.canReadGeneration(g) && gid === undefined) return;
 		if (!peer.deviceId || !this.rekeyRequestGate.allow(peer.deviceId)) return;
 		try {
-			peer.chat.send(await this.session.makeRekeyRequestWire(g, gid));
+			await this.queueReliableSend(async () => {
+				if (!this.isCurrentPeer(peer) || peer.chat.readyState !== 'open') return;
+				const wire = await this.session.makeRekeyRequestWire(g, gid);
+				if (this.isCurrentPeer(peer) && peer.chat.readyState === 'open') peer.chat.send(wire);
+			});
 		} catch (error) {
 			console.warn('[P2P] rekey-request send failed:', error);
 		}
@@ -891,8 +989,14 @@ export class P2PConnection {
 			// Rate-limited inbound so a request-flooder cannot force unbounded
 			// KEM encapsulations; honest catch-up (≤ 1 req/5 s/peer) is unaffected.
 			if (!this.rekeyRespondGate.allow(peer.deviceId)) return;
-			const wire = await this.session.handleRekeyRequest(body as never, peer.deviceId);
-			if (peer.chat.readyState === 'open') peer.chat.send(wire);
+			await this.queueReliableSend(async () => {
+				if (!this.isCurrentPeer(peer) || !peer.deviceId || peer.chat.readyState !== 'open') return;
+				const generation = this.session.generation;
+				const wire = await this.session.handleRekeyRequest(body as never, peer.deviceId);
+				if (!this.isCurrentPeer(peer) || peer.chat.readyState !== 'open') return;
+				peer.chat.send(wire);
+				peer.grantedGeneration = generation;
+			});
 			return;
 		}
 		const outcome = await this.session.handleRekeyGrant(body as never);
@@ -940,7 +1044,7 @@ export class P2PConnection {
 			// already-converged sender drops the reply as 'stale'.
 			if (peer.chat.readyState === 'open' && this.forkReplyGate.allow(peer.deviceId)) {
 				try {
-					peer.chat.send(await this.session.grantWireFor(peer.deviceId, 0));
+					await this.queueReliableSend(() => this.sendCurrentGrant(peer));
 				} catch (error) {
 					console.warn('[P2P] fork-heal reply failed:', error);
 				}
@@ -954,26 +1058,30 @@ export class P2PConnection {
 	 * its own pinned KEM key; the signed cert inside is identical.
 	 */
 	private gossipCurrentGrant(excludeClientId?: string): void {
-		void (async () => {
-			for (const p of this.peers.values()) {
-				if (p.clientId === excludeClientId) continue;
-				if (p.verified && p.deviceId && p.chat.readyState === 'open') {
-					try {
-						p.chat.send(await this.session.grantWireFor(p.deviceId, 0));
-					} catch (error) {
-						console.warn('[P2P] grant gossip failed:', error);
-					}
-				}
-			}
-		})();
+		void this.queueReliableSend(() => this.sendGrants(excludeClientId)).catch((error) => {
+			console.warn('[P2P] grant gossip failed:', error);
+		});
 	}
 
 	/** Broadcast a freshly minted grant (manager-driven trigger, §1.4). */
 	async broadcastGrant(): Promise<void> {
+		await this.queueReliableSend(() => this.sendGrants());
+	}
+
+	/** Mint and deliver grants before any later reliable body can use their keys. */
+	async mintAndBroadcastGrant(): Promise<void> {
+		await this.queueReliableSend(async () => {
+			await this.session.mintGeneration();
+			if (!this.disposed) await this.sendGrants();
+		});
+	}
+
+	private async sendGrants(excludeClientId?: string): Promise<void> {
 		for (const p of this.peers.values()) {
+			if (p.clientId === excludeClientId) continue;
 			if (p.verified && p.deviceId && p.chat.readyState === 'open') {
 				try {
-					p.chat.send(await this.session.grantWireFor(p.deviceId, 0));
+					await this.sendCurrentGrant(p);
 				} catch (error) {
 					console.warn('[P2P] grant broadcast failed:', error);
 				}
@@ -992,8 +1100,12 @@ export class P2PConnection {
 	/** Send a relay-hello; the peer entry is created when theirs verifies. */
 	private async offerRelay(clientId: string): Promise<void> {
 		if (this.config.allowRelayFallback === false || this.config.strictDirect) return;
-		const hello = await this.session.makeHello(this.displayName(), this.relayBinding(clientId));
-		this.sendSignaling({ type: 'relay', targetId: clientId, data: { hello } as never });
+		await this.queueReliableSend(async () => {
+			const hello = await this.session.makeHello(this.displayName(), this.relayBinding(clientId));
+			if (!this.disposed) {
+				this.sendSignaling({ type: 'relay', targetId: clientId, data: { hello } as never });
+			}
+		});
 	}
 
 	private relayBinding(peerClientId: string): HelloBinding {
@@ -1049,6 +1161,8 @@ export class P2PConnection {
 		const peer = this.peers.get(clientId);
 		if (!peer) return;
 		this.peers.delete(clientId);
+		peer.chatQueue.length = 0;
+		peer.chatQueueBytes = 0;
 		if (peer.restartTimer) clearTimeout(peer.restartTimer);
 		try {
 			peer.chat.close();

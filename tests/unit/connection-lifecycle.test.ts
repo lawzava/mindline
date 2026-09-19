@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import 'fake-indexeddb/auto';
+import { IDBFactory } from 'fake-indexeddb';
 import { P2PConnection } from '$lib/p2p/connection';
-import type { CryptoSession } from '$lib/p2p/crypto-session';
+import { CryptoSession } from '$lib/p2p/crypto-session';
+import { createRoomKey } from '$lib/crypto/keys';
+import type { TypedP2PMessage } from '$lib/p2p/types';
 
 class FakeChannel {
 	readyState = 'open';
@@ -75,6 +79,13 @@ describe('P2P peer callback lifecycle', () => {
 			acceptHello: vi.fn(async () => hello),
 			makeHello: vi.fn(async () => '{}'),
 			openMessage: vi.fn(async () => ({ type: 'chat', text: 'hello' })),
+			handleRekeyGrant: vi.fn(async () => 'adopted'),
+			canReadGeneration: vi.fn(() => true),
+			makeRekeyRequestWire: vi.fn(async () => '{}'),
+			sealMessage: vi.fn(async (body: Record<string, unknown>) => JSON.stringify(body)),
+			sealDraft: vi.fn(async (body: Record<string, unknown>) => JSON.stringify(body)),
+			grantWireFor: vi.fn(async () => '{"type":"rekey-grant"}'),
+			mintGeneration: vi.fn(async () => {}),
 			verifySignalingAuth: vi.fn(async () => true),
 			signalingAuth: vi.fn(async () => 'auth')
 		};
@@ -247,9 +258,336 @@ describe('P2P peer callback lifecycle', () => {
 		let finish!: (wire: string) => void;
 		session.makeHello.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
 		old.channels[0].onopen?.();
+		await vi.advanceTimersByTimeAsync(0);
 		await join();
 		finish('{}');
 		await vi.advanceTimersByTimeAsync(0);
 		expect(old.channels[0].send).not.toHaveBeenCalled();
+	});
+
+	test('a reliable media offer waits for the preceding hello verification', async () => {
+		const pc = await join();
+		const message = vi.fn();
+		connection.onMessage(message);
+		let finish!: (value: typeof hello) => void;
+		session.acceptHello.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+		pc.channels[0].onmessage?.({ data: '{"t":"hs"}' });
+		await vi.advanceTimersByTimeAsync(0);
+		pc.channels[0].onmessage?.({ data: '{"t":"msg","g":1}' });
+		await vi.advanceTimersByTimeAsync(0);
+		finish(hello);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(session.acceptHello).toHaveBeenCalledTimes(1);
+		expect(message).toHaveBeenCalledExactlyOnceWith(
+			{ type: 'chat', text: 'hello' },
+			'remote-device'
+		);
+	});
+
+	test('a reliable media offer waits for the preceding grant adoption', async () => {
+		const pc = await join();
+		await verify(pc);
+		const message = vi.fn();
+		connection.onMessage(message);
+		let adopted = false;
+		let finish!: () => void;
+		session.handleRekeyGrant.mockImplementationOnce(
+			() =>
+				new Promise<string>(
+					(resolve) =>
+						(finish = () => {
+							adopted = true;
+							resolve('adopted');
+						})
+				)
+		);
+		session.openMessage.mockImplementation(async (envelope?: { t: string }) => {
+			if (envelope?.t === 'hs') return { type: 'rekey-grant', text: '' };
+			if (!adopted) throw new Error('unknown generation 2 from remote-device');
+			return { type: 'media-offer', text: 'attachment' };
+		});
+		session.canReadGeneration.mockImplementation(() => adopted);
+		pc.channels[0].onmessage?.({ data: '{"t":"hs"}' });
+		await vi.advanceTimersByTimeAsync(0);
+		pc.channels[0].onmessage?.({ data: '{"t":"msg","g":2}' });
+		await vi.advanceTimersByTimeAsync(0);
+		finish();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(message).toHaveBeenCalledExactlyOnceWith(
+			{ type: 'media-offer', text: 'attachment' },
+			'remote-device'
+		);
+		expect(session.makeRekeyRequestWire).not.toHaveBeenCalled();
+	});
+
+	test('after adopting a generation, send its grant before a media offer to that peer', async () => {
+		const pc = await join();
+		await verify(pc);
+		pc.channels[0].send.mockClear();
+		session.generation = { g: 2, gid: 'generation-2' };
+		let finish!: (wire: string) => void;
+		session.grantWireFor.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+		connection.sendToPeer('remote-device', { type: 'media-offer' } as TypedP2PMessage);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(pc.channels[0].send).not.toHaveBeenCalled();
+		finish('{"type":"rekey-grant"}');
+		await vi.advanceTimersByTimeAsync(0);
+		expect(pc.channels[0].send.mock.calls.map(([wire]) => JSON.parse(wire).type)).toEqual([
+			'rekey-grant',
+			'media-offer'
+		]);
+	});
+
+	test('concurrent reliable sends keep sealing and transmission in the same order', async () => {
+		const pc = await join();
+		await verify(pc);
+		pc.channels[0].send.mockClear();
+		let finish!: (wire: string) => void;
+		session.sealMessage.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+		connection.sendToPeer('remote-device', { type: 'media-offer' } as TypedP2PMessage);
+		await vi.advanceTimersByTimeAsync(0);
+		connection.sendToPeer('remote-device', { type: 'media-abort' } as TypedP2PMessage);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(pc.channels[0].send).not.toHaveBeenCalled();
+		finish('{"type":"media-offer"}');
+		await vi.advanceTimersByTimeAsync(0);
+		expect(pc.channels[0].send.mock.calls.map(([wire]) => JSON.parse(wire).type)).toEqual([
+			'media-offer',
+			'media-abort'
+		]);
+	});
+
+	test('minting blocks reliable media until the grant is sent, while drafts remain independent', async () => {
+		const pc = await join();
+		await verify(pc);
+		pc.channels[0].send.mockClear();
+		session.mintGeneration.mockImplementation(async () => {
+			session.generation = { g: 2, gid: 'generation-2' };
+		});
+		let finish!: (wire: string) => void;
+		session.grantWireFor.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+		const mint = connection.mintAndBroadcastGrant();
+		await vi.advanceTimersByTimeAsync(0);
+		connection.sendToPeer('remote-device', { type: 'media-offer' } as TypedP2PMessage);
+		connection.sendToPeer('remote-device', { type: 'typing' } as TypedP2PMessage);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(pc.channels[0].send).not.toHaveBeenCalled();
+		expect(pc.channels[1].send).toHaveBeenCalledExactlyOnceWith('{"type":"typing"}');
+		finish('{"type":"rekey-grant"}');
+		await mint;
+		await vi.advanceTimersByTimeAsync(0);
+		expect(pc.channels[0].send.mock.calls.map(([wire]) => JSON.parse(wire).type)).toEqual([
+			'rekey-grant',
+			'media-offer'
+		]);
+	});
+
+	test('disconnect cancels a pending grant and reliable bodies queued behind it', async () => {
+		const pc = await join();
+		await verify(pc);
+		pc.channels[0].send.mockClear();
+		let finish!: (wire: string) => void;
+		session.grantWireFor.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+		const grant = connection.broadcastGrant();
+		await vi.advanceTimersByTimeAsync(0);
+		connection.sendToPeer('remote-device', { type: 'media-offer' } as TypedP2PMessage);
+		connection.disconnect();
+		finish('{"type":"rekey-grant"}');
+		await grant;
+		await vi.advanceTimersByTimeAsync(0);
+		expect(pc.channels[0].send).not.toHaveBeenCalled();
+		expect(session.sealMessage).not.toHaveBeenCalled();
+	});
+
+	test('receive queue has a count limit and drops pending work on teardown', async () => {
+		const pc = await join();
+		await verify(pc);
+		const message = vi.fn();
+		connection.onMessage(message);
+		let finish!: (body: { type: string; text: string }) => void;
+		session.openMessage.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+		pc.channels[0].onmessage?.({ data: '{}' });
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			for (let i = 0; i < 513; i++) pc.channels[0].onmessage?.({ data: '{}' });
+			expect(connection.getDirectPeers()).toEqual([]);
+			expect(pc.connectionState).toBe('closed');
+			finish({ type: 'media-offer', text: 'late' });
+			await vi.advanceTimersByTimeAsync(0);
+			expect(session.openMessage).toHaveBeenCalledTimes(1);
+			expect(message).not.toHaveBeenCalled();
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	test('receive queue rejects an oversized frame before crypto work', async () => {
+		const pc = await join();
+		await verify(pc);
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			pc.channels[0].onmessage?.({ data: 'x'.repeat(32 * 1024 * 1024 + 1) });
+			expect(pc.connectionState).toBe('closed');
+			expect(session.openMessage).not.toHaveBeenCalled();
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	test('a failed recipient does not prevent broadcast delivery to healthy peers', async () => {
+		await socket.receive({ type: 'room-joined', yourId: 'local', peers: ['first', 'second'] });
+		const [first, second] = FakePeerConnection.instances;
+		session.acceptHello.mockResolvedValueOnce({ ...hello, deviceId: 'first-device' });
+		await verify(first);
+		session.acceptHello.mockResolvedValueOnce({ ...hello, deviceId: 'second-device' });
+		await verify(second);
+		second.channels[0].send.mockClear();
+		first.channels[0].send.mockImplementationOnce(() => {
+			throw new Error('send buffer full');
+		});
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			connection.broadcast({ type: 'chat' } as TypedP2PMessage);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(second.channels[0].send).toHaveBeenCalledExactlyOnceWith('{"type":"chat"}');
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	test('awaiting reliable sends preserves every page of a 500-page history', async () => {
+		const pc = await join();
+		await verify(pc);
+		pc.channels[0].send.mockClear();
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			for (let page = 0; page < 500; page++) {
+				await connection.sendToPeer('remote-device', {
+					type: 'sync-response',
+					roomId: 'room',
+					messages: [],
+					timestamp: page
+				});
+			}
+			await vi.advanceTimersByTimeAsync(0);
+			expect(pc.channels[0].send).toHaveBeenCalledTimes(500);
+			expect(warning).not.toHaveBeenCalled();
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	test('real crypto consumes a delayed grant before its media body and still rejects replay', async () => {
+		vi.useRealTimers();
+		vi.stubGlobal('indexedDB', new IDBFactory());
+		const key = createRoomKey();
+		const sender = await CryptoSession.create('real-crypto', key);
+		const receiver = await CryptoSession.create('real-crypto', key);
+		const binding = { label: 'hello-v4' as const, fields: ['', ''] };
+		await sender.acceptHello(await receiver.makeHello('Receiver', binding), binding);
+		connection.disconnect();
+		connection = new P2PConnection(receiver, {}, () => 'Receiver');
+		const connecting = connection.connect();
+		socket = FakeSocket.instance;
+		socket.onopen?.();
+		await connecting;
+		socket.onmessage?.({
+			data: JSON.stringify({ type: 'room-joined', yourId: 'local', peers: ['remote'] })
+		});
+		const pc = FakePeerConnection.instances.at(-1)!;
+		const connected = vi.fn();
+		connection.onPeerConnected(connected);
+		pc.channels[0].onmessage?.({ data: await sender.makeHello('Sender', binding) });
+		await vi.waitFor(() => expect(connected).toHaveBeenCalled());
+		await sender.mintGeneration();
+		const grant = await sender.grantWireFor(receiver.deviceId, 0);
+		const wire = await sender.sealMessage({ type: 'media-offer', transferId: 'real-transfer' });
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		const adopt = receiver.handleRekeyGrant.bind(receiver);
+		vi.spyOn(receiver, 'handleRekeyGrant').mockImplementationOnce(async (body) => {
+			await gate;
+			return adopt(body);
+		});
+		const message = vi.fn();
+		connection.onMessage(message);
+		pc.channels[0].onmessage?.({ data: grant });
+		pc.channels[0].onmessage?.({ data: wire });
+		await vi.waitFor(() => expect(receiver.handleRekeyGrant).toHaveBeenCalled());
+		expect(message).not.toHaveBeenCalled();
+		release();
+		await vi.waitFor(() => expect(message).toHaveBeenCalledTimes(1));
+		expect(message).toHaveBeenCalledWith(
+			expect.objectContaining({ type: 'media-offer', transferId: 'real-transfer' }),
+			sender.deviceId
+		);
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			pc.channels[0].onmessage?.({ data: wire });
+			await vi.waitFor(() => expect(warning).toHaveBeenCalled());
+			expect(String(warning.mock.calls[0][1])).toMatch(/replayed envelope/);
+			expect(message).toHaveBeenCalledTimes(1);
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	test('a slow receiver retains a full 500-page history burst until crypto catches up', async () => {
+		const pc = await join();
+		await verify(pc);
+		const message = vi.fn();
+		connection.onMessage(message);
+		let finish!: (body: { type: string; text: string }) => void;
+		session.openMessage.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+		pc.channels[0].onmessage?.({ data: '{}' });
+		const page = JSON.stringify({ t: 'msg', g: 1, c: 'x'.repeat(48 * 1024) });
+		for (let i = 0; i < 500; i++) pc.channels[0].onmessage?.({ data: page });
+		expect(connection.getDirectPeers()).toEqual(['remote-device']);
+		finish({ type: 'sync-response', text: 'first page' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(message).toHaveBeenCalledTimes(501);
+	});
+
+	test.each(['closed', 'send error'])(
+		'eligible chat still uses a verified relay when direct has %s',
+		async (failure) => {
+			const pc = await join();
+			await verify(pc);
+			await socket.receive({ type: 'relay', fromId: 'remote', data: { hello: '{}' } });
+			socket.send.mockClear();
+			if (failure === 'closed') pc.channels[0].close();
+			else
+				pc.channels[0].send.mockImplementationOnce(() => {
+					throw new Error('send buffer full');
+				});
+			const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			try {
+				await connection.sendToPeer('remote-device', { type: 'chat' } as TypedP2PMessage);
+				expect(socket.send).toHaveBeenCalledTimes(1);
+				expect(JSON.parse(socket.send.mock.calls[0][0])).toMatchObject({
+					type: 'relay',
+					targetId: 'remote'
+				});
+			} finally {
+				warning.mockRestore();
+			}
+		}
+	);
+
+	test('direct send failure never relays a media offer', async () => {
+		const pc = await join();
+		await verify(pc);
+		await socket.receive({ type: 'relay', fromId: 'remote', data: { hello: '{}' } });
+		socket.send.mockClear();
+		pc.channels[0].send.mockImplementationOnce(() => {
+			throw new Error('send buffer full');
+		});
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			await connection.sendToPeer('remote-device', { type: 'media-offer' } as TypedP2PMessage);
+			expect(socket.send).not.toHaveBeenCalled();
+		} finally {
+			warning.mockRestore();
+		}
 	});
 });
