@@ -89,7 +89,8 @@ export async function waitForSpecificStatus(page: Page, status: string): Promise
  * Wait for a message to appear in the message list
  */
 export async function waitForMessage(page: Page, text: string, timeout = 10000): Promise<void> {
-	await expect(page.locator('[data-testid="message-list"]').getByText(text)).toBeVisible({
+	// A live draft can contain the same text while its outgoing fade completes.
+	await expect(page.getByTestId('message-bubble').getByText(text, { exact: true })).toBeVisible({
 		timeout
 	});
 }
