@@ -619,9 +619,14 @@ server.on('request', (req, res) => {
 		return;
 	}
 
-	if (req.url === '/health') {
+	const requestPath = req.url?.split('?', 1)[0];
+	if (requestPath === '/health') {
 		// Health endpoint - only expose minimal safe information
-		res.writeHead(200, { 'Content-Type': 'application/json' });
+		// A cached success can conceal an outage from monitors.
+		res.writeHead(200, {
+			'Content-Type': 'application/json',
+			'Cache-Control': 'no-store'
+		});
 		res.end(
 			JSON.stringify({
 				status: 'healthy',
@@ -630,7 +635,7 @@ server.on('request', (req, res) => {
 				// Note: Removed connections, rooms, memory to prevent info disclosure
 			})
 		);
-	} else if (req.url === '/') {
+	} else if (requestPath === '/') {
 		res.writeHead(200, { 'Content-Type': 'text/plain' });
 		res.end('Mindline Signaling Server');
 	} else {
