@@ -122,10 +122,8 @@
 	<title>Mindline</title>
 </svelte:head>
 
-<div
-	class="flex flex-1 items-start justify-center overflow-y-auto p-6 pt-[12vh] sm:items-center sm:pt-6"
->
-	<div class="w-full max-w-md space-y-7">
+<div class="flex min-h-0 flex-1 flex-col items-center overflow-y-auto p-6 pt-[12vh] sm:pt-6">
+	<div class="w-full max-w-md shrink-0 space-y-7 sm:my-auto">
 		<!-- The promise, stated then demonstrated -->
 		<div class="space-y-3">
 			<h2 class="text-[1.55rem] font-semibold tracking-[-0.02em] sm:text-[2.1rem] sm:leading-[1.1]">
@@ -182,6 +180,9 @@
 				<Input
 					type="text"
 					placeholder="Paste an invite link..."
+					aria-label="Invite link or room code"
+					autocapitalize="none"
+					spellcheck={false}
 					bind:value={joinRoomId}
 					onkeydown={handleKeydown}
 					class="h-12 flex-1 rounded-[0.875rem] text-base md:h-12"

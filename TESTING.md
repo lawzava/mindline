@@ -40,6 +40,13 @@ Real two-browser-context WebRTC against a local signaling server:
   online recovery (CDP).
 - `required-persistence.spec.ts`, `room-page`, `landing-page`,
   `messaging`, `connection-status` — core flows.
+- `room-usability.spec.ts` covers keyboard and touch actions, long room
+  lists, invite copying, share cancellation, and cross-tab media cleanup.
+- `composer-reliability.spec.ts` covers IME composition and capture
+  cancellation with controlled media streams, including delayed permission
+  and the recording duration limit.
+- `media-transfer.spec.ts` checks file bytes after transfer and reload,
+  large-file consent, and delivery after a declined transfer.
 
 ## Best-effort tier (non-blocking)
 
@@ -58,8 +65,8 @@ without asserting.
   devices see the message with a thumbnail and an honest "stored copy
   unavailable" note (no re-offer protocol in v1).
 
-- Media transfer E2E (two-browser file hash equality, EXIF strip) is
-  verified manually and via unit tests; a CI spec needs fake-device flags.
+- File byte equality and consent have browser coverage. Browser-level
+  EXIF stripping and real microphone hardware remain outside CI coverage.
 - Mobile projects emulate viewports, not real devices or touch firmware.
 - Cross-engine voice playback (Chromium-recorded webm on WebKit) untested
   in CI.

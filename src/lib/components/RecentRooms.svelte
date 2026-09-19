@@ -65,23 +65,12 @@
 		if (days < 7) return `${days}d ago`;
 		return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
 	}
-
-	function rowKeydown(room: RecentRoom, event: KeyboardEvent) {
-		if (event.key === 'Enter' || event.key === ' ') {
-			event.preventDefault();
-			rejoin(room);
-		}
-	}
 </script>
 
 <ul class="space-y-1.5" data-testid="recent-rooms">
 	{#each $recentRooms as room (room.id)}
 		<li>
 			<div
-				role="button"
-				tabindex="0"
-				onclick={() => rejoin(room)}
-				onkeydown={(e) => rowKeydown(room, e)}
 				class="group flex items-center gap-3 rounded-[0.875rem] border border-border/70 bg-card px-2.5 py-2 text-left outline-ring/50 transition-colors hover:border-border hover:bg-accent/60"
 				data-testid="recent-room"
 			>
@@ -129,22 +118,26 @@
 						<X class="h-4 w-4" />
 					</button>
 				{:else}
-					<div class="min-w-0 flex-1">
-						<div class="truncate text-sm font-medium">{label(room)}</div>
-						<div class="truncate text-xs text-muted-foreground">
+					<button
+						onclick={() => rejoin(room)}
+						class="min-w-0 flex-1 rounded-sm text-left outline-ring/50"
+						aria-label={`Rejoin ${label(room)}`}
+					>
+						<span class="block truncate text-sm font-medium">{label(room)}</span>
+						<span class="block truncate text-xs text-muted-foreground">
 							{relativeTime(room.lastActive)}{room.key ? '' : ' · link needed'}
-						</div>
-					</div>
+						</span>
+					</button>
 					<button
 						onclick={(e) => startEdit(room, e)}
-						class="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+						class="grid h-10 w-10 shrink-0 place-items-center rounded-md text-muted-foreground transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
 						aria-label="Rename room"
 					>
 						<Pencil class="h-3.5 w-3.5" />
 					</button>
 					<button
 						onclick={(e) => remove(room.id, e)}
-						class="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+						class="grid h-10 w-10 shrink-0 place-items-center rounded-md text-muted-foreground transition-opacity hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
 						aria-label="Remove room from this list"
 					>
 						<X class="h-4 w-4" />

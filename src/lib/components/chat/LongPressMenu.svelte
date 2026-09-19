@@ -2,13 +2,14 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Button } from '$lib/components/ui/button';
-	import { Pencil, Trash2 } from 'lucide-svelte';
+	import { MoreHorizontal, Pencil, Trash2 } from 'lucide-svelte';
 
 	interface Props {
 		isMe: boolean;
 		isDeleted: boolean;
 		isEditing: boolean;
 		open: boolean;
+		showTrigger?: boolean;
 		onOpenChange?: (open: boolean) => void;
 		onEdit?: () => void;
 		onDelete?: () => void;
@@ -20,6 +21,7 @@
 		isDeleted,
 		isEditing,
 		open = $bindable(false),
+		showTrigger = false,
 		onOpenChange,
 		onEdit,
 		onDelete,
@@ -64,8 +66,12 @@
 </script>
 
 <Popover.Root bind:open onOpenChange={handleOpenChange}>
-	<!-- Hidden trigger - we control open state programmatically via long-press -->
-	<Popover.Trigger class="hidden">
+	<Popover.Trigger
+		class={showTrigger
+			? 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-ring/50 hover:bg-accent focus-visible:ring-2'
+			: 'hidden'}
+	>
+		<MoreHorizontal class="h-4 w-4" />
 		<span class="sr-only">Message actions</span>
 	</Popover.Trigger>
 
@@ -89,10 +95,12 @@
 			<!-- Actions row (only for own messages) -->
 			{#if isMe && !isDeleted && !isEditing}
 				<div class="flex gap-2">
-					<Button variant="ghost" size="sm" onclick={handleEdit} class="gap-2">
-						<Pencil class="h-4 w-4" />
-						Edit
-					</Button>
+					{#if onEdit}
+						<Button variant="ghost" size="sm" onclick={handleEdit} class="gap-2">
+							<Pencil class="h-4 w-4" />
+							Edit
+						</Button>
+					{/if}
 					<Button
 						variant="ghost"
 						size="sm"

@@ -500,6 +500,12 @@ export class P2PConnection {
 
 	// ============ peers / perfect negotiation ============
 
+	private isCurrentPeer(peer: Peer): boolean {
+		// clientId can change on signaling reconnect; identity must still match
+		// after replacement, including when an async callback resumes.
+		return !this.disposed && this.peers.get(peer.clientId) === peer;
+	}
+
 	private ensurePeer(clientId: string): Peer {
 		const existing = this.peers.get(clientId);
 		if (existing) return existing;
@@ -541,13 +547,17 @@ export class P2PConnection {
 		this.peers.set(clientId, peer);
 
 		pc.onnegotiationneeded = async () => {
+			if (!this.isCurrentPeer(peer)) return;
 			try {
 				peer.makingOffer = true;
 				await pc.setLocalDescription();
+				if (!this.isCurrentPeer(peer)) return;
+				const data = await this.authedData({ description: pc.localDescription! });
+				if (!this.isCurrentPeer(peer)) return;
 				this.sendSignaling({
 					type: 'offer',
-					targetId: clientId,
-					data: (await this.authedData({ description: pc.localDescription! })) as never
+					targetId: peer.clientId,
+					data: data as never
 				});
 			} catch (error) {
 				console.warn('[P2P] negotiation failed:', error);
@@ -557,23 +567,25 @@ export class P2PConnection {
 		};
 
 		pc.onicecandidate = async ({ candidate }) => {
-			if (candidate) {
+			if (candidate && this.isCurrentPeer(peer)) {
+				const data = await this.authedData({ candidate: candidate.toJSON() });
+				if (!this.isCurrentPeer(peer)) return;
 				this.sendSignaling({
 					type: 'ice-candidate',
-					targetId: clientId,
-					data: (await this.authedData({ candidate: candidate.toJSON() })) as never
+					targetId: peer.clientId,
+					data: data as never
 				});
 			}
 		};
 
 		pc.onconnectionstatechange = () => {
-			if (this.disposed) return;
+			if (!this.isCurrentPeer(peer)) return;
 			if (pc.connectionState === 'failed') {
 				this.scheduleIceRestart(peer);
 			} else if (pc.connectionState === 'connected') {
 				peer.restartAttempts = 0;
 			} else if (pc.connectionState === 'closed') {
-				this.removePeer(clientId);
+				this.removePeer(peer.clientId);
 			}
 		};
 
@@ -584,7 +596,7 @@ export class P2PConnection {
 		// In-band media channels (§5): created per transfer by the sender.
 		pc.ondatachannel = ({ channel }) => {
 			if (!channel.label.startsWith('media-')) return;
-			if (!peer.verified || !peer.deviceId) {
+			if (!this.isCurrentPeer(peer) || !peer.verified || !peer.deviceId) {
 				channel.close();
 				return;
 			}
@@ -661,6 +673,7 @@ export class P2PConnection {
 		} finally {
 			peer.isSettingRemoteAnswerPending = false;
 		}
+		if (!this.isCurrentPeer(peer)) return;
 
 		for (const candidate of peer.queuedCandidates.splice(0)) {
 			try {
@@ -668,14 +681,18 @@ export class P2PConnection {
 			} catch (error) {
 				if (!peer.ignoreOffer) console.warn('[P2P] queued candidate failed:', error);
 			}
+			if (!this.isCurrentPeer(peer)) return;
 		}
 
 		if (description.type === 'offer') {
 			await pc.setLocalDescription();
+			if (!this.isCurrentPeer(peer)) return;
+			const data = await this.authedData({ description: pc.localDescription! });
+			if (!this.isCurrentPeer(peer)) return;
 			this.sendSignaling({
 				type: 'answer',
-				targetId: fromId,
-				data: (await this.authedData({ description: pc.localDescription! })) as never
+				targetId: peer.clientId,
+				data: data as never
 			});
 		}
 	}
@@ -700,7 +717,7 @@ export class P2PConnection {
 	}
 
 	private scheduleIceRestart(peer: Peer): void {
-		if (peer.restartTimer || this.disposed) return;
+		if (peer.restartTimer || !this.isCurrentPeer(peer)) return;
 		if (peer.restartAttempts >= MAX_RESTART_ATTEMPTS) {
 			// Out of restarts: relay last resort (if allowed), else drop.
 			if (this.config.allowRelayFallback !== false && !this.config.strictDirect && peer.deviceId) {
@@ -714,7 +731,7 @@ export class P2PConnection {
 		peer.restartAttempts++;
 		peer.restartTimer = setTimeout(() => {
 			peer.restartTimer = null;
-			if (this.disposed || peer.pc.connectionState === 'connected') return;
+			if (!this.isCurrentPeer(peer) || peer.pc.connectionState === 'connected') return;
 			try {
 				peer.pc.restartIce(); // triggers negotiationneeded → fresh offer
 			} catch (error) {
@@ -726,11 +743,13 @@ export class P2PConnection {
 	// ============ channel data ============
 
 	private async sendHello(peer: Peer): Promise<void> {
-		if (peer.helloSent || this.disposed) return;
+		if (peer.helloSent || !this.isCurrentPeer(peer)) return;
 		peer.helloSent = true;
 		try {
 			const binding = this.channelBinding(peer.pc);
-			peer.chat.send(await this.session.makeHello(this.displayName(), binding));
+			const wire = await this.session.makeHello(this.displayName(), binding);
+			if (!this.isCurrentPeer(peer)) return;
+			peer.chat.send(wire);
 		} catch (error) {
 			console.warn('[P2P] hello send failed:', error);
 			peer.helloSent = false;
@@ -749,7 +768,7 @@ export class P2PConnection {
 	}
 
 	private async handleChannelMessage(peer: Peer, raw: unknown): Promise<void> {
-		if (typeof raw !== 'string') return;
+		if (!this.isCurrentPeer(peer) || typeof raw !== 'string') return;
 		let envelope: Envelope;
 		try {
 			envelope = JSON.parse(raw);
@@ -760,6 +779,7 @@ export class P2PConnection {
 		// hello first: it proves key knowledge and registers identity
 		if (!peer.verified) {
 			const info = await this.session.acceptHello(envelope, this.channelBinding(peer.pc));
+			if (!this.isCurrentPeer(peer)) return;
 			if (info) {
 				peer.deviceId = info.deviceId;
 				peer.verified = true;
@@ -769,6 +789,7 @@ export class P2PConnection {
 				// says "direct" — a false security indication.
 				this.relayPeers.delete(peer.clientId);
 				await this.sendHello(peer); // reciprocate if their hello came first
+				if (!this.isCurrentPeer(peer)) return;
 				this.onPeerConnectedCallback?.(info.deviceId, 'direct');
 				await this.respondToAdvertisedGeneration(peer, info.g, info.gid);
 			} else {
@@ -779,6 +800,7 @@ export class P2PConnection {
 
 		try {
 			const body = (await this.session.openMessage(envelope)) as unknown as TypedP2PMessage;
+			if (!this.isCurrentPeer(peer)) return;
 			const type = (body as { type?: string }).type;
 			if (type === 'hello') {
 				// Duplicate hello: identity already pinned, but the generation
@@ -795,6 +817,7 @@ export class P2PConnection {
 			}
 			if (peer.deviceId) this.onMessageCallback?.(body, peer.deviceId);
 		} catch (error) {
+			if (!this.isCurrentPeer(peer)) return;
 			console.warn('[P2P] dropping envelope:', error);
 			// A verified peer sealed something we cannot read at its stated
 			// generation: ask for the generation, rate-limited (§1.4).
