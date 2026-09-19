@@ -49,6 +49,7 @@ interface Peer {
 	helloSent: boolean;
 	queuedCandidates: RTCIceCandidateInit[];
 	restartTimer: ReturnType<typeof setTimeout> | null;
+	attemptTimer: ReturnType<typeof setTimeout> | null;
 	restartAttempts: number;
 	chatQueue: { raw: string; bytes: number }[];
 	chatQueueBytes: number;
@@ -655,6 +656,7 @@ export class P2PConnection {
 			helloSent: false,
 			queuedCandidates: [],
 			restartTimer: null,
+			attemptTimer: null,
 			restartAttempts: 0,
 			chatQueue: [],
 			chatQueueBytes: 0,
@@ -662,6 +664,7 @@ export class P2PConnection {
 			grantedGeneration: null
 		};
 		this.peers.set(clientId, peer);
+		this.armIceAttemptDeadline(peer);
 
 		pc.onnegotiationneeded = async () => {
 			if (!this.isCurrentPeer(peer)) return;
@@ -689,8 +692,11 @@ export class P2PConnection {
 				this.scheduleIceRestart(peer);
 			} else if (pc.connectionState === 'connected') {
 				peer.restartAttempts = 0;
+				this.clearIceTimers(peer);
 			} else if (pc.connectionState === 'closed') {
 				this.removePeer(peer.clientId);
+			} else {
+				this.armIceAttemptDeadline(peer);
 			}
 		};
 
@@ -720,7 +726,7 @@ export class P2PConnection {
 		}
 		return {
 			iceServers,
-			iceCandidatePoolSize: this.config.icePoolSize ?? 4
+			iceCandidatePoolSize: this.config.icePoolSize ?? 0
 		};
 	}
 
@@ -829,8 +835,34 @@ export class P2PConnection {
 		}
 	}
 
+	private clearIceTimers(peer: Peer): void {
+		if (peer.attemptTimer) clearTimeout(peer.attemptTimer);
+		if (peer.restartTimer) clearTimeout(peer.restartTimer);
+		peer.attemptTimer = null;
+		peer.restartTimer = null;
+	}
+
+	private armIceAttemptDeadline(peer: Peer): void {
+		if (
+			!this.isCurrentPeer(peer) ||
+			peer.pc.connectionState === 'connected' ||
+			peer.attemptTimer ||
+			peer.restartTimer
+		)
+			return;
+		// Browsers can stall in new/connecting without ever reporting failed.
+		// Signaling progress does not extend an attempt or replenish its budget.
+		peer.attemptTimer = setTimeout(() => {
+			peer.attemptTimer = null;
+			if (!this.isCurrentPeer(peer) || peer.pc.connectionState === 'connected') return;
+			this.scheduleIceRestart(peer);
+		}, this.config.offerTimeout ?? 15000);
+	}
+
 	private scheduleIceRestart(peer: Peer): void {
 		if (peer.restartTimer || !this.isCurrentPeer(peer)) return;
+		if (peer.attemptTimer) clearTimeout(peer.attemptTimer);
+		peer.attemptTimer = null;
 		if (peer.restartAttempts >= MAX_RESTART_ATTEMPTS) {
 			// Out of restarts: relay last resort (if allowed), else drop.
 			if (this.config.allowRelayFallback !== false && !this.config.strictDirect && peer.deviceId) {
@@ -849,6 +881,8 @@ export class P2PConnection {
 				peer.pc.restartIce(); // triggers negotiationneeded → fresh offer
 			} catch (error) {
 				console.warn('[P2P] restartIce failed:', error);
+			} finally {
+				this.armIceAttemptDeadline(peer);
 			}
 		}, delay);
 	}
@@ -1227,7 +1261,7 @@ export class P2PConnection {
 		this.peers.delete(clientId);
 		peer.chatQueue.length = 0;
 		peer.chatQueueBytes = 0;
-		if (peer.restartTimer) clearTimeout(peer.restartTimer);
+		this.clearIceTimers(peer);
 		try {
 			peer.chat.close();
 			peer.eph.close();

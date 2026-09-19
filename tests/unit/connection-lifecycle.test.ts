@@ -32,7 +32,7 @@ class FakePeerConnection {
 	setLocalDescription = vi.fn(async () => {});
 	setRemoteDescription = vi.fn(async () => {});
 	addIceCandidate = vi.fn(async () => {});
-	constructor() {
+	constructor(readonly configuration?: RTCConfiguration) {
 		FakePeerConnection.instances.push(this);
 	}
 	createDataChannel(label: string) {
@@ -118,6 +118,160 @@ describe('P2P peer callback lifecycle', () => {
 		connection.disconnect();
 		vi.useRealTimers();
 		vi.unstubAllGlobals();
+	});
+
+	test('new connections gather candidates on demand by default', async () => {
+		const pc = await join();
+		expect(pc.configuration?.iceCandidatePoolSize).toBe(0);
+	});
+
+	test('a newly created connection gets a deadline without any state-change event', async () => {
+		vi.stubGlobal(
+			'RTCPeerConnection',
+			class extends FakePeerConnection {
+				connectionState = 'new';
+			}
+		);
+		const pc = await join();
+		await vi.advanceTimersByTimeAsync(16000);
+		expect(pc.restartIce).toHaveBeenCalledTimes(1);
+	});
+
+	test('explicit pool and attempt timeout settings remain effective', async () => {
+		connection.disconnect();
+		connection = new P2PConnection(
+			session as unknown as CryptoSession,
+			{
+				icePoolSize: 2,
+				offerTimeout: 5000
+			},
+			() => 'Local'
+		);
+		const connecting = connection.connect();
+		socket = FakeSocket.instance;
+		socket.onopen?.();
+		await connecting;
+		const pc = await join();
+		expect(pc.configuration?.iceCandidatePoolSize).toBe(2);
+		pc.connectionState = 'new';
+		pc.onconnectionstatechange?.();
+		await vi.advanceTimersByTimeAsync(6000);
+		expect(pc.restartIce).toHaveBeenCalledTimes(1);
+	});
+
+	test.each(['new', 'connecting', 'disconnected'])(
+		'a connection stalled in %s restarts even without a failed event',
+		async (state) => {
+			const pc = await join();
+			pc.connectionState = state;
+			pc.onconnectionstatechange?.();
+			await vi.advanceTimersByTimeAsync(14999);
+			expect(pc.restartIce).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(1001);
+			expect(pc.restartIce).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(17000);
+			expect(pc.restartIce).toHaveBeenCalledTimes(2);
+		}
+	);
+
+	test.each([
+		{ strictDirect: false, allowRelayFallback: true },
+		{ strictDirect: true, allowRelayFallback: true },
+		{ strictDirect: false, allowRelayFallback: false }
+	])('repeated stalls exhaust the restart budget (%j)', async (config) => {
+		connection.disconnect();
+		connection = new P2PConnection(session as unknown as CryptoSession, config, () => 'Local');
+		const connecting = connection.connect();
+		socket = FakeSocket.instance;
+		socket.onopen?.();
+		await connecting;
+		const pc = await join();
+		// Successful signaling authentication identifies the peer even when
+		// ICE never connects; fallback must still use the relay hello proof.
+		await socket.receive({
+			type: 'answer',
+			fromId: 'remote',
+			data: {
+				auth: { deviceId: 'remote-device', hmac: 'valid' },
+				description: { type: 'answer', sdp: '' }
+			}
+		});
+		pc.connectionState = 'new';
+		pc.onconnectionstatechange?.();
+		socket.send.mockClear();
+		await vi.advanceTimersByTimeAsync(120000);
+		expect(pc.restartIce).toHaveBeenCalledTimes(5);
+		expect(pc.connectionState).toBe('closed');
+		const relays = socket.send.mock.calls
+			.map(([wire]) => JSON.parse(wire))
+			.filter((message) => message.type === 'relay');
+		const relayAllowed = !config.strictDirect && config.allowRelayFallback;
+		expect(relays).toHaveLength(relayAllowed ? 1 : 0);
+		if (relayAllowed) expect(relays[0].data).toEqual({ hello: '{}' });
+		await vi.advanceTimersByTimeAsync(120000);
+		expect(pc.restartIce).toHaveBeenCalledTimes(5);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	test('connecting successfully cancels both the attempt deadline and pending restart', async () => {
+		const pc = await join();
+		pc.connectionState = 'new';
+		pc.onconnectionstatechange?.();
+		await vi.advanceTimersByTimeAsync(15000);
+		pc.connectionState = 'connected';
+		pc.onconnectionstatechange?.();
+		await vi.advanceTimersByTimeAsync(120000);
+		expect(pc.restartIce).not.toHaveBeenCalled();
+		expect(pc.connectionState).toBe('connected');
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	test('replacing or disconnecting a stalled peer cancels its attempt deadline', async () => {
+		const old = await join();
+		old.connectionState = 'new';
+		old.onconnectionstatechange?.();
+		await vi.advanceTimersByTimeAsync(10000);
+		const replacement = await join();
+		replacement.connectionState = 'new';
+		replacement.onconnectionstatechange?.();
+		await vi.advanceTimersByTimeAsync(6000);
+		expect(old.restartIce).not.toHaveBeenCalled();
+		expect(replacement.restartIce).not.toHaveBeenCalled();
+		connection.disconnect();
+		await vi.advanceTimersByTimeAsync(120000);
+		expect(replacement.restartIce).not.toHaveBeenCalled();
+	});
+
+	test('signaling progress cannot extend a stalled attempt', async () => {
+		const pc = await join();
+		pc.connectionState = 'new';
+		pc.onconnectionstatechange?.();
+		await vi.advanceTimersByTimeAsync(14900);
+		await socket.receive({
+			type: 'answer',
+			fromId: 'remote',
+			data: {
+				auth: { deviceId: 'remote-device', hmac: 'valid' },
+				description: { type: 'answer', sdp: '' }
+			}
+		});
+		pc.connectionState = 'connecting';
+		pc.onconnectionstatechange?.();
+		await vi.advanceTimersByTimeAsync(1100);
+		expect(pc.restartIce).toHaveBeenCalledTimes(1);
+	});
+
+	test('a restart that immediately connects leaves no attempt timer', async () => {
+		const pc = await join();
+		pc.connectionState = 'new';
+		pc.onconnectionstatechange?.();
+		pc.restartIce.mockImplementationOnce(() => {
+			pc.connectionState = 'connected';
+			pc.onconnectionstatechange?.();
+		});
+		await vi.advanceTimersByTimeAsync(16000);
+		expect(pc.restartIce).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	test('an old queued close cannot remove a replacement; its own close still removes it', async () => {

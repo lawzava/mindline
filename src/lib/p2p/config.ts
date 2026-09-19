@@ -200,7 +200,8 @@ export function getP2PConfig(): P2PConfig {
 		strictDirect,
 		// Mobile-optimized settings
 		connectionTimeout: mobile ? 5000 : 2000,
-		icePoolSize: mobile ? 20 : 10,
+		// Gather on demand instead of preallocating candidates for every peer.
+		icePoolSize: 0,
 		maxReconnectAttempts: mobile ? 10 : 7,
 		reconnectBackoffBase: 1000
 	};
@@ -218,7 +219,7 @@ export function getDevConfig(): P2PConfig {
 		allowRelayFallback: true,
 		strictDirect: false,
 		connectionTimeout: 2000,
-		icePoolSize: 10,
+		icePoolSize: 0,
 		maxReconnectAttempts: 5,
 		reconnectBackoffBase: 1000
 	};
