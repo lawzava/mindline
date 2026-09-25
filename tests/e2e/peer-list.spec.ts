@@ -95,8 +95,14 @@ test.describe('Peer List Component', () => {
 		}
 
 		// Both should show "1 peer"
-		await expect(pageA.locator('[data-testid="peer-count"]')).toContainText('1 peer');
-		await expect(pageB.locator('[data-testid="peer-count"]')).toContainText('1 peer');
+		await expect(pageA.locator('[data-testid="peer-count"]')).toHaveAttribute(
+			'data-peer-count',
+			'1'
+		);
+		await expect(pageB.locator('[data-testid="peer-count"]')).toHaveAttribute(
+			'data-peer-count',
+			'1'
+		);
 
 		await cleanup(contextB);
 	});
@@ -169,7 +175,10 @@ test.describe('Peer List Component', () => {
 		}
 
 		// Verify both see 1 peer initially
-		await expect(pageA.locator('[data-testid="peer-count"]')).toContainText('1 peer');
+		await expect(pageA.locator('[data-testid="peer-count"]')).toHaveAttribute(
+			'data-peer-count',
+			'1'
+		);
 
 		// User B leaves (close their context)
 		await cleanup(contextB);
@@ -204,14 +213,14 @@ test.describe('Peer List Component', () => {
 
 		// Check if A sees 2 peers
 		const peerCountA = pageA.locator('[data-testid="peer-count"]');
-		const text = await peerCountA.textContent();
+		const count = await peerCountA.getAttribute('data-peer-count');
 
-		// Should show "2 peers" if all connected
-		if (text?.includes('2 peers')) {
-			await expect(peerCountA).toContainText('2 peers');
+		// Should count 2 people if all connected
+		if (count === '2') {
+			await expect(peerCountA).toHaveAttribute('data-peer-count', '2');
 		} else {
 			// P2P mesh might not be fully formed - at least should show some peers
-			console.log('Peer count for A:', text);
+			console.log('Peer count for A:', count);
 		}
 
 		await cleanup(contextC);

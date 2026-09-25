@@ -149,19 +149,25 @@
 		return { delivered: state.deliveredTo.size, total: state.totalPeers };
 	});
 
-	const isFullyDelivered = $derived(
-		deliveryStatus && deliveryStatus.delivered >= deliveryStatus.total && deliveryStatus.total > 0
-	);
-
-	const isPartiallyDelivered = $derived(
-		deliveryStatus &&
-			deliveryStatus.delivered > 0 &&
-			deliveryStatus.delivered < deliveryStatus.total
-	);
+	// One tick state from the stored status (survives reloads) refined by
+	// live acknowledgments while this session tracks the message.
+	const tick = $derived.by((): 'local' | 'delivered' | 'partial' | 'sent' | null => {
+		if (!isMe) return null;
+		if (message.status === 'Delivered') return 'delivered';
+		if (message.status === 'Local') return 'local';
+		if (!deliveryStatus) return 'sent';
+		if (deliveryStatus.total === 0) return 'local';
+		if (deliveryStatus.delivered >= deliveryStatus.total) return 'delivered';
+		return deliveryStatus.delivered > 0 ? 'partial' : 'sent';
+	});
 	const deliveryLabel = $derived(
-		deliveryStatus?.total === 0
-			? 'Local message; no recipients were connected'
-			: `Delivered to ${deliveryStatus?.delivered ?? 0}/${deliveryStatus?.total ?? 0} peers`
+		tick === 'local'
+			? 'Not delivered yet: no one was here when you sent it. It arrives when someone opens the room.'
+			: tick === 'delivered'
+				? 'Delivered'
+				: tick === 'partial' && deliveryStatus
+					? `Delivered to ${deliveryStatus.delivered} of ${deliveryStatus.total}`
+					: 'Sent'
 	);
 
 	// Corner-radius arithmetic: within a group the corners facing an adjacent
@@ -287,7 +293,7 @@
 								href={segment.href}
 								target="_blank"
 								rel="noopener noreferrer nofollow"
-								class="text-ring underline underline-offset-2 [overflow-wrap:anywhere]"
+								class="text-link underline underline-offset-2 [overflow-wrap:anywhere]"
 								>{segment.text}</a
 							>{:else}{segment.text}{/if}{/each}
 				</p>
@@ -314,6 +320,7 @@
 			onOpenChange={(open) => (showLongPressMenu = open)}
 			onEdit={message.attachment ? undefined : startEdit}
 			onDelete={handleDelete}
+			copyText={message.attachment ? undefined : message.content}
 			onReaction={handleReaction}
 		/>
 	</div>
@@ -338,16 +345,20 @@
 			{/if}
 			{#if message.status === 'Failed'}
 				<span class="text-destructive">(failed)</span>
-			{:else if isMe && deliveryStatus}
+			{:else if tick}
 				<Tooltip.Provider>
 					<Tooltip.Root>
-						<Tooltip.Trigger aria-label={deliveryLabel}>
+						<Tooltip.Trigger
+							aria-label={deliveryLabel}
+							data-testid="delivery-tick"
+							data-tick={tick}
+						>
 							<span class="inline-flex cursor-help items-center">
-								{#if deliveryStatus.total === 0}
-									Local
-								{:else if isFullyDelivered}
+								{#if tick === 'local'}
+									Not delivered yet
+								{:else if tick === 'delivered'}
 									<CheckCheck class="h-3 w-3 text-primary" aria-hidden="true" />
-								{:else if isPartiallyDelivered}
+								{:else if tick === 'partial'}
 									<CheckCheck class="h-3 w-3 text-muted-foreground" aria-hidden="true" />
 								{:else}
 									<Check class="h-3 w-3 text-muted-foreground" aria-hidden="true" />
@@ -355,21 +366,10 @@
 							</span>
 						</Tooltip.Trigger>
 						<Tooltip.Content>
-							{#if deliveryStatus.total === 0}
-								<p>No one was connected when you sent this message.</p>
-							{:else}
-								<p>
-									Delivered to {deliveryStatus.delivered}/{deliveryStatus.total} peer{deliveryStatus.total !==
-									1
-										? 's'
-										: ''}
-								</p>
-							{/if}
+							<p>{deliveryLabel}</p>
 						</Tooltip.Content>
 					</Tooltip.Root>
 				</Tooltip.Provider>
-			{:else if isMe}
-				<span class="sr-only">Delivery status unavailable</span>
 			{/if}
 		</span>
 	{:else}

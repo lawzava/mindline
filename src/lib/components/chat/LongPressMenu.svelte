@@ -2,8 +2,9 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Button } from '$lib/components/ui/button';
-	import { MoreHorizontal, Pencil, Trash2 } from 'lucide-svelte';
+	import { Copy, MoreHorizontal, Pencil, Trash2 } from 'lucide-svelte';
 	import { cn } from '$lib/utils';
+	import { toast } from 'svelte-sonner';
 
 	interface Props {
 		isMe: boolean;
@@ -14,6 +15,8 @@
 		onOpenChange?: (open: boolean) => void;
 		onEdit?: () => void;
 		onDelete?: () => void;
+		/** Text to copy; absent for media and deleted messages. */
+		copyText?: string;
 		onReaction?: (emoji: string) => void;
 	}
 
@@ -26,13 +29,27 @@
 		onOpenChange,
 		onEdit,
 		onDelete,
+		copyText,
 		onReaction
 	}: Props = $props();
 
 	let showDeleteConfirm = $state(false);
 
-	// Edit/delete belong to your own messages only.
-	const showActions = $derived(isMe && !isDeleted && !isEditing);
+	// Edit/delete belong to your own messages only; copy works on anyone's.
+	const showOwnActions = $derived(isMe && !isDeleted && !isEditing);
+	const canCopy = $derived(!!copyText && !isDeleted && !isEditing);
+	const showActions = $derived(showOwnActions || canCopy);
+
+	async function handleCopy() {
+		open = false;
+		onOpenChange?.(false);
+		try {
+			await navigator.clipboard.writeText(copyText ?? '');
+			toast.success('Copied');
+		} catch {
+			toast.error('Could not copy');
+		}
+	}
 
 	const emojis = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'];
 
@@ -106,21 +123,29 @@
 			<!-- Actions row (only for own messages) -->
 			{#if showActions}
 				<div class="flex gap-2">
-					{#if onEdit}
+					{#if canCopy}
+						<Button variant="ghost" size="sm" onclick={handleCopy} class="gap-2">
+							<Copy class="h-4 w-4" />
+							Copy
+						</Button>
+					{/if}
+					{#if showOwnActions && onEdit}
 						<Button variant="ghost" size="sm" onclick={handleEdit} class="gap-2">
 							<Pencil class="h-4 w-4" />
 							Edit
 						</Button>
 					{/if}
-					<Button
-						variant="ghost"
-						size="sm"
-						onclick={handleDeleteClick}
-						class="gap-2 text-destructive hover:text-destructive"
-					>
-						<Trash2 class="h-4 w-4" />
-						Delete
-					</Button>
+					{#if showOwnActions}
+						<Button
+							variant="ghost"
+							size="sm"
+							onclick={handleDeleteClick}
+							class="gap-2 text-destructive hover:text-destructive"
+						>
+							<Trash2 class="h-4 w-4" />
+							Delete
+						</Button>
+					{/if}
 				</div>
 			{/if}
 		</div>

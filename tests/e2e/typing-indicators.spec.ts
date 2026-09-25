@@ -148,7 +148,9 @@ test.describe('Typing Indicators', () => {
 		}
 		await Promise.all(
 			[page, pageB, pageC].map((peer) =>
-				expect(peer.getByTestId('peer-count')).toContainText('2 peers', { timeout: 25000 })
+				expect(peer.getByTestId('peer-count')).toHaveAttribute('data-peer-count', '2', {
+					timeout: 25000
+				})
 			)
 		);
 
