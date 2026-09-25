@@ -75,7 +75,6 @@ async function mockCapture(page: Page, pending = false) {
 
 async function leaveRoom(page: Page) {
 	await page.getByTestId('leave-room-btn').click();
-	await page.getByRole('button', { name: 'Leave Room', exact: true }).click();
 	await expect(page.getByTestId('create-room-btn')).toBeVisible();
 }
 

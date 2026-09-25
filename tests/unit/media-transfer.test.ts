@@ -295,3 +295,50 @@ test('a sender whose media channel never opens aborts after the opening deadline
 	expect(events.onAborted).toHaveBeenCalledWith(offer.transferId, 'send failed', 'a');
 	expect(channels[0].readyState).toBe('closed');
 });
+
+test('only the transfer counterparty can abort an incoming transfer', async () => {
+	const { engine, events } = setup();
+	await incoming(engine);
+	const abort = {
+		type: 'media-abort' as const,
+		transferId: 'transfer',
+		reason: 'cancelled',
+		timestamp: Date.now()
+	};
+	await engine.handleControl(abort, 'outsider');
+	expect(events.onAborted).not.toHaveBeenCalled();
+	await engine.handleControl(abort, 'peer');
+	expect(events.onAborted).toHaveBeenCalledWith('transfer', 'cancelled', 'peer');
+});
+
+test('offers with an unknown kind or a non-integer size are refused', async () => {
+	const { engine, sendControl } = setup();
+	const base = {
+		type: 'media-offer' as const,
+		messageId: 'message',
+		name: 'x',
+		mime: 'application/octet-stream',
+		sha256: 'h',
+		nonceSalt: toB64url(new Uint8Array(8)),
+		senderId: 'sender',
+		senderName: 'Sender',
+		roomId: 'room',
+		timestamp: Date.now()
+	};
+	const offers = [
+		{ ...base, transferId: 't-kind', kind: 'html', size: 10 },
+		{ ...base, transferId: 't-nan', kind: 'file', size: Number.NaN },
+		{ ...base, transferId: 't-frac', kind: 'file', size: 1.5 }
+	] as unknown as MediaOffer[];
+	for (const offer of offers) await engine.handleControl(offer, 'peer');
+	const accepted = sendControl.mock.calls.filter(([, body]) => body.type === 'media-accept');
+	expect(accepted).toEqual([]);
+});
+
+test('a second offer for a transfer already in flight is ignored', async () => {
+	const { engine, sendControl } = setup();
+	const { offer } = await incoming(engine);
+	sendControl.mockClear();
+	await engine.handleControl({ ...offer, nonceSalt: toB64url(new Uint8Array(8)) }, 'intruder');
+	expect(sendControl).not.toHaveBeenCalled();
+});

@@ -72,56 +72,82 @@ test.describe('Room Page', () => {
 		}
 	});
 
-	test('should show leave room confirmation dialog', async ({ page }) => {
+	test('burn asks for confirmation from the room menu', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);
 
-		// Click leave button
-		await page.locator('[data-testid="leave-room-btn"]').click();
+		await page.locator('[data-testid="room-menu-btn"]').click();
+		await page.locator('[data-testid="burn-room-btn"]').click();
 
-		// Dialog should appear
-		await expect(page.getByText('Leave Room?')).toBeVisible();
-		await expect(
-			page.getByText("Leave keeps this room's history on this device", { exact: false })
-		).toBeVisible();
-
-		// Cancel, Leave, and Burn buttons should be visible
+		await expect(page.getByText('Burn this room?')).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
-		await expect(page.getByRole('button', { name: 'Leave Room' })).toBeVisible();
-		await expect(page.getByRole('button', { name: 'Burn & Leave' })).toBeVisible();
+		await expect(page.locator('[data-testid="leave-burn-btn"]')).toBeVisible();
 	});
 
-	test('should cancel leave room and stay in room', async ({ page }) => {
+	test('cancelling a burn stays in the room', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);
 
-		// Click leave button
-		await page.locator('[data-testid="leave-room-btn"]').click();
-
-		// Click Cancel
+		await page.locator('[data-testid="room-menu-btn"]').click();
+		await page.locator('[data-testid="burn-room-btn"]').click();
 		await page.getByRole('button', { name: 'Cancel' }).click();
 
-		// Dialog should close
-		await expect(page.getByText('Leave Room?')).toBeHidden();
-
-		// Should still be in the room
+		await expect(page.getByText('Burn this room?')).toBeHidden();
 		expect(page.url()).toContain(roomId);
 		await expect(page.locator('[data-testid="message-input"]')).toBeVisible();
 	});
 
-	test('should leave room and navigate to home', async ({ page }) => {
+	test('back leaves the room at once and keeps it in recent rooms', async ({ page }) => {
 		const roomId = generateTestRoomId();
 		await joinRoom(page, roomId);
 
-		// Click leave button
 		await page.locator('[data-testid="leave-room-btn"]').click();
 
-		// Click Leave Room
-		await page.getByRole('button', { name: 'Leave Room' }).click();
-
-		// Should navigate to home page
 		await page.waitForURL('/');
 		await expect(page.getByText('Talk on a live wire.')).toBeVisible();
+		await expect(page.getByText('Recent rooms')).toBeVisible();
+	});
+
+	test('a link with a different key is refused and the saved room still opens', async ({
+		page
+	}) => {
+		const roomId = generateTestRoomId();
+		await joinRoom(page, roomId);
+		const input = page.locator('[data-testid="message-input"]');
+		await input.fill('kept safe');
+		await input.press('Enter');
+		await expect(page.getByTestId('message-list').getByText('kept safe')).toBeVisible();
+		await page.locator('[data-testid="leave-room-btn"]').click();
+		await page.waitForURL('/');
+
+		const otherKey = await page.evaluate(() => {
+			const bytes = crypto.getRandomValues(new Uint8Array(32));
+			return btoa(String.fromCharCode(...bytes))
+				.replace(/\+/g, '-')
+				.replace(/\//g, '_')
+				.replace(/=+$/, '');
+		});
+		await page.goto(`/${roomId}?fastConnect=true#k=${otherKey}`);
+		await expect(page.getByTestId('key-mismatch-state')).toBeVisible();
+
+		await page.getByRole('button', { name: 'Open saved room' }).click();
+		await expect(page.getByTestId('message-list').getByText('kept safe')).toBeVisible();
+	});
+
+	test('a second tab of the same room asks before taking over', async ({ page, context }) => {
+		const roomId = generateTestRoomId();
+		await joinRoom(page, roomId);
+		const second = await context.newPage();
+		try {
+			await second.goto(page.url());
+			await expect(second.getByTestId('other-tab-state')).toBeVisible();
+
+			await second.getByRole('button', { name: 'Use here' }).click();
+			await expect(second.locator('[data-testid="message-input"]')).toBeVisible();
+			await expect(page.getByTestId('other-tab-state')).toBeVisible();
+		} finally {
+			await second.close();
+		}
 	});
 
 	test('burn & leave removes keys, history, and room markers from the device', async ({ page }) => {
@@ -134,7 +160,8 @@ test.describe('Room Page', () => {
 		await input.press('Enter');
 		await expect(page.getByText('burn me')).toBeVisible();
 
-		await page.locator('[data-testid="leave-room-btn"]').click();
+		await page.locator('[data-testid="room-menu-btn"]').click();
+		await page.locator('[data-testid="burn-room-btn"]').click();
 		await page.locator('[data-testid="leave-burn-btn"]').click();
 		await page.waitForURL('/');
 
@@ -184,9 +211,15 @@ test.describe('Room Page', () => {
 
 		const second = await context.newPage();
 		await second.goto(roomUrl);
+		// Only one tab holds the room; the other waits but still holds keys
+		// once it has taken over, so take over and hand back first.
+		await second.getByRole('button', { name: 'Use here' }).click();
 		await expect(second.locator('[data-testid="message-input"]')).toBeVisible();
+		await page.getByRole('button', { name: 'Use here' }).click();
+		await expect(page.locator('[data-testid="message-input"]')).toBeVisible();
 
-		await page.locator('[data-testid="leave-room-btn"]').click();
+		await page.locator('[data-testid="room-menu-btn"]').click();
+		await page.locator('[data-testid="burn-room-btn"]').click();
 		await page.locator('[data-testid="leave-burn-btn"]').click();
 		await page.waitForURL('/');
 

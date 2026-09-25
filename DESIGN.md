@@ -79,7 +79,7 @@ it will become. Fill `--wash-draft`, text `--draft`, roman.
 - The caret is **load-aware**: solid and still while characters arrive (updates
   within 1s), then hands off to the 2400ms `breathe` cycle, in phase with the
   presence dot. It never hard-blinks.
-- Idle drafts hold at 55% opacity (breath held, not gone); they never vanish
+- Idle drafts hold at 85% opacity (the lowest that keeps 4.5:1 text contrast) (breath held, not gone); they never vanish
   while the peer's composer has text.
 - **The latch:** when the draft becomes a message, color and fill cool in place
   (`.settle`, 250ms) — zero relayout. This is the product thesis as animation.
@@ -88,10 +88,10 @@ it will become. Fill `--wash-draft`, text `--draft`, roman.
 
 ## Chrome
 
-- Rooms have **one header row** (~56px): chevron-left (leave, confirm dialog),
+- Rooms have **one header row** (~56px): chevron-left (leaves at once; history stays),
   room code (tap to copy invite) over a status subtitle (6px dot + one line,
   doubles as the peer-list trigger), share button, ellipsis menu (your name,
-  copy invite, theme). No pills, no badges, no second header.
+  room name, copy invite, notifications, theme, and burn behind a confirm). No pills, no badges, no second header.
 - Landing keeps a separate minimal header (wordmark + theme toggle).
 - Empty room (no peers): "You're the only one here." + filled "Invite someone"
   + one trust line. The one-time accent spend that creates the second person.
