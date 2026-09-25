@@ -105,6 +105,17 @@ persisted (not later): without it, Safari ITP evicts all script-writable
 storage after 7 days without interaction, wiping keys, history, and device
 identity. That eviction risk is documented user-facing (§6).
 
+**One key per room per device.** The room ID is public to the operator and
+anyone who saw the path, so a link carrying a *different* key for a room
+this device already holds is refused, never adopted: adopting would
+re-encrypt the stored history under the newcomer's `k_storage` and serve it
+through sync to whoever minted that link. The check compares
+`HMAC(k_auth, lp("mindline/v2/key-commit", roomId))` under the stored and
+the offered `k_auth` (the keys are non-extractable, so a MAC under one key
+verified under the other is the comparison). On mismatch the stored keys,
+ratchet state, and Recent rooms entry stay untouched and the UI says so;
+to switch keys the user burns the room first.
+
 ### 1.3 Device identity
 
 - Per-device ECDSA P-256 keypair, generated non-extractable, stored in
@@ -665,6 +676,15 @@ relay-hello yields the operator nothing beyond a phantom presence entry.
 
 ### 3.5 Sync
 
+**Session binding (all bodies).** A body's `roomId` is sender-chosen and
+never selects storage: every handler files what it receives under the room
+this session is keyed to and drops bodies that name another room.
+Otherwise a member of one room could write into, or pull the in-memory
+history of, any other room held by the same tab. Likewise the envelope's
+signer must equal the verified device of the channel it arrived on
+(forwarders re-sign, §1.4); a member cannot pass off another member's
+signed envelope as its own or spend that member's replay slots.
+
 Cursor-paginated over the `chat` DataChannel **only — sync never relays**;
 relay-only sessions get live messages without history, and the UI says so.
 `sync-request {since, cursor}` → `sync-response {messages[≤40],
@@ -680,6 +700,16 @@ Only to key-confirmed peers. Sync pages are sealed under the **current**
 member re-encrypted at the present generation, which is why catching up
 never requires old generation keys (§1.4): grants restore live
 readability, sync restores missed content.
+
+Synced messages are **not individually signed**: content, timestamp, and
+attribution are the serving member's assertion. Two limits apply on
+receipt. A synced message claiming the receiving user (by user id or
+device id) is dropped unless it is already held, so no member can put words
+in your mouth through history; the cost is that your own messages do not
+come back to you after a burn. Every synced message is filed under the
+session room and marked as synced, so it never counts as a new arrival for
+unread counts or notifications. Per-message origin signatures are the
+planned fix (§6).
 
 ### 3.6 Relay of last resort
 
@@ -712,7 +742,11 @@ immutable — fail closed, no body-asserted fallback — though its owner
 can still modify the local copy. For reactions: membership in a reaction
 is the set of verified deviceIds that added it; a device can only add or
 remove itself. Body fields (`senderId`, `senderName`) are display hints
-only.
+only. Live chat is attributed to the verified device, never to the body's
+`senderId`, so a member cannot render as another member or as "you".
+Media offers may not reuse the message id or transfer id of an attachment
+already in the room (that would swap a stored blob), and only the
+transfer's counterparty may abort it.
 
 Reaction state arriving via sync (§3.5) is the serving member's asserted
 full map: a malicious member can misrepresent past reaction state (and

@@ -27,6 +27,8 @@ export interface Message {
 	 * compares against this, never against the self-asserted sender_id.
 	 */
 	sender_device?: string;
+	/** Arrived through history sync: a peer's assertion, never a live arrival. */
+	synced?: boolean;
 	/** Media metadata when message_type is 'Media'; blob lives in IndexedDB. */
 	attachment?: MessageAttachment;
 }

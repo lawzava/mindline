@@ -41,6 +41,13 @@ export function setSendToPeerFn(fn: SendToPeer): void {
 	sendToPeerFn = fn;
 }
 
+/** This device's verified id, from the manager (avoids a circular import). */
+let selfDeviceFn: () => string | null = () => null;
+
+export function setSelfDeviceFn(fn: () => string | null): void {
+	selfDeviceFn = fn;
+}
+
 /** Media engine hook, registered by the manager per room session. */
 let mediaControlFn:
 	| ((message: MediaOffer | MediaAccept | MediaAbort, peerId: string) => void)
@@ -50,6 +57,22 @@ export function setMediaControlFn(
 	fn: ((message: MediaOffer | MediaAccept | MediaAbort, peerId: string) => void) | null
 ): void {
 	mediaControlFn = fn;
+}
+
+/**
+ * The room this session is bound to, or null when the body names another.
+ * The envelope is sealed under this room's keys, but body.roomId is
+ * sender-chosen: trusting it would let a member of one room write into, or
+ * pull history from, any other room held in this tab.
+ */
+function sessionRoom(bodyRoomId: string | undefined): string | null {
+	const roomId = get(currentRoomId);
+	if (!roomId) return null;
+	if (bodyRoomId && bodyRoomId !== roomId) {
+		console.warn('[P2P Handler] Message names another room; ignoring');
+		return null;
+	}
+	return roomId;
 }
 
 /**
@@ -108,12 +131,14 @@ export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void 
  * Handle chat messages from peers
  */
 function handleChatMessage(message: ChatMessage, peerId: string): void {
-	const { content, senderName, senderId, messageId, timestamp, roomId } = message;
+	const { content, senderName, messageId, timestamp } = message;
 
-	if (!content || (!senderName && !senderId)) {
+	if (!content) {
 		console.warn('[P2P Handler] Invalid chat message received');
 		return;
 	}
+	const targetRoomId = sessionRoom(message.roomId);
+	if (!targetRoomId) return;
 
 	// Update peer name mapping if we have a name
 	if (senderName) {
@@ -123,12 +148,14 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 	// Create message object
 	const messageObj: Message = {
 		id: messageId || `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-		sender_id: senderId || peerId,
-		sender_name: senderName || senderId || peerId,
+		// Identity is the envelope-verified device; body.senderId is
+		// self-asserted and would let a member render as anyone, even "you".
+		sender_id: peerId,
+		sender_name: senderName || peerId,
 		message_type: 'Text',
 		content,
 		timestamp: timestamp || Date.now(),
-		room_id: roomId || get(currentRoomId) || '',
+		room_id: targetRoomId,
 		status: 'Sent',
 		edited: false,
 		edit_timestamp: null,
@@ -142,25 +169,21 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 		sender_device: peerId
 	};
 
-	// Add to messages store
-	const targetRoomId = roomId || get(currentRoomId);
-	if (targetRoomId) {
-		messages.addMessage(targetRoomId, messageObj);
-		void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+	messages.addMessage(targetRoomId, messageObj);
+	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 
-		// Send delivery acknowledgment back to sender
-		if (sendToPeerFn) {
-			const userState = get(user);
-			const ack: DeliveryAckMessage = {
-				type: 'delivery-ack',
-				messageId: messageObj.id,
-				roomId: targetRoomId,
-				peerId: userState.id,
-				timestamp: Date.now()
-			};
+	// Send delivery acknowledgment back to sender
+	if (sendToPeerFn) {
+		const userState = get(user);
+		const ack: DeliveryAckMessage = {
+			type: 'delivery-ack',
+			messageId: messageObj.id,
+			roomId: targetRoomId,
+			peerId: userState.id,
+			timestamp: Date.now()
+		};
 
-			sendToPeerFn(peerId, ack);
-		}
+		sendToPeerFn(peerId, ack);
 	}
 
 	// Clear the typing indicator for this peer since they sent a message
@@ -175,13 +198,17 @@ function handleMediaOffer(offer: MediaOffer, peerId: string): boolean {
 	// Place the message in the cryptographically-bound session room, not the
 	// attacker-settable offer.roomId. Drop offers that claim a different room;
 	// returning false makes the caller skip the transfer engine too.
-	const sessionRoomId = get(currentRoomId);
-	if (!sessionRoomId) return false;
-	if (offer.roomId && offer.roomId !== sessionRoomId) {
-		console.warn('[P2P Handler] Media offer roomId mismatch; ignoring');
+	const targetRoomId = sessionRoom(offer.roomId);
+	if (!targetRoomId) return false;
+	// Ids are sender-chosen: reusing one would swap the stored blob or the
+	// message of an existing attachment, including someone else's.
+	const existing = messages.getRoomMessages(targetRoomId);
+	if (
+		existing.some((m) => m.id === offer.messageId || m.attachment?.transferId === offer.transferId)
+	) {
+		console.warn('[P2P Handler] Media offer reuses an existing id; ignoring');
 		return false;
 	}
-	const targetRoomId = sessionRoomId;
 	if (offer.senderName) connection.setPeerName(peerId, offer.senderName);
 
 	const messageObj: Message = {
@@ -249,11 +276,8 @@ function handleTypingMessage(message: TypingMessage, peerId: string): void {
  * Handle sync request from peer
  */
 async function handleSyncRequest(message: SyncRequestMessage, peerId: string): Promise<void> {
-	const roomId = message.roomId || get(currentRoomId);
-	if (!roomId) {
-		console.warn('[P2P Handler] No room ID for sync request');
-		return;
-	}
+	const roomId = sessionRoom(message.roomId);
+	if (!roomId) return;
 
 	try {
 		const roomMessages = messages.getRoomMessages(roomId);
@@ -280,13 +304,9 @@ async function handleSyncRequest(message: SyncRequestMessage, peerId: string): P
  * Handle sync response from peer
  */
 function handleSyncResponse(message: SyncResponseMessage, peerId: string): void {
-	const { roomId, messages: syncedMessages } = message;
-	const targetRoomId = roomId || get(currentRoomId);
-
-	if (!targetRoomId) {
-		console.warn('[P2P Handler] No room ID for sync response');
-		return;
-	}
+	const { messages: syncedMessages } = message;
+	const targetRoomId = sessionRoom(message.roomId);
+	if (!targetRoomId) return;
 
 	if (!syncedMessages || !Array.isArray(syncedMessages) || syncedMessages.length === 0) {
 		return;
@@ -306,14 +326,20 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 	// Filter out duplicates and add/update messages with progress tracking
 	let newCount = 0;
 	let processedCount = 0;
+	const selfIds = new Set([get(user).id, selfDeviceFn()].filter(Boolean));
 
 	for (const msg of processedMessages) {
 		processedCount++;
 
 		const existingMsg = existingById.get(msg.id);
 		if (!existingMsg) {
-			// New message - add it
-			messages.addMessage(targetRoomId, msg);
+			// Synced history is peer-asserted (unsigned per message), so it may
+			// not put words in this user's mouth: a copy of our own message is
+			// only ever accepted when we already hold it.
+			if (selfIds.has(msg.sender_id) || (msg.sender_device && selfIds.has(msg.sender_device))) {
+				continue;
+			}
+			messages.addMessage(targetRoomId, { ...msg, room_id: targetRoomId, synced: true });
 			newCount++;
 		} else {
 			// Message exists - check if synced version has important updates
@@ -372,7 +398,7 @@ function handleUserConnected(message: UserConnectedMessage, peerId: string): voi
 	// The peer repeats its announcement to cover channel startup races.
 	// Its name is removed on departure, allowing a real rejoin notice.
 	if (senderName && !alreadyAnnounced) {
-		toast.success(`${senderName} joined the room`);
+		toast.success(`${senderName} is here`);
 	}
 }
 
@@ -380,9 +406,9 @@ function handleUserConnected(message: UserConnectedMessage, peerId: string): voi
  * Handle message edit requests
  */
 function handleEditMessage(message: EditMessage, peerId: string): void {
-	const { messageId, roomId, newContent, timestamp } = message;
+	const { messageId, newContent, timestamp } = message;
 
-	const targetRoomId = roomId || get(currentRoomId);
+	const targetRoomId = sessionRoom(message.roomId);
 	if (!targetRoomId || !messageId) {
 		console.warn('[P2P Handler] Invalid edit message');
 		return;
@@ -412,9 +438,9 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
  * Handle message delete requests
  */
 function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
-	const { messageId, roomId } = message;
+	const { messageId } = message;
 
-	const targetRoomId = roomId || get(currentRoomId);
+	const targetRoomId = sessionRoom(message.roomId);
 	if (!targetRoomId || !messageId) {
 		console.warn('[P2P Handler] Invalid delete message');
 		return;
@@ -442,9 +468,9 @@ function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
  * Handle message reactions
  */
 function handleReactionMessage(message: ReactionMessage, peerId: string): void {
-	const { messageId, roomId, reaction, action } = message;
+	const { messageId, reaction, action } = message;
 
-	const targetRoomId = roomId || get(currentRoomId);
+	const targetRoomId = sessionRoom(message.roomId);
 	if (!targetRoomId || !messageId || !reaction) {
 		console.warn('[P2P Handler] Invalid reaction message');
 		return;

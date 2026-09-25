@@ -27,7 +27,7 @@ describe('peer presence notices', () => {
 		announce('Alice');
 		announce('Alice');
 		announce('Alicia');
-		expect(toast.success).toHaveBeenCalledExactlyOnceWith('Alice joined the room');
+		expect(toast.success).toHaveBeenCalledExactlyOnceWith('Alice is here');
 		expect(connection.getPeerName('peer')).toBe('Alicia');
 	});
 

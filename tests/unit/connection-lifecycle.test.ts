@@ -325,6 +325,17 @@ describe('P2P peer callback lifecycle', () => {
 		expect(connection.getDirectPeers()).toEqual([]);
 	});
 
+	test('channel envelopes are opened against the verified device of that channel', async () => {
+		const message = vi.fn();
+		connection.onMessage(message);
+		const pc = await join();
+		await verify(pc);
+		pc.channels[0].onmessage?.({ data: '{}' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(session.openMessage).toHaveBeenCalledWith(expect.anything(), hello.deviceId);
+		expect(message).toHaveBeenCalledWith(expect.anything(), hello.deviceId);
+	});
+
 	test('stale channel messages are ignored, including decryption already in progress', async () => {
 		const message = vi.fn();
 		connection.onMessage(message);
