@@ -173,18 +173,7 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 
 	// Send delivery acknowledgment back to sender
-	if (sendToPeerFn) {
-		const userState = get(user);
-		const ack: DeliveryAckMessage = {
-			type: 'delivery-ack',
-			messageId: messageObj.id,
-			roomId: targetRoomId,
-			peerId: userState.id,
-			timestamp: Date.now()
-		};
-
-		sendToPeerFn(peerId, ack);
-	}
+	acknowledge(peerId, targetRoomId, messageObj.id);
 
 	// Clear the typing indicator for this peer since they sent a message
 	drafts.clearDraft(peerId);
@@ -341,6 +330,9 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 			}
 			messages.addMessage(targetRoomId, { ...msg, room_id: targetRoomId, synced: true });
 			newCount++;
+			// Only the author learns anything from this: a member's own message
+			// that reached us through its history is now delivered to us.
+			if (msg.sender_device === peerId) acknowledge(peerId, targetRoomId, msg.id);
 		} else {
 			// Message exists - check if synced version has important updates
 			// Prefer deleted state: if synced message is deleted but local isn't, update local
@@ -495,9 +487,35 @@ function handleReactionMessage(message: ReactionMessage, peerId: string): void {
  */
 function handleDeliveryAck(message: DeliveryAckMessage, peerId: string): void {
 	const { messageId } = message;
+	const roomId = sessionRoom(message.roomId);
+	if (!roomId) return;
 
 	// Record the delivery in our tracking store
 	delivery.recordDelivery(messageId, peerId);
+
+	// Persist the outcome on the message so the tick survives a reload. A
+	// message sent while alone counts as delivered once any member confirms
+	// it arrived (usually through history sync).
+	const msg = messages.getMessage(roomId, messageId);
+	if (!msg || msg.sender_id !== get(user).id || msg.status === 'Delivered') return;
+	const tracked = delivery.getDeliveryStatus(messageId);
+	const done =
+		msg.status === 'Local' ||
+		(!!tracked && tracked.total > 0 && tracked.delivered >= tracked.total);
+	if (!done) return;
+	messages.updateMessage(roomId, messageId, { status: 'Delivered' });
+	void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+}
+
+/** Tell a member its own message reached this device. */
+function acknowledge(peerId: string, roomId: string, messageId: string): void {
+	sendToPeerFn?.(peerId, {
+		type: 'delivery-ack',
+		messageId,
+		roomId,
+		peerId: get(user).id,
+		timestamp: Date.now()
+	});
 }
 
 /**

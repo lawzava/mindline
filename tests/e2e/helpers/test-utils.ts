@@ -268,19 +268,17 @@ export async function waitForPeersConnected(
 		await waitForP2PSync(1000);
 
 		while (Date.now() - startTime < timeout) {
-			const textA = await pageA
+			// The header names people; the count lives in an attribute.
+			const countA = await pageA
 				.locator('[data-testid="peer-count"]')
-				.textContent()
-				.catch(() => '');
-			const textB = await pageB
+				.getAttribute('data-peer-count')
+				.catch(() => null);
+			const countB = await pageB
 				.locator('[data-testid="peer-count"]')
-				.textContent()
-				.catch(() => '');
+				.getAttribute('data-peer-count')
+				.catch(() => null);
 
-			const matchA = textA?.match(/(\d+)\s*peer/);
-			const matchB = textB?.match(/(\d+)\s*peer/);
-
-			if (matchA && matchB && parseInt(matchA[1]) >= 1 && parseInt(matchB[1]) >= 1) {
+			if (Number(countA) >= 1 && Number(countB) >= 1) {
 				return true;
 			}
 			// Faster polling interval
@@ -314,8 +312,7 @@ export async function isPeersActuallyConnected(page: Page): Promise<boolean> {
 		const peerCount = page.locator('[data-testid="peer-count"]');
 		const isVisible = await peerCount.isVisible({ timeout: 2000 });
 		if (isVisible) {
-			const text = await peerCount.textContent();
-			return /\d+ peer/.test(text ?? '');
+			return Number(await peerCount.getAttribute('data-peer-count')) > 0;
 		}
 		return false;
 	} catch {

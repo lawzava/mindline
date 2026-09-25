@@ -467,6 +467,11 @@ export function broadcastChat(content: string, messageId: string): void {
 
 	// Initialize delivery tracking for this message
 	delivery.trackMessage(messageId, roomId, connectedPeers);
+	if (connectedPeers.length === 0) {
+		// Stored, not just tracked, so the label survives a reload.
+		messages.updateMessage(roomId, messageId, { status: 'Local' });
+		void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+	}
 
 	const message: ChatMessage = {
 		type: 'chat',
@@ -613,6 +618,11 @@ function requestSyncFrom(peerDeviceId: string, roomId: string): void {
 	} catch (error) {
 		console.error('[P2P Manager] Failed to request sync:', error);
 	}
+}
+
+/** Re-announce our display name to everyone connected (after a rename). */
+export function announceName(): void {
+	for (const peer of p2pConnection?.getConnectedPeers() ?? []) sendUserConnectedTo(peer);
 }
 
 /**
