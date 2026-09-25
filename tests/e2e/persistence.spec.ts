@@ -249,42 +249,43 @@ test.describe('Message Persistence', () => {
 test.describe('Encryption Key Persistence', () => {
 	test.describe.configure({ mode: 'serial' });
 
-	test('should generate and save encryption key for new room', async ({ page }) => {
+	test('room keys are stored in IndexedDB as non-extractable keys', async ({ page }) => {
 		const roomId = await createRoom(page);
-
-		// Check that encryption key was saved to localStorage
-		const keyExists = await page.evaluate((roomId) => {
-			const key = localStorage.getItem(`mindline_encryption_key_${roomId}`);
-			return key !== null && key.length > 0;
-		}, roomId);
-
-		expect(keyExists).toBe(true);
-	});
-
-	test('should load encryption key from storage on page reload', async ({ page }) => {
-		const roomId = await createRoom(page);
-
-		// Get the encryption key
-		const originalKey = await page.evaluate((roomId) => {
-			return localStorage.getItem(`mindline_encryption_key_${roomId}`);
-		}, roomId);
-
-		expect(originalKey).toBeTruthy();
-
-		// Send a message (will be encrypted)
 		await sendMessage(page, 'Encrypted message');
 		await waitForMessage(page, 'Encrypted message');
 
-		// Reload the page
+		const readKeys = () =>
+			page.evaluate(
+				(id) =>
+					new Promise<{ found: boolean; extractable: boolean[] }>((resolve, reject) => {
+						const open = indexedDB.open('mindline-keys');
+						open.onerror = () => reject(open.error);
+						open.onsuccess = () => {
+							const db = open.result;
+							const req = db.transaction('rooms').objectStore('rooms').get(id);
+							req.onsuccess = () => {
+								db.close();
+								const rec = req.result as Record<string, CryptoKey> | undefined;
+								resolve({
+									found: !!rec,
+									extractable: rec ? Object.values(rec).map((k) => k.extractable) : []
+								});
+							};
+							req.onerror = () => reject(req.error);
+						};
+					}),
+				roomId
+			);
+
+		const before = await readKeys();
+		expect(before.found).toBe(true);
+		expect(before.extractable.length).toBeGreaterThan(0);
+		expect(before.extractable.every((e) => e === false)).toBe(true);
+
 		await page.reload();
 		await joinRoom(page, roomId);
-
-		// Key should still exist
-		const keyAfterReload = await page.evaluate((roomId) => {
-			return localStorage.getItem(`mindline_encryption_key_${roomId}`);
-		}, roomId);
-
-		expect(keyAfterReload).toBe(originalKey);
+		expect((await readKeys()).found).toBe(true);
+		await waitForMessage(page, 'Encrypted message');
 	});
 
 	test('should decrypt messages after page refresh with stored key', async ({ page }) => {
@@ -310,12 +311,11 @@ test.describe('Encryption Key Persistence', () => {
 		).toBeVisible({ timeout: 5000 });
 	});
 
-	test('should have different encryption keys per room', async ({ page, browser }) => {
-		// Create first room
-		const roomIdA = await createRoom(page);
-		const keyA = await page.evaluate((roomId) => {
-			return localStorage.getItem(`mindline_encryption_key_${roomId}`);
-		}, roomIdA);
+	test('should have different encryption keys per room', async ({ page }) => {
+		// Each room's key is the random fragment of its own invite link.
+		const keyOf = (url: string) => new URL(url).hash;
+		await createRoom(page);
+		const keyA = keyOf(page.url());
 
 		// Create second room (navigate to landing and create new)
 		await page.goto('/');
@@ -323,14 +323,11 @@ test.describe('Encryption Key Persistence', () => {
 		await page.locator('[data-testid="create-room-btn"]').click();
 		await page.waitForURL(/\/[a-f0-9-]+#k=/);
 
-		const roomIdB = page.url().split('/').pop() || '';
-		const keyB = await page.evaluate((roomId) => {
-			return localStorage.getItem(`mindline_encryption_key_${roomId}`);
-		}, roomIdB);
+		const keyB = keyOf(page.url());
 
 		// Keys should be different
-		expect(keyA).toBeTruthy();
-		expect(keyB).toBeTruthy();
+		expect(keyA).toMatch(/^#k=/);
+		expect(keyB).toMatch(/^#k=/);
 		expect(keyA).not.toBe(keyB);
 	});
 

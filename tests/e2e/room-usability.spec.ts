@@ -1,11 +1,38 @@
 import { test, expect } from '@playwright/test';
-import { generateTestRoomId, keyFragmentFor, joinRoom } from './helpers/test-utils';
+import {
+	createSecondContext,
+	generateTestRoomId,
+	keyFragmentFor,
+	joinRoom,
+	waitForMessage
+} from './helpers/test-utils';
 
-test('a message with no recipients is labelled local rather than delivered', async ({ page }) => {
-	await joinRoom(page, generateTestRoomId('local-receipt'));
+test('a message sent alone is not delivered until someone arrives, across reloads', async ({
+	page,
+	browser
+}) => {
+	const roomId = generateTestRoomId('local-receipt');
+	await joinRoom(page, roomId);
 	await page.getByTestId('message-input').fill('A note before anyone joins');
 	await page.getByTestId('send-btn').click();
-	await expect(page.getByLabel('Local message; no recipients were connected')).toHaveText('Local');
+	const tick = page.getByTestId('delivery-tick');
+	await expect(tick).toHaveAttribute('data-tick', 'local');
+	await expect(tick).toHaveText('Not delivered yet');
+
+	await page.reload();
+	await expect(tick).toHaveAttribute('data-tick', 'local');
+
+	const other = await createSecondContext(browser);
+	try {
+		const peer = await other.newPage();
+		await joinRoom(peer, roomId);
+		await waitForMessage(peer, 'A note before anyone joins', 30000);
+		await expect(tick).toHaveAttribute('data-tick', 'delivered', { timeout: 15000 });
+	} finally {
+		await other.close();
+	}
+	await page.reload();
+	await expect(tick).toHaveAttribute('data-tick', 'delivered');
 });
 
 test('a burn notification removes media committed before this tab received it', async ({
@@ -241,4 +268,82 @@ test('cancelling native sharing does not copy the private invite', async ({ page
 		page.getByText('Invite link copied! Anyone with this link can read the room.')
 	).toHaveCount(0);
 	await expect.poll(() => page.evaluate(() => localStorage.getItem('unexpected-copy'))).toBeNull();
+});
+
+test('a newcomer is asked for a name once and peers see it in the header', async ({
+	page,
+	browser
+}) => {
+	const roomId = generateTestRoomId('name-prompt');
+	await joinRoom(page, roomId);
+	const other = await createSecondContext(browser);
+	try {
+		const peer = await other.newPage();
+		await joinRoom(peer, roomId);
+		const prompt = peer.getByTestId('name-prompt');
+		await expect(prompt).toBeVisible();
+		await prompt.getByRole('textbox').fill('Dana');
+		await prompt.getByRole('button', { name: 'Save' }).click();
+		await expect(prompt).toBeHidden();
+		await expect(page.getByTestId('peer-count')).toContainText('Dana', { timeout: 15000 });
+
+		await peer.reload();
+		await expect(peer.getByTestId('message-input')).toBeVisible();
+		await expect(peer.getByTestId('name-prompt')).toBeHidden();
+	} finally {
+		await other.close();
+	}
+});
+
+test('touch users can copy message text from the actions menu', async ({ browser, baseURL }) => {
+	const context = await browser.newContext({
+		baseURL,
+		viewport: { width: 390, height: 844 },
+		hasTouch: true,
+		permissions: ['clipboard-read', 'clipboard-write']
+	});
+	try {
+		const page = await context.newPage();
+		await joinRoom(page, generateTestRoomId('touch-copy'));
+		await page.getByTestId('message-input').fill('copy me exactly');
+		await page.getByTestId('send-btn').click();
+		await page.getByRole('button', { name: 'Message actions', exact: true }).click();
+		await page.getByRole('button', { name: 'Copy', exact: true }).click();
+		await expect(page.getByText('Copied')).toBeVisible();
+		expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('copy me exactly');
+	} finally {
+		await context.close();
+	}
+});
+
+test('reading history shows a jump-to-latest button that returns to the bottom', async ({
+	page
+}) => {
+	await joinRoom(page, generateTestRoomId('jump-latest'));
+	const input = page.getByTestId('message-input');
+	for (let i = 0; i < 30; i++) {
+		await input.fill(`line ${i}`);
+		await input.press('Enter');
+	}
+	await expect(
+		page.getByTestId('message-list').getByText('line 29', { exact: true })
+	).toBeVisible();
+	const jump = page.getByRole('button', { name: 'Jump to latest' });
+	await expect(jump).toBeHidden();
+
+	await page.getByLabel('Messages').evaluate((el) => el.scrollTo({ top: 0 }));
+	await expect(jump).toBeVisible();
+	await jump.click();
+	await expect(
+		page.getByTestId('message-list').getByText('line 29', { exact: true })
+	).toBeInViewport();
+	await expect(jump).toBeHidden();
+
+	// Sending always returns to the latest message, even from history.
+	await page.getByLabel('Messages').evaluate((el) => el.scrollTo({ top: 0 }));
+	await input.fill('sent from history');
+	await input.press('Enter');
+	await expect(
+		page.getByTestId('message-list').getByText('sent from history', { exact: true })
+	).toBeInViewport();
 });

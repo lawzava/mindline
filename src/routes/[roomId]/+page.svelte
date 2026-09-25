@@ -38,6 +38,7 @@
 		cleanupPageLifecycleHandlers,
 		NoRoomKeyError,
 		RoomKeyMismatchError,
+		announceName,
 		sendMediaMessage,
 		acceptMediaTransfer,
 		declineMediaTransfer
@@ -405,11 +406,37 @@
 			menuName = trimmed;
 			if (trimmed === $user.name) return;
 			user.setName(trimmed);
+			announceName();
 			toast.success('Name updated!');
 		} else {
 			menuName = $user.name;
 			toast.error('Name cannot be empty');
 		}
+	}
+
+	// First-join name: people talk to a name, not "Anonymous". Asked once,
+	// inline above the composer, never as a gate in front of the room.
+	const NAME_PROMPT_KEY = 'mindline_name_prompt_done';
+	let namePromptDone = $state(true);
+	let firstName = $state('');
+	onMount(() => {
+		namePromptDone = localStorage.getItem(NAME_PROMPT_KEY) === '1';
+	});
+	const needsName = $derived(!namePromptDone && (!$user.name.trim() || $user.name === 'Anonymous'));
+
+	function finishNamePrompt() {
+		namePromptDone = true;
+		localStorage.setItem(NAME_PROMPT_KEY, '1');
+	}
+
+	function saveFirstName(event: SubmitEvent) {
+		event.preventDefault();
+		const name = firstName.trim().slice(0, 64);
+		if (!name) return;
+		user.setName(name);
+		menuName = name;
+		announceName();
+		finishNamePrompt();
 	}
 
 	async function leaveRoom(burn: boolean) {
@@ -714,6 +741,26 @@
 				</Button>
 			</div>
 		{/each}
+
+		{#if needsName}
+			<form
+				class="flex items-center gap-2 border-t border-border bg-background px-3 py-2"
+				onsubmit={saveFirstName}
+				data-testid="name-prompt"
+			>
+				<label for="first-name" class="shrink-0 text-sm text-muted-foreground">Your name</label>
+				<Input
+					id="first-name"
+					bind:value={firstName}
+					placeholder="How others see you"
+					maxlength={64}
+					autocomplete="nickname"
+					class="h-9 min-w-0 flex-1"
+				/>
+				<Button type="submit" size="sm" disabled={!firstName.trim()}>Save</Button>
+				<Button type="button" variant="ghost" size="sm" onclick={finishNamePrompt}>Later</Button>
+			</form>
+		{/if}
 
 		<!-- Message input -->
 		<MessageInput

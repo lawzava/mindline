@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { userId, draftsList, peerCount } from '$lib/stores';
 	import { shareInvite } from '$lib/share';
+	import { ArrowDown } from 'lucide-svelte';
 	import type { Message } from '$lib/types/message';
 
 	interface Props {
@@ -16,6 +17,7 @@
 	let { messages, onEdit, onDelete, onReaction }: Props = $props();
 	let scrollRef = $state<HTMLDivElement | null>(null);
 	let atBottom = $state(true);
+	let contentRef = $state<HTMLDivElement | null>(null);
 
 	// Messages already present at mount render statically; only later
 	// arrivals get the one-shot entry animation.
@@ -68,23 +70,41 @@
 		atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
 	}
 
+	function toBottom() {
+		requestAnimationFrame(() => {
+			scrollRef?.scrollTo({ top: scrollRef.scrollHeight, behavior: 'instant' });
+		});
+	}
+
 	// Follow the stream only when the reader is already at the bottom
 	// (audit fix: no more force-scroll while reading history). Drafts
 	// growing also keep the view pinned. Instant, not smooth: drafts
 	// update per keystroke, and overlapping smooth scrolls animate
-	// continuously — a main jank source on phones.
+	// continuously — a main jank source on phones. Your own new message
+	// always brings you back down, as in every messenger.
+	let lastCount: number | null = null;
 	$effect(() => {
-		void messages.length;
 		void $draftsList;
-		if (scrollRef && atBottom) {
-			requestAnimationFrame(() => {
-				scrollRef?.scrollTo({ top: scrollRef.scrollHeight, behavior: 'instant' });
-			});
-		}
+		const count = messages.length;
+		const ownNew =
+			lastCount !== null && count > lastCount && messages[count - 1]?.sender_id === $userId;
+		lastCount = count;
+		if (scrollRef && (atBottom || ownNew)) toBottom();
+	});
+
+	// Images and media decode after their message renders and push the
+	// latest line below the fold; keep the view pinned while at the bottom.
+	$effect(() => {
+		if (!contentRef) return;
+		const observer = new ResizeObserver(() => {
+			if (atBottom) toBottom();
+		});
+		observer.observe(contentRef);
+		return () => observer.disconnect();
 	});
 </script>
 
-<div class="min-h-0 flex-1 overflow-hidden" data-testid="message-list">
+<div class="relative min-h-0 flex-1 overflow-hidden" data-testid="message-list">
 	<div
 		bind:this={scrollRef}
 		onscroll={handleScroll}
@@ -110,7 +130,7 @@
 				{/if}
 			</div>
 		{:else}
-			<div class="flex flex-col pb-1">
+			<div class="flex flex-col pb-1" bind:this={contentRef}>
 				{#each messages as message, i (message.id)}
 					{#if dayChanged(messages[i - 1], message)}
 						<div class="my-6 flex items-center gap-3" role="separator">
@@ -141,4 +161,18 @@
 			</div>
 		{/if}
 	</div>
+	{#if !atBottom && messages.length > 0}
+		<Button
+			variant="secondary"
+			size="icon"
+			onclick={() => {
+				atBottom = true;
+				toBottom();
+			}}
+			class="absolute bottom-3 right-3 h-10 w-10 rounded-full border border-border"
+			aria-label="Jump to latest"
+		>
+			<ArrowDown class="h-4 w-4" />
+		</Button>
+	{/if}
 </div>

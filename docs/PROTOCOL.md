@@ -756,7 +756,11 @@ to all served history.
 Delivery receipts count only acknowledgments from the original, deduplicated
 recipient set. Disconnecting does not remove an intended recipient or prove
 delivery; a later valid acknowledgment can still count. Messages sent without
-recipients are labelled local. Missing receipt history does not imply delivery.
+recipients are labelled local ("Not delivered yet"). A receiver acknowledges a
+synced message only when the member serving it is its author
+(`sender_device`), and any verified member's acknowledgment turns a local
+message delivered. The outcome is stored on the message (`status`), so it
+survives reloads. Missing receipt history does not imply delivery.
 
 ## 4. Storage at rest
 

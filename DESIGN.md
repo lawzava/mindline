@@ -27,7 +27,7 @@ The accent ledger — full-chroma cobalt exists in exactly these places:
 3. The composer wire dot (only when text exists AND >= 1 peer is connected)
 4. The send circle (`--primary`)
 5. The full-delivery double-check
-6. Links and focus rings (`--ring`)
+6. Links (`--link`, a deeper cobalt for text contrast) and focus rings (`--ring`)
 7. The empty-room "Invite someone" button (exists only while alone)
 
 Everything else is tinted neutral. Connection status uses conventional colors
