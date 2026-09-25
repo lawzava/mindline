@@ -71,7 +71,7 @@ export {
 } from './manager';
 
 // Crypto session
-export { CryptoSession } from './crypto-session';
+export { CryptoSession, RoomKeyMismatchError } from './crypto-session';
 
 // Handler utilities
 export { emitToast } from './handlers';

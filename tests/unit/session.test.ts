@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { CryptoSession } from '$lib/p2p/crypto-session';
+import { CryptoSession, RoomKeyMismatchError } from '$lib/p2p/crypto-session';
 import { MAX_CHAIN } from '$lib/p2p/ratchet';
 import { createRoomKey, deriveRoomKeys, importRoomKeyMaterial } from '$lib/crypto/keys';
 import { createDeviceIdentity } from '$lib/crypto/identity';
@@ -44,6 +44,8 @@ describe('CryptoSession', () => {
 
 	test('hello from a different room key is rejected', async () => {
 		const a = await CryptoSession.create('room-1', createRoomKey());
+		// A separate device: one keystore refuses a second key for a room.
+		indexedDB = new IDBFactory();
 		const b = await CryptoSession.create('room-1', createRoomKey());
 		const hello = await a.makeHello('Alice', bind('bind'));
 		expect(await b.acceptHello(hello, bind('bind'))).toBeNull();
@@ -61,6 +63,17 @@ describe('CryptoSession', () => {
 		const { a, b } = await twoSessions();
 		const wire = await a.sealMessage({ type: 'chat', content: 'hi', messageId: 'm1' });
 		await expect(b.openMessage(JSON.parse(wire))).rejects.toThrow(/unverified/i);
+	});
+
+	test('an envelope signed by another member is rejected on this peer channel', async () => {
+		const { a, b } = await twoSessions();
+		await b.acceptHello(await a.makeHello('Alice', bind('bind')), bind('bind'));
+		const wire = await a.sealMessage({ type: 'chat', content: 'hi', messageId: 'm1' });
+		await expect(b.openMessage(JSON.parse(wire), 'mallory-device')).rejects.toThrow(/channel/i);
+		// Rejection must not burn Alice's replay slot.
+		await expect(b.openMessage(JSON.parse(wire), a.deviceId)).resolves.toMatchObject({
+			content: 'hi'
+		});
 	});
 
 	test('replayed message envelopes are rejected', async () => {
@@ -98,6 +111,21 @@ describe('CryptoSession', () => {
 		const wire = await s1.sealMessage({ type: 'chat', content: 'x', messageId: 'm1' });
 		const body = await s2!.openMessage(JSON.parse(wire));
 		expect(body).toMatchObject({ content: 'x' });
+	});
+
+	test('a link with a different key cannot replace a stored room', async () => {
+		const key = createRoomKey();
+		const s1 = await CryptoSession.create('room-1', key);
+		await expect(CryptoSession.create('room-1', createRoomKey())).rejects.toBeInstanceOf(
+			RoomKeyMismatchError
+		);
+		// The stored keys survive: the original link and a key-less revisit
+		// still open the room.
+		const again = await CryptoSession.create('room-1', key);
+		const stored = await CryptoSession.create('room-1', null);
+		await stored!.acceptHello(await s1.makeHello('A', bind('bind')), bind('bind'));
+		expect(stored!.isVerified(s1.deviceId)).toBe(true);
+		expect(again).not.toBeNull();
 	});
 
 	test('create returns null when no fragment and no stored keys (knocking)', async () => {

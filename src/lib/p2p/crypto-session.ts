@@ -68,6 +68,25 @@ export interface PeerInfo {
 	gid: string;
 }
 
+/**
+ * The URL carries a key for a room this device already holds under a
+ * different key. Adopting it would re-encrypt the real history under the
+ * newcomer's key and serve it to whoever minted that link (§1.2).
+ */
+export class RoomKeyMismatchError extends Error {
+	constructor() {
+		super('The link key does not match the key stored for this room');
+		this.name = 'RoomKeyMismatchError';
+	}
+}
+
+/** Whether two link-static key sets came from the same link key. */
+async function sameRoomKey(roomId: string, a: RoomKeys, b: RoomKeys): Promise<boolean> {
+	const probe = lp('mindline/v2/key-commit', roomId);
+	const tag = await crypto.subtle.sign('HMAC', a.auth, probe);
+	return crypto.subtle.verify('HMAC', b.auth, tag, probe);
+}
+
 /** Body types that ride the `hs` class — and only the `hs` class (§2). */
 const HS_BODY_TYPES = new Set(['hello', 'rekey-grant', 'rekey-request']);
 
@@ -126,7 +145,8 @@ export class CryptoSession {
 	/**
 	 * fragmentKey: raw 32 bytes from the URL fragment, or null to load
 	 * previously persisted keys. Returns null when neither exists — the
-	 * caller is knocking on a room it has no key for.
+	 * caller is knocking on a room it has no key for. Throws
+	 * RoomKeyMismatchError when the fragment key differs from the stored one.
 	 */
 	static async create(
 		roomId: string,
@@ -136,6 +156,10 @@ export class CryptoSession {
 		let ratchet: GenerationRatchet;
 		if (fragmentKey) {
 			keys = await deriveRoomKeys(await importRoomKeyMaterial(fragmentKey));
+			const stored = await loadRoomKeys(roomId);
+			if (stored && !(await sameRoomKey(roomId, keys, stored))) {
+				throw new RoomKeyMismatchError();
+			}
 			await saveRoomKeys(roomId, keys);
 			// Generation state: resume where the room ratcheted to, else start
 			// at the link generation (rk_0 = fragment key, §1.4).
@@ -395,7 +419,15 @@ export class CryptoSession {
 	 * bad signatures, failed decryption, unknown generations, body types
 	 * on the wrong class (§2), or replays.
 	 */
-	async openMessage(envelope: Envelope): Promise<Record<string, unknown>> {
+	/**
+	 * channelDevice: the verified device on the channel the envelope arrived
+	 * on. Forwarders re-sign (§1.4), so a signer other than the channel's
+	 * device means a member is replaying someone else's envelope as theirs.
+	 */
+	async openMessage(envelope: Envelope, channelDevice?: string): Promise<Record<string, unknown>> {
+		if (channelDevice !== undefined && envelope.s !== channelDevice) {
+			throw new Error(`envelope signer ${envelope.s} is not the channel device`);
+		}
 		let senderPublicKey: CryptoKey | undefined;
 		// Signed classes (msg, hs) require the sender's TOFU key. A duplicate
 		// hello arrives here as an 'hs' envelope after the peer is verified.

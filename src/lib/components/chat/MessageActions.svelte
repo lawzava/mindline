@@ -27,7 +27,8 @@
 			</Button>
 		{/snippet}
 	</DropdownMenu.Trigger>
-	<DropdownMenu.Content align="end" class="w-40">
+	<!-- collisionPadding keeps the menu off the viewport edge on narrow screens. -->
+	<DropdownMenu.Content align="end" class="w-40" collisionPadding={8}>
 		<DropdownMenu.Item onclick={onEdit} class="gap-2 cursor-pointer">
 			<Pencil class="h-4 w-4" />
 			<span>Edit</span>

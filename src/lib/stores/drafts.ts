@@ -14,7 +14,7 @@ export interface Draft {
 }
 
 // Radical transparency: a draft never vanishes while the peer's composer
-// holds text. After this stillness it settles to 55% opacity (isFading),
+// holds text. After this stillness it settles to 85% opacity (isFading),
 // breath held, not gone. It clears only on send, explicit empty, or leave.
 const DRAFT_SETTLE_MS = 6000;
 

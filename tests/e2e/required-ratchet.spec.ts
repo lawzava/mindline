@@ -115,41 +115,51 @@ test.describe('Required Ratchet', () => {
 		await cleanup(contextB);
 	});
 
-	test('two tabs of one device send concurrently without replay self-censorship', async ({
+	test('tabs of one device hand the room over without replay self-censorship', async ({
 		page,
-		context
+		context,
+		browser
 	}) => {
 		const roomId = generateTestRoomId('required-two-tab');
 		await joinRoom(page, roomId);
-
-		// Same context: shared device identity and keystore — each tab draws
-		// its own monotonic epoch (§2) and peers retain both (K-window).
-		const tab2 = await context.newPage();
-		await joinRoom(tab2, roomId);
-
-		const connected = await waitForPeersConnected(page, tab2);
-		if (!connected) {
-			handleUnavailableP2P('Required two-tab test failed: tabs never connected');
+		const contextB = await createSecondContext(browser);
+		const pageB = await contextB.newPage();
+		await joinRoom(pageB, roomId);
+		if (!(await waitForPeersConnected(page, pageB))) {
+			await cleanup(contextB);
+			handleUnavailableP2P('Required two-tab test failed: peers never connected');
 		}
-
-		// Interleaved sends from both tabs of the same device.
 		await sendMessage(page, 'tab-one-first');
-		await sendMessage(tab2, 'tab-two-first');
-		await sendMessage(page, 'tab-one-second');
-		await sendMessage(tab2, 'tab-two-second');
 
-		for (const text of ['tab-one-first', 'tab-one-second']) {
-			await expect(tab2.locator('[data-testid="message-list"]').getByText(text)).toBeVisible({
-				timeout: 10000
-			});
+		// Same context: shared device identity and keystore. One tab holds the
+		// room at a time; each session draws its own monotonic epoch (§2), so
+		// the peer must accept the new tab's sequence numbers.
+		const tab2 = await context.newPage();
+		await tab2.goto(page.url());
+		await tab2.getByRole('button', { name: 'Use here' }).click();
+		await expect(page.getByTestId('other-tab-state')).toBeVisible();
+		if (!(await waitForPeersConnected(tab2, pageB))) {
+			await cleanup(contextB);
+			handleUnavailableP2P('Required two-tab test failed: second tab never connected');
 		}
-		for (const text of ['tab-two-first', 'tab-two-second']) {
-			await expect(page.locator('[data-testid="message-list"]').getByText(text)).toBeVisible({
+		await sendMessage(tab2, 'tab-two-first');
+
+		await page.getByRole('button', { name: 'Use here' }).click();
+		await expect(tab2.getByTestId('other-tab-state')).toBeVisible();
+		if (!(await waitForPeersConnected(page, pageB))) {
+			await cleanup(contextB);
+			handleUnavailableP2P('Required two-tab test failed: first tab never reconnected');
+		}
+		await sendMessage(page, 'tab-one-second');
+
+		for (const text of ['tab-one-first', 'tab-two-first', 'tab-one-second']) {
+			await expect(pageB.locator('[data-testid="message-list"]').getByText(text)).toBeVisible({
 				timeout: 10000
 			});
 		}
 
 		await tab2.close();
+		await cleanup(contextB);
 	});
 
 	test('a relay-only peer is stranded by rotation and the UI says so', async ({
