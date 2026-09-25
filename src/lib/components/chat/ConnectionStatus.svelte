@@ -15,6 +15,7 @@
 	import { Loader2, User } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { cn } from '$lib/utils';
+	import { peopleLabel } from '$lib/presence';
 
 	// Presence-as-subtitle: a 6px dot plus one line of text replaces the old
 	// pill cluster. Conventional status colors stay (green = connected,
@@ -51,7 +52,7 @@
 					};
 				}
 				return {
-					label: n > 0 ? `Connected · ${n} peer${n !== 1 ? 's' : ''}` : 'Connected · just you',
+					label: `Connected · ${peopleLabel($connectedPeers.map((id) => $peerNames.get(id)))}`,
 					dot: 'bg-success',
 					pulse: false
 				};
@@ -109,6 +110,7 @@
 			<Popover.Trigger
 				class="flex min-w-0 items-center gap-1.5 rounded-sm outline-ring/50 hover:text-foreground"
 				data-testid="peer-count"
+				data-peer-count={$connectedPeers.length}
 			>
 				{@render subtitle()}
 			</Popover.Trigger>

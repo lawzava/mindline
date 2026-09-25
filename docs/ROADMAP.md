@@ -111,15 +111,13 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
 
 Product:
 
-1. Name on first join (prefilled with the last one), and show the peer's
-   name in the header instead of "1 peer".
-2. Replies, copy text, and a jump-to-latest button.
+1. ~~Name on first join, and the peer's name in the header.~~ Shipped.
+2. Replies. (Copy text and jump-to-latest shipped.)
 3. Recent rooms as the home screen for returning users: last message,
    unread dot, who is online.
 4. QR invite on the empty-room screen for phone-to-phone sharing.
-5. Installable PWA with an explicit, opt-in encrypted push "knock". This
-   adds metadata held by Apple, Google, or Mozilla and needs its own
-   CLAIMS row before it ships.
+5. Installable PWA. Push "knock" is out of scope: it needs server-side
+   push subscriptions, which the product does not store (decided 2026-09-26).
 6. An accessibility RTT mode (large text, high contrast, screen-reader
    politeness settings), taken to deaf community organisations.
 
@@ -127,12 +125,10 @@ Do not build: public rooms or discovery (Jitsi removed anonymous room
 creation after abuse), groups beyond about 8, a server mailbox, stickers
 or games as retention bait, phone numbers or accounts, interop bridges.
 
-## Known gaps found in this pass, not yet fixed
+## Known gaps found in this pass
 
-- Delivery ticks read "unavailable" after reload; a message sent while
-  alone keeps its "Local" label after later sync.
-- The list can stop short of the bottom after reload when media loads late.
-- `tests/e2e/persistence.spec.ts` "Encryption Key Persistence" checks a
-  localStorage key the app no longer writes; the test is stale and in no
-  CI suite.
-- Link color on bubbles measures just under 4.5:1 contrast (`--ring`).
+All fixed: delivery status now persists (Delivered / Not delivered yet
+survive reloads, and a message sent alone turns Delivered once someone
+receives it through history), the list stays pinned while late media
+loads, the stale persistence tests check IndexedDB, and links use a
+`--link` token at 5.4:1 or better.

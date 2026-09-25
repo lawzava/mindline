@@ -199,7 +199,10 @@ test.describe('P2P Multi-User Messaging', () => {
 		}
 
 		// Verify A sees 1 peer
-		await expect(page.locator('[data-testid="peer-count"]')).toContainText('1 peer');
+		await expect(page.locator('[data-testid="peer-count"]')).toHaveAttribute(
+			'data-peer-count',
+			'1'
+		);
 
 		// User B disconnects
 		await cleanup(contextB);
