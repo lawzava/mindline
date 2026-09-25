@@ -337,16 +337,7 @@ export async function copyRoomId(page: Page): Promise<void> {
 /**
  * Leave a room via the leave button
  */
-export async function leaveRoom(page: Page, confirm = true): Promise<void> {
+export async function leaveRoom(page: Page): Promise<void> {
 	await page.locator('[data-testid="leave-room-btn"]').click();
-
-	if (confirm) {
-		// Click confirm in dialog
-		await page.getByRole('button', { name: 'Leave Room' }).click();
-		// Should navigate to home
-		await page.waitForURL('/');
-	} else {
-		// Cancel
-		await page.getByRole('button', { name: 'Cancel' }).click();
-	}
+	await page.waitForURL('/');
 }

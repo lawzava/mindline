@@ -12,6 +12,7 @@
 	import { Check, CheckCheck, X } from 'lucide-svelte';
 	import { delivery } from '$lib/stores';
 	import MediaAttachment from './MediaAttachment.svelte';
+	import { linkify } from '$lib/linkify';
 
 	interface Props {
 		message: Message;
@@ -67,7 +68,15 @@
 		revealTimer = setTimeout(() => (revealed = false), 3000);
 	}
 
+	function revealClick(e: MouseEvent) {
+		// A tap on a link opens the link; it is not a request for the time.
+		if ((e.target as Element | null)?.closest('a')) return;
+		toggleReveal();
+	}
+
 	function revealKeydown(e: KeyboardEvent) {
+		// Keys pressed on an inner link belong to the link (Enter follows it).
+		if (e.target !== e.currentTarget) return;
 		if (e.key === 'Enter' || e.key === ' ') {
 			e.preventDefault();
 			toggleReveal();
@@ -119,10 +128,18 @@
 		showLongPressMenu = true;
 	}
 
-	// Check if message is deleted
+	// Check if message is deleted. The stored '[Message deleted]' marker is
+	// compared elsewhere, so it stays as is; only the rendering is humanized.
 	const isDeleted = $derived(
 		message.message_type === 'Deleted' || message.content === '[Message deleted]'
 	);
+
+	// Text and anchor segments, never {@html}: only http(s) becomes a link.
+	const segments = $derived(linkify(message.content));
+
+	// The time describes the bubble for assistive tech, whether or not the
+	// meta row is visible, so screen readers hear the message then its time.
+	const timeId = $derived(`msg-time-${message.id}`);
 
 	// Delivery status for own messages, reactive to the live store
 	const deliveryStatus = $derived.by(() => {
@@ -208,15 +225,17 @@
 			isMe ? 'flex-row-reverse' : 'flex-row'
 		)}
 	>
-		<!-- Bubble: fill alone defines it; no borders, no shadows. -->
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex -- role is 'button' exactly when tabindex is 0 (revealable) -->
+		<!-- Bubble: fill alone defines it; no borders, no shadows.
+		     No button role or aria-label: either would replace the message
+		     text for screen readers. The bubble stays a focusable reading
+		     stop (Enter/Space reveals the time) and is described by its time. -->
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_static_element_interactions -->
 		<div
 			use:longPress={{ duration: 400, onLongPress: handleLongPress }}
-			onclick={revealable ? toggleReveal : undefined}
+			onclick={revealable ? revealClick : undefined}
 			onkeydown={revealable ? revealKeydown : undefined}
-			role={revealable ? 'button' : undefined}
 			tabindex={revealable ? 0 : undefined}
-			aria-label={revealable ? 'Show message time' : undefined}
+			aria-describedby={timeId}
 			class={cn(
 				'min-w-0 break-words px-3.5 py-2.5 text-foreground',
 				corners,
@@ -255,10 +274,24 @@
 						<X class="h-4 w-4" />
 					</Button>
 				</div>
+			{:else if isDeleted}
+				<!-- Deletion keeps the attachment record; the placeholder wins. -->
+				<p class="text-base leading-[1.45]">This message was deleted</p>
 			{:else if message.attachment}
 				<MediaAttachment attachment={message.attachment} roomId={message.room_id} />
 			{:else}
-				<p class="whitespace-pre-wrap break-words text-base leading-[1.45]">{message.content}</p>
+				<!-- Links are external http(s) URLs, never app routes: resolve() does not apply. -->
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
+				<p class="whitespace-pre-wrap break-words text-base leading-[1.45]">
+					{#each segments as segment, i (i)}{#if segment.type === 'link'}<a
+								href={segment.href}
+								target="_blank"
+								rel="noopener noreferrer nofollow"
+								class="text-ring underline underline-offset-2 [overflow-wrap:anywhere]"
+								>{segment.text}</a
+							>{:else}{segment.text}{/if}{/each}
+				</p>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{/if}
 		</div>
 
@@ -293,6 +326,7 @@
 	<!-- Timestamp and delivery: last-of-group, info-bearing, or tap-revealed -->
 	{#if showMeta}
 		<span
+			id={timeId}
 			class={cn(
 				'flex items-center gap-1 px-1 text-xs tabular-nums text-muted-foreground',
 				isMe ? 'justify-end' : 'justify-start'
@@ -338,5 +372,8 @@
 				<span class="sr-only">Delivery status unavailable</span>
 			{/if}
 		</span>
+	{:else}
+		<!-- Mid-group the time is hidden visually but never from assistive tech. -->
+		<span id={timeId} class="sr-only">{formatTime(message.timestamp)}</span>
 	{/if}
 </div>
