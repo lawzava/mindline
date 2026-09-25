@@ -82,6 +82,39 @@ test.describe('Required Live Typing + Wire Encryption', () => {
 		await cleanup(contextB);
 	});
 
+	test('held drafts clear from the peer and stay private until send', async ({ page, browser }) => {
+		const roomId = generateTestRoomId('required-hold');
+		const contextB = await createSecondContext(browser);
+		const pageB = await contextB.newPage();
+
+		await joinRoom(page, roomId);
+		await joinRoom(pageB, roomId);
+		if (!(await waitForPeersConnected(page, pageB))) {
+			handleUnavailableP2P('P2P unavailable for hold-drafts test');
+		}
+
+		const draft = pageB.locator('[data-testid="draft-indicator"]');
+		const input = page.locator('[data-testid="message-input"]');
+		await input.click();
+		await input.pressSequentially('visible start', { delay: 30 });
+		await expect(draft).toContainText('visible start', { timeout: 5000 });
+
+		await page.getByTestId('live-typing-toggle').click();
+		await expect(page.getByTestId('live-typing-toggle')).toHaveAttribute('aria-pressed', 'false');
+		await expect(draft).toBeHidden({ timeout: 5000 });
+
+		await input.click();
+		await input.pressSequentially(' then private words', { delay: 30 });
+		await page.waitForTimeout(2000);
+		await expect(draft).toBeHidden();
+
+		await input.press('Enter');
+		await waitForMessage(pageB, 'visible start then private words');
+
+		await page.getByTestId('live-typing-toggle').click();
+		await cleanup(contextB);
+	});
+
 	test('nothing leaves the device in plaintext on any DataChannel', async ({ page, browser }) => {
 		const roomId = generateTestRoomId('required-wire');
 		await page.addInitScript(WIRE_HOOK);

@@ -984,7 +984,10 @@ export class P2PConnection {
 		}
 
 		try {
-			const body = (await this.session.openMessage(envelope)) as unknown as TypedP2PMessage;
+			const body = (await this.session.openMessage(
+				envelope,
+				peer.deviceId ?? ''
+			)) as unknown as TypedP2PMessage;
 			if (!this.isCurrentPeer(peer)) return;
 			const type = (body as { type?: string }).type;
 			if (type === 'hello') {
@@ -1240,7 +1243,10 @@ export class P2PConnection {
 		const relay = this.relayPeers.get(fromId);
 		if (!relay?.verified) return;
 		try {
-			const body = (await this.session.openMessage(envelope)) as unknown as TypedP2PMessage;
+			const body = (await this.session.openMessage(
+				envelope,
+				relay.deviceId
+			)) as unknown as TypedP2PMessage;
 			if (!this.isCurrentSignaling(source)) return;
 			if (RELAY_FORBIDDEN_TYPES.has(body.type)) {
 				console.warn('[P2P] dropping relay-forbidden body type:', body.type);

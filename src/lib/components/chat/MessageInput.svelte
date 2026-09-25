@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, tick } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Send, Loader2, Paperclip, Camera, Mic, Square, X } from 'lucide-svelte';
 	import { processImage } from '$lib/media/image';
@@ -61,8 +61,49 @@
 	}
 
 	function handleInput() {
-		onTyping?.(message);
+		if (liveTyping) onTyping?.(message);
 		autogrow();
+	}
+
+	// Live typing is the product's thesis, but not everyone wants to be seen
+	// thinking: it is on by default and one tap holds drafts until send.
+	const LIVE_TYPING_KEY = 'mindline_live_typing';
+	let liveTyping = $state(true);
+
+	onMount(() => {
+		try {
+			liveTyping = localStorage.getItem(LIVE_TYPING_KEY) !== 'off';
+		} catch {
+			// Storage blocked: keep the default.
+		}
+	});
+
+	// Drafts ride a lossy, unordered channel, so one clear can be dropped or
+	// overtaken by an earlier draft packet. Repeat it while drafts stay held.
+	let holdClearTimers: ReturnType<typeof setTimeout>[] = [];
+	function cancelHoldClears() {
+		for (const t of holdClearTimers) clearTimeout(t);
+		holdClearTimers = [];
+	}
+
+	function toggleLiveTyping() {
+		liveTyping = !liveTyping;
+		cancelHoldClears();
+		try {
+			localStorage.setItem(LIVE_TYPING_KEY, liveTyping ? 'on' : 'off');
+		} catch {
+			// Storage blocked: the choice lasts for this page only.
+		}
+		// Holding clears the draft peers already see. Going live shares the
+		// field as it stands, so the wire dot never glows over a silent wire.
+		if (!liveTyping) {
+			onTyping?.('');
+			holdClearTimers = [400, 1500].map((ms) =>
+				setTimeout(() => {
+					if (!liveTyping) onTyping?.('');
+				}, ms)
+			);
+		} else if (message.trim()) onTyping?.(message);
 	}
 
 	/** Tallest the input grows before it scrolls internally (matches max-h-40). */
@@ -181,6 +222,7 @@
 
 	onDestroy(() => {
 		destroyed = true;
+		cancelHoldClears();
 		cancelVoice();
 	});
 
@@ -272,9 +314,24 @@
 			<span class="sr-only">Stop and send</span>
 		</Button>
 	{:else}
-		<p id="live-typing-note" class="w-full px-1 text-xs text-muted-foreground">
-			Others see your typing before you send.
-		</p>
+		<div class="flex w-full items-center gap-1.5 px-1 text-xs text-muted-foreground">
+			<span id="live-typing-note">
+				{liveTyping
+					? 'Others see your typing before you send.'
+					: 'Drafts stay private until you send.'}
+			</span>
+			<!-- One stable name with aria-pressed; the visible verb is the action. -->
+			<button
+				type="button"
+				onclick={toggleLiveTyping}
+				aria-pressed={liveTyping}
+				aria-label="Live typing"
+				class="-my-1 shrink-0 rounded-md px-1.5 py-1 font-medium text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+				data-testid="live-typing-toggle"
+			>
+				{liveTyping ? 'Hold drafts' : 'Go live'}
+			</button>
+		</div>
 		{#if onSendMedia}
 			<Button
 				variant="ghost"
@@ -319,8 +376,8 @@
 				data-testid="message-input"
 			></textarea>
 			<!-- The wire dot: glows only when your words are actually on a wire
-			     (text in the field AND at least one peer connected). -->
-			{#if message.trim() && $peerCount > 0}
+			     (live typing on, text in the field AND at least one peer connected). -->
+			{#if liveTyping && message.trim() && $peerCount > 0}
 				<span
 					class="breathe absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-draft"
 					aria-hidden="true"

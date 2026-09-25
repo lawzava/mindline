@@ -232,7 +232,7 @@ test.describe('Message Persistence', () => {
 		await page.getByRole('menuitem', { name: 'Delete' }).click();
 		await page.getByRole('button', { name: 'Delete' }).click();
 
-		await expect(message.getByText('[Message deleted]')).toBeVisible();
+		await expect(message.getByText('This message was deleted')).toBeVisible();
 
 		// Reload the page
 		await page.reload();
@@ -240,7 +240,9 @@ test.describe('Message Persistence', () => {
 
 		// Deletion should persist
 		const reloadedMessage = page.locator('[data-testid="message-bubble"]').first();
-		await expect(reloadedMessage.getByText('[Message deleted]')).toBeVisible({ timeout: 5000 });
+		await expect(reloadedMessage.getByText('This message was deleted')).toBeVisible({
+			timeout: 5000
+		});
 	});
 });
 

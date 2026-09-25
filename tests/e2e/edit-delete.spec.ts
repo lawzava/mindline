@@ -391,8 +391,8 @@ test.describe('Message Delete', () => {
 		// Confirm deletion
 		await page.getByRole('button', { name: 'Delete' }).click();
 
-		// Message should show [Message deleted]
-		await expect(message.getByText('[Message deleted]')).toBeVisible();
+		// Message should show the deletion placeholder
+		await expect(message.getByText('This message was deleted')).toBeVisible();
 	});
 
 	test('should style deleted message differently', async ({ page }) => {
@@ -414,7 +414,7 @@ test.describe('Message Delete', () => {
 		await page.getByRole('button', { name: 'Delete' }).click();
 
 		// Deleted message should have italic styling
-		const deletedContent = message.locator('p', { hasText: '[Message deleted]' });
+		const deletedContent = message.locator('p', { hasText: 'This message was deleted' });
 		await expect(deletedContent).toBeVisible();
 	});
 
@@ -438,7 +438,7 @@ test.describe('Message Delete', () => {
 		await page.getByRole('button', { name: 'Delete' }).click();
 
 		// Wait for deletion
-		await expect(message.getByText('[Message deleted]')).toBeVisible();
+		await expect(message.getByText('This message was deleted')).toBeVisible();
 
 		// Hover again - menu button should not be visible
 		await message.hover();
@@ -468,7 +468,7 @@ test.describe('Message Delete', () => {
 		await page.getByRole('button', { name: 'Delete' }).click();
 
 		// Wait for deletion
-		await expect(message.getByText('[Message deleted]')).toBeVisible();
+		await expect(message.getByText('This message was deleted')).toBeVisible();
 
 		// Hover again - emoji button should not be visible
 		await message.hover();

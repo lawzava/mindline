@@ -9,7 +9,13 @@ import { shouldMint } from './rekey-policy';
 import { RekeyScheduler } from './rekey-scheduler';
 import { parseKeyFragment } from '$lib/crypto/keys';
 import { getNetworkInfo } from './config';
-import { routeP2PMessage, setMediaControlFn, setSendToPeerFn, emitToast } from './handlers';
+import {
+	routeP2PMessage,
+	setMediaControlFn,
+	setSelfDeviceFn,
+	setSendToPeerFn,
+	emitToast
+} from './handlers';
 import { MediaTransferEngine, type MediaKind, type MediaOffer } from '$lib/media/transfer';
 import { saveRoomMessages } from '$lib/storage/messages';
 import type { Message } from '$lib/types/message';
@@ -155,7 +161,14 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 	if (!cryptoSession || cryptoSession.roomId !== roomId) {
 		const fragmentKey =
 			typeof window !== 'undefined' ? parseKeyFragment(window.location.hash) : null;
-		cryptoSession = await CryptoSession.create(roomId, fragmentKey);
+		try {
+			cryptoSession = await CryptoSession.create(roomId, fragmentKey);
+		} catch (error) {
+			isInitializing = false;
+			currentInitRoomId = null;
+			connection.setStatus('disconnected');
+			throw error;
+		}
 		if (!cryptoSession) {
 			isInitializing = false;
 			currentInitRoomId = null;
@@ -189,6 +202,7 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 
 	// Set up the sendToPeer function for handlers
 	setSendToPeerFn(p2pConnection.sendToPeer.bind(p2pConnection));
+	setSelfDeviceFn(() => cryptoSession?.deviceId ?? null);
 
 	// Set up handlers
 	p2pConnection.onMessage((message, peerId) => {
@@ -229,7 +243,8 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		// still-present peers via removePeerConnectionOnly (no disconnect fired),
 		// so this only runs for peers who genuinely left — safe to always announce.
 		const displayName = peerName || `Peer ${peerId.slice(0, 8)}...`;
-		emitToast('peer-left', `${displayName} left the room`);
+		// Our own teardown closes every peer; that is not them leaving.
+		if (!isDisconnecting) emitToast('peer-left', `${displayName} left the room`);
 
 		// §1.4 trigger (b): a member left — rotate the generation so a
 		// departed device's retained keys stop reading future captures.

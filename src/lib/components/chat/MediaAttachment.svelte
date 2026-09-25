@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { getBlob } from '$lib/media/blob-store';
+	import { renderableType } from '$lib/media/classify';
 	import { getRoomKeys } from '$lib/p2p';
 	import { transfers } from '$lib/stores';
 	import type { MessageAttachment } from '$lib/types/message';
@@ -37,7 +38,8 @@
 					loadFailed = true;
 					return;
 				}
-				objectUrl = URL.createObjectURL(new Blob([blob.data as BufferSource], { type: blob.mime }));
+				const type = renderableType(attachment.kind, blob.mime);
+				objectUrl = URL.createObjectURL(new Blob([blob.data as BufferSource], { type }));
 			} catch (error) {
 				console.warn('attachment load failed:', error);
 				loadFailed = true;

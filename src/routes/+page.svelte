@@ -126,9 +126,9 @@
 	<div class="w-full max-w-md shrink-0 space-y-7 sm:my-auto">
 		<!-- The promise, stated then demonstrated -->
 		<div class="space-y-3">
-			<h2 class="text-[1.55rem] font-semibold tracking-[-0.02em] sm:text-[2.1rem] sm:leading-[1.1]">
+			<h1 class="text-[1.55rem] font-semibold tracking-[-0.02em] sm:text-[2.1rem] sm:leading-[1.1]">
 				Talk on a live wire.
-			</h2>
+			</h1>
 			<p class="text-[1.0625rem] leading-relaxed text-muted-foreground">
 				A private line for two or a few people. You see each other's words as they're typed.
 			</p>
@@ -204,9 +204,9 @@
 		<!-- Rooms this device has been in (local only, never synced) -->
 		{#if $recentRooms.length > 0}
 			<div class="space-y-2.5">
-				<h3 class="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+				<h2 class="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 					Recent rooms
-				</h3>
+				</h2>
 				<RecentRooms />
 			</div>
 		{/if}

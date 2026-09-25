@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import { routeP2PMessage, setSendToPeerFn } from '$lib/p2p/handlers';
 import { messages } from '$lib/stores/messages';
+import { currentRoomId } from '$lib/stores/room';
 import type { Message } from '$lib/types/message';
 import type { TypedP2PMessage } from '$lib/p2p/types';
 
@@ -32,6 +33,7 @@ function history(roomId: string, count: number): Message[] {
 describe('history response backpressure', () => {
 	test('awaits each send and preserves all 129 large history pages', async () => {
 		const roomId = 'paged-history';
+		currentRoomId.set(roomId);
 		messages.setRoomMessages(roomId, history(roomId, 129));
 		let finish!: () => void;
 		const blocked = new Promise<void>((resolve) => (finish = resolve));
@@ -48,6 +50,7 @@ describe('history response backpressure', () => {
 
 	test('a room switch cannot redirect a pending history response to its new connection', async () => {
 		const roomId = 'old-room';
+		currentRoomId.set(roomId);
 		messages.setRoomMessages(roomId, history(roomId, 3));
 		let finish!: () => void;
 		const blocked = new Promise<void>((resolve) => (finish = resolve));

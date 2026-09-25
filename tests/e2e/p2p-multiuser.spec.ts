@@ -379,7 +379,7 @@ test.describe('P2P Multi-User Messaging', () => {
 
 		// User B should see the deletion
 		await expect(
-			pageB.locator('[data-testid="message-bubble"]').first().getByText('[Message deleted]')
+			pageB.locator('[data-testid="message-bubble"]').first().getByText('This message was deleted')
 		).toBeVisible({ timeout: 10000 });
 
 		await cleanup(contextB);

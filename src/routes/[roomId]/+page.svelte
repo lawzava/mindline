@@ -37,6 +37,7 @@
 		setupPageLifecycleHandlers,
 		cleanupPageLifecycleHandlers,
 		NoRoomKeyError,
+		RoomKeyMismatchError,
 		sendMediaMessage,
 		acceptMediaTransfer,
 		declineMediaTransfer
@@ -47,16 +48,42 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Popover from '$lib/components/ui/popover';
-	import { ChevronLeft, Share2, EllipsisVertical, Loader2, Sun, Moon, Link } from 'lucide-svelte';
+	import {
+		ChevronLeft,
+		Share2,
+		EllipsisVertical,
+		Loader2,
+		Sun,
+		Moon,
+		Link,
+		Bell,
+		BellOff,
+		Flame
+	} from 'lucide-svelte';
 	import { copyInvite, shareInvite } from '$lib/share';
 	import { toggleMode, mode } from 'mode-watcher';
+	import { claimRoomTab, takeOverRoomTab, type RoomTab } from '$lib/tab-lock';
+	import {
+		notificationsWanted,
+		notifyArrival,
+		setNotificationsWanted,
+		unseenSince
+	} from '$lib/attention';
 
 	// Get room ID from URL params
 	const roomId = $derived(page.params.roomId);
 	let isLoading = $state(true);
 	let isSending = $state(false);
-	let showLeaveDialog = $state(false);
+	let showBurnDialog = $state(false);
 	let isKnocking = $state(false);
+	let isKeyMismatch = $state(false);
+	// Another tab of this browser holds the room (see $lib/tab-lock).
+	let isOtherTab = $state(false);
+	let roomTab: RoomTab | null = null;
+	// Each entry into the room gets a number; stepping back ends the current
+	// one, so an entry still awaiting keys or signaling cannot go live later.
+	let entry = 0;
+	let liveEntry = 0;
 	let destroyed = false;
 
 	// Debounced typing broadcast to reduce network traffic
@@ -103,14 +130,33 @@
 			user.initialize($user.name || 'Anonymous', crypto.randomUUID());
 		}
 
-		// Join the room
+		const id = roomId;
+		roomTab = await claimRoomTab(id, stepBack);
+		if (destroyed) {
+			roomTab?.release();
+			return;
+		}
+		if (!roomTab) {
+			isOtherTab = true;
+			isLoading = false;
+			return;
+		}
+		await enterRoom(id);
+	});
+
+	/** Load history and connect. Runs only while this tab holds the room. */
+	async function enterRoom(id: string) {
+		const mine = ++entry;
+		liveEntry = mine;
+		const current = () => mine === entry && !destroyed;
 		try {
-			currentRoomId.set(roomId);
+			currentRoomId.set(id);
 
 			// Load existing messages from storage (decrypted with stored keys)
-			const stored = await loadRoomMessages(roomId);
+			const stored = await loadRoomMessages(id);
+			if (!current()) return;
 			if (stored.length > 0) {
-				messages.setRoomMessages(roomId, stored);
+				messages.setRoomMessages(id, stored);
 			}
 
 			// Initialize P2P connection with environment-aware config
@@ -125,12 +171,19 @@
 					console.log('[Room] Test mode detected - using fast connect config');
 					p2pConfig = { ...p2pConfig, ...getTestConfig() };
 				}
-				await initializeP2P(roomId, p2pConfig);
+				await initializeP2P(id, p2pConfig);
+				if (!current()) {
+					// Stepped back mid-connect. A newer entry of this tab may now own
+					// the session (the manager dedupes concurrent inits), so only a
+					// tab that no longer holds the room tears it down.
+					if (liveEntry === 0 || destroyed) disconnectP2P();
+					return;
+				}
 
 				// Setup mobile lifecycle handlers after successful P2P init
 				if (isMobile) {
-					setupVisibilityHandler(roomId, p2pConfig);
-					setupNetworkHandler(roomId, p2pConfig);
+					setupVisibilityHandler(id, p2pConfig);
+					setupNetworkHandler(id, p2pConfig);
 				}
 				// Setup page lifecycle handlers for all devices (graceful cleanup)
 				setupPageLifecycleHandlers();
@@ -139,6 +192,14 @@
 					// No key in the URL and none stored: this device can't read
 					// the room. Honest state, no silent empty-room creation.
 					isKnocking = true;
+					releaseRoom();
+					return;
+				}
+				if (error instanceof RoomKeyMismatchError) {
+					// Refuse rather than adopt: the stored room and its history
+					// stay under their own key (PROTOCOL.md §1.2).
+					isKeyMismatch = true;
+					releaseRoom();
 					return;
 				}
 				// P2P failed but app still works in local mode
@@ -151,36 +212,107 @@
 			console.error('Failed to join room:', error);
 			toast.error('Failed to join room');
 		} finally {
-			isLoading = false;
+			if (current()) isLoading = false;
 			// Remember this room locally (for the landing "Recent rooms" list) once
 			// we're actually in it — never for the knocking state, where we have no
 			// key and never entered. The key fragment is stored so rejoin is one tap.
-			if (!isKnocking && roomId) {
+			if (current() && !isKnocking && !isKeyMismatch) {
 				const hash = typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : '';
 				const key = /^k=[A-Za-z0-9_-]+$/.test(hash) ? hash : '';
-				recentRooms.record(roomId, key, Date.now());
+				recentRooms.record(id, key, Date.now());
 			}
 		}
-	});
+	}
+
+	/** Tear down this tab's live session; history stays on the device. */
+	function closeSession() {
+		if (typingDebounceTimer) {
+			clearTimeout(typingDebounceTimer);
+			typingDebounceTimer = null;
+		}
+		cleanupVisibilityHandler();
+		cleanupNetworkHandler();
+		cleanupPageLifecycleHandlers();
+		drafts.clearAll();
+		disconnectP2P();
+	}
+
+	/** A tab that cannot use the room must not keep others out of it. */
+	function releaseRoom() {
+		roomTab?.release();
+		roomTab = null;
+	}
+
+	/** Another tab took the room over: go quiet here until asked back. */
+	function stepBack() {
+		roomTab = null;
+		entry++;
+		liveEntry = 0;
+		closeSession();
+		isOtherTab = true;
+		isLoading = false;
+	}
+
+	async function useHere() {
+		if (!roomId) return;
+		const id = roomId;
+		isOtherTab = false;
+		isLoading = true;
+		const tab = await takeOverRoomTab(id, stepBack);
+		if (destroyed) {
+			tab.release();
+			return;
+		}
+		roomTab = tab;
+		await enterRoom(id);
+	}
 
 	onDestroy(() => {
 		destroyed = true;
 		burnChannel?.close();
 		burnChannel = null;
-		// Cleanup typing debounce timer
-		if (typingDebounceTimer) {
-			clearTimeout(typingDebounceTimer);
-			typingDebounceTimer = null;
-		}
-		// Cleanup lifecycle handlers
-		cleanupVisibilityHandler();
-		cleanupNetworkHandler();
-		cleanupPageLifecycleHandlers();
-		// Clear drafts when leaving room
-		drafts.clearAll();
-		// Disconnect P2P
-		disconnectP2P();
+		closeSession();
+		roomTab?.release();
+		roomTab = null;
 	});
+
+	// Background attention: count peer messages that arrive while this tab is
+	// hidden, show them in the title, and optionally raise a notification.
+	let hiddenSince = $state<number | null>(null);
+	let notifyOn = $state(false);
+	const unseen = $derived(
+		hiddenSince === null
+			? { count: 0, latestSender: null }
+			: unseenSince($currentRoomMessages, $user.id, hiddenSince)
+	);
+	let notifiedCount = 0;
+
+	onMount(() => {
+		notifyOn = notificationsWanted();
+		// A tab opened in the background starts counting at once.
+		hiddenSince = document.hidden ? Date.now() : null;
+		const onVisibility = () => {
+			hiddenSince = document.hidden ? Date.now() : null;
+			notifiedCount = 0;
+		};
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => document.removeEventListener('visibilitychange', onVisibility);
+	});
+
+	$effect(() => {
+		const { count, latestSender } = unseen;
+		if (count > notifiedCount && latestSender && roomId) {
+			notifyArrival(roomId, roomLabel, latestSender);
+		}
+		notifiedCount = count;
+	});
+
+	async function toggleNotifications() {
+		notifyOn = await setNotificationsWanted(!notifyOn);
+		if (!notifyOn && typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+			toast.error('Notifications are blocked for this site in your browser settings.');
+		}
+	}
 
 	async function handleSend(content: string) {
 		if (!roomId || isSending) return;
@@ -280,12 +412,8 @@
 		}
 	}
 
-	function confirmLeave() {
-		showLeaveDialog = true;
-	}
-
 	async function leaveRoom(burn: boolean) {
-		showLeaveDialog = false;
+		showBurnDialog = false;
 		const id = roomId;
 		if (burn && id) {
 			// Disconnect first so no handler persists anything mid-burn.
@@ -369,7 +497,7 @@
 </script>
 
 <svelte:head>
-	<title>Room {roomId?.slice(0, 8)}... | Mindline</title>
+	<title>{unseen.count > 0 ? `(${unseen.count}) ` : ''}{roomLabel} · Mindline</title>
 </svelte:head>
 
 {#if isLoading}
@@ -390,6 +518,36 @@
 			<Button variant="outline" onclick={() => goto('/')}>Back to start</Button>
 		</div>
 	</div>
+{:else if isOtherTab}
+	<div class="flex flex-1 items-center justify-center p-4" data-testid="other-tab-state">
+		<div class="flex max-w-sm flex-col items-center gap-3 text-center">
+			<p class="text-lg font-medium">This room is open in another tab</p>
+			<p class="text-sm text-muted-foreground">
+				A room runs in one tab at a time so messages reach the right place.
+			</p>
+			<div class="flex gap-2">
+				<Button onclick={useHere}>Use here</Button>
+				<Button variant="outline" onclick={() => goto('/')}>Back to start</Button>
+			</div>
+		</div>
+	</div>
+{:else if isKeyMismatch}
+	<div class="flex flex-1 items-center justify-center p-4" data-testid="key-mismatch-state">
+		<div class="flex max-w-sm flex-col items-center gap-3 text-center">
+			<p class="text-lg font-medium">This link doesn't match your saved room</p>
+			<p class="text-sm text-muted-foreground">
+				This device already has this room under a different key. Mindline did not open the link, so
+				nobody holding it can read your saved messages. If you trust the link, open your saved room,
+				burn it, then open the link again.
+			</p>
+			<div class="flex gap-2">
+				<Button onclick={() => window.location.assign(window.location.pathname)}
+					>Open saved room</Button
+				>
+				<Button variant="outline" onclick={() => goto('/')}>Back to start</Button>
+			</div>
+		</div>
+	</div>
 {:else}
 	<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden min-h-0">
 		<!-- Room header: one row of chrome above the stream. -->
@@ -398,7 +556,7 @@
 				<Button
 					variant="ghost"
 					size="icon"
-					onclick={confirmLeave}
+					onclick={() => leaveRoom(false)}
 					class="h-11 w-11 shrink-0 text-muted-foreground"
 					aria-label="Back to start"
 					data-testid="leave-room-btn"
@@ -480,6 +638,22 @@
 									<Link class="h-4 w-4 text-muted-foreground" />
 									Copy invite link
 								</button>
+								{#if typeof Notification !== 'undefined'}
+									<button
+										onclick={toggleNotifications}
+										aria-pressed={notifyOn}
+										class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+										data-testid="notify-toggle"
+									>
+										{#if notifyOn}
+											<BellOff class="h-4 w-4 text-muted-foreground" />
+											Stop notifications
+										{:else}
+											<Bell class="h-4 w-4 text-muted-foreground" />
+											Notify me in the background
+										{/if}
+									</button>
+								{/if}
 								<button
 									onclick={toggleMode}
 									class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
@@ -491,6 +665,14 @@
 										<Moon class="h-4 w-4 text-muted-foreground" />
 										Dark theme
 									{/if}
+								</button>
+								<button
+									onclick={() => (showBurnDialog = true)}
+									class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-destructive hover:bg-destructive/10"
+									data-testid="burn-room-btn"
+								>
+									<Flame class="h-4 w-4" />
+									Burn this room…
 								</button>
 							</div>
 						</div>
@@ -542,28 +724,25 @@
 		/>
 	</div>
 
-	<!-- Leave confirmation dialog -->
-	<AlertDialog.Root bind:open={showLeaveDialog}>
+	<!-- Burn confirmation: the only destructive path, so it asks first. -->
+	<AlertDialog.Root bind:open={showBurnDialog}>
 		<AlertDialog.Content>
 			<AlertDialog.Header>
-				<AlertDialog.Title>Leave Room?</AlertDialog.Title>
+				<AlertDialog.Title>Burn this room?</AlertDialog.Title>
 				<AlertDialog.Description>
-					Leave keeps this room's history on this device — you can step back in anytime from
-					<strong>Recent rooms</strong>. Burn erases this room's messages, media, and keys from this
-					device (others keep their copies) and removes it from Recent rooms.
+					Burn erases this room's messages, media, and keys from this device and removes it from
+					Recent rooms. Other people keep their copies. To come back you will need the invite link
+					again.
 				</AlertDialog.Description>
 			</AlertDialog.Header>
 			<AlertDialog.Footer>
 				<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-				<AlertDialog.Action onclick={() => leaveRoom(false)} data-testid="leave-keep-btn">
-					Leave Room
-				</AlertDialog.Action>
 				<AlertDialog.Action
 					onclick={() => leaveRoom(true)}
 					data-testid="leave-burn-btn"
 					class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 				>
-					Burn &amp; Leave
+					Burn
 				</AlertDialog.Action>
 			</AlertDialog.Footer>
 		</AlertDialog.Content>

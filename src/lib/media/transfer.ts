@@ -234,18 +234,35 @@ export class MediaTransferEngine {
 				await this.serve(message.transferId, peerDeviceId);
 				break;
 			case 'media-abort': {
-				const outgoing = this.outgoing.get(message.transferId);
-				if (outgoing?.pending.delete(peerDeviceId) && outgoing.pending.size === 0)
-					this.releaseOffer(message.transferId);
-				this.incoming.delete(message.transferId);
-				this.pendingConsent.delete(message.transferId);
-				this.deps.events.onAborted(message.transferId, message.reason, peerDeviceId);
+				// Only the transfer's counterparty may end it: any member can
+				// name any transferId, and an abort marks the attachment failed.
+				const id = message.transferId;
+				const outgoing = this.outgoing.get(id);
+				const wasPending = outgoing?.pending.delete(peerDeviceId) ?? false;
+				if (wasPending && outgoing!.pending.size === 0) this.releaseOffer(id);
+				const fromSender =
+					this.incoming.get(id)?.peerDeviceId === peerDeviceId ||
+					this.pendingConsent.get(id)?.peerDeviceId === peerDeviceId;
+				if (fromSender) {
+					this.incoming.delete(id);
+					this.pendingConsent.delete(id);
+				}
+				if (wasPending || fromSender) {
+					this.deps.events.onAborted(id, message.reason, peerDeviceId);
+				}
 				break;
 			}
 		}
 	}
 
 	private async handleOffer(offer: MediaOffer, peerDeviceId: string): Promise<void> {
+		// A repeated transferId would overwrite the stored blob of the
+		// original transfer; the first offer owns the slot.
+		if (this.incoming.has(offer.transferId) || this.pendingConsent.has(offer.transferId)) return;
+		if (!Object.hasOwn(SIZE_CAPS, offer.kind) || !Number.isSafeInteger(offer.size)) {
+			this.abort(offer.transferId, peerDeviceId, 'malformed offer');
+			return;
+		}
 		if (offer.size > SIZE_CAPS[offer.kind] || offer.size <= 0) {
 			this.abort(offer.transferId, peerDeviceId, 'size cap exceeded');
 			return;

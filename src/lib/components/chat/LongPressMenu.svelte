@@ -3,6 +3,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { MoreHorizontal, Pencil, Trash2 } from 'lucide-svelte';
+	import { cn } from '$lib/utils';
 
 	interface Props {
 		isMe: boolean;
@@ -29,6 +30,9 @@
 	}: Props = $props();
 
 	let showDeleteConfirm = $state(false);
+
+	// Edit/delete belong to your own messages only.
+	const showActions = $derived(isMe && !isDeleted && !isEditing);
 
 	const emojis = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'];
 
@@ -75,12 +79,19 @@
 		<span class="sr-only">Message actions</span>
 	</Popover.Trigger>
 
-	<Popover.Content class="w-auto p-2" side="top" align={isMe ? 'end' : 'start'}>
+	<!-- collisionPadding keeps the popover off the screen edge on phones. -->
+	<Popover.Content
+		class="w-auto p-2"
+		side="top"
+		align={isMe ? 'end' : 'start'}
+		collisionPadding={8}
+	>
 		<div class="flex flex-col gap-2">
-			<!-- Emoji reactions row -->
+			<!-- Emoji reactions row; the divider only separates it from actions
+			     that actually follow (peer messages have none). -->
 			{#if !isDeleted && !isEditing}
-				<div class="flex gap-1 border-b border-border pb-2">
-					{#each emojis as emoji}
+				<div class={cn('flex gap-1', showActions && 'border-b border-border pb-2')}>
+					{#each emojis as emoji (emoji)}
 						<button
 							onclick={() => handleReaction(emoji)}
 							aria-label={`React with ${emoji}`}
@@ -93,7 +104,7 @@
 			{/if}
 
 			<!-- Actions row (only for own messages) -->
-			{#if isMe && !isDeleted && !isEditing}
+			{#if showActions}
 				<div class="flex gap-2">
 					{#if onEdit}
 						<Button variant="ghost" size="sm" onclick={handleEdit} class="gap-2">
