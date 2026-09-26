@@ -102,10 +102,11 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    credentials (today one timer-minted credential is shared; per-connection
    minting would let clients trigger Cloudflare API calls, so it needs its
    own rate limit). The server deploy is the operator's step.
-4. **Link hygiene.** Stop keeping raw link keys in localStorage for Recent
-   rooms (wrap them like the KEM seed), strip the fragment after import,
-   and bind the signaling rendezvous id to the key so the operator cannot
-   pair room ids with links.
+4. **Link hygiene.** Shipped: link keys live only wrapped in the keystore
+   (old plaintext entries migrate), the signaling rendezvous id is derived
+   from the key, and Back into a burned room asks first. Decided against
+   stripping the fragment from the address bar: people copy invites from
+   it, and a keyless URL locks the recipient out.
 5. **Admission and removal.** Let a link knock and an existing member
    admit; removing a member rotates the link. Today a leaked link is
    permanent membership.

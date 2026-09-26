@@ -180,7 +180,8 @@ export class P2PConnection {
 			ws.onopen = () => {
 				clearTimeout(timeout);
 				this.ws = ws;
-				ws.send(JSON.stringify({ type: 'join', roomId: this.roomId }));
+				// Rendezvous under the key-derived name, never the path id (§3.1).
+				ws.send(JSON.stringify({ type: 'join', roomId: this.session.rendezvousId || this.roomId }));
 				resolve();
 			};
 			ws.onerror = () => {

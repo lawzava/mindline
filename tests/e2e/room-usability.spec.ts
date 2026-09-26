@@ -4,7 +4,8 @@ import {
 	generateTestRoomId,
 	keyFragmentFor,
 	joinRoom,
-	waitForMessage
+	waitForMessage,
+	waitForPeersConnected
 } from './helpers/test-utils';
 
 test('a message sent alone is not delivered until someone arrives, across reloads', async ({
@@ -280,6 +281,7 @@ test('a newcomer is asked for a name once and peers see it in the header', async
 	try {
 		const peer = await other.newPage();
 		await joinRoom(peer, roomId);
+		expect(await waitForPeersConnected(page, peer)).toBe(true);
 		const prompt = peer.getByTestId('name-prompt');
 		await expect(prompt).toBeVisible();
 		await prompt.getByRole('textbox').fill('Dana');

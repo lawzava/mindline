@@ -3,11 +3,10 @@
  * has been in, so people can step back into a conversation instead of hunting
  * for the invite link.
  *
- * Privacy note: each entry keeps the room's key fragment (the capability that
- * grants read access) in localStorage to allow one-tap rejoin. This is the same
- * trust level as the encrypted history + keys this device already caches at
- * rest (IndexedDB keystore) — anyone with access to the device can already read
- * the room. "Burn & Leave" removes the entry along with that at-rest data.
+ * Privacy note: entries hold no key material. Rejoin opens the room from the
+ * on-device keystore, which also keeps the link key wrapped for re-sharing.
+ * Entries written by older versions may still carry a plaintext fragment;
+ * takeLegacyKeys() hands those to the keystore and strips them.
  */
 
 import { writable, get } from 'svelte/store';
@@ -16,7 +15,10 @@ import { browser } from '$app/environment';
 export interface RecentRoom {
 	/** Room id (the URL path segment). */
 	id: string;
-	/** Key fragment WITHOUT the leading '#', e.g. `k=AbC...`. Empty if unknown. */
+	/**
+	 * Legacy only: a plaintext key fragment (`k=...`) written by older
+	 * versions. New entries leave it empty.
+	 */
 	key: string;
 	/** User-chosen label for this room; '' means "show the id". Local only. */
 	name: string;
@@ -74,20 +76,29 @@ function createRecentRoomsStore() {
 	return {
 		subscribe,
 
-		/**
-		 * Upsert on join: bump lastActive, keep the existing custom name, and fill
-		 * in the key fragment when we have one (a link-join carries it; a
-		 * stored-key rejoin may not, and that's fine — the keystore still serves).
-		 */
-		record: (id: string, key: string, now: number) => {
+		/** Upsert on join: bump lastActive and keep the existing custom name. */
+		record: (id: string, now: number) => {
 			if (!id) return;
 			mutate((rooms) => {
 				const existing = rooms.find((r) => r.id === id);
 				if (existing) {
-					return rooms.map((r) => (r.id === id ? { ...r, key: key || r.key, lastActive: now } : r));
+					return rooms.map((r) => (r.id === id ? { ...r, lastActive: now } : r));
 				}
-				return [...rooms, { id, key, name: '', lastActive: now }];
+				return [...rooms, { id, key: '', name: '', lastActive: now }];
 			});
+		},
+
+		/**
+		 * Plaintext keys left by older versions. The caller moves each into the
+		 * keystore and then calls forgetKey() for the ones it secured.
+		 */
+		legacyKeys: (): { id: string; key: string }[] =>
+			get({ subscribe })
+				.filter((r) => r.key)
+				.map(({ id, key }) => ({ id, key })),
+
+		forgetKey: (id: string) => {
+			mutate((rooms) => rooms.map((r) => (r.id === id ? { ...r, key: '' } : r)));
 		},
 
 		/** Set (or clear, with '') a room's local label. */

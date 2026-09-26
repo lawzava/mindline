@@ -267,3 +267,47 @@ test.describe('Room Page', () => {
 		expect(page.url()).toContain(roomId2);
 	});
 });
+
+test.describe('link hygiene', () => {
+	test('no link key is kept in plain storage, and a keyless rejoin still copies a working invite', async ({
+		page,
+		context
+	}) => {
+		await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+		const roomId = generateTestRoomId('hygiene');
+		await joinRoom(page, roomId);
+		const fragment = new URL(page.url()).hash;
+		expect(fragment).toMatch(/^#k=/);
+
+		const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }));
+		expect(stored).not.toContain(fragment.slice(3));
+
+		await page.locator('[data-testid="leave-room-btn"]').click();
+		await page.waitForURL('/');
+		await page
+			.getByRole('button', { name: /^Rejoin / })
+			.first()
+			.click();
+		await expect(page.locator('[data-testid="message-input"]')).toBeVisible();
+		expect(new URL(page.url()).hash).toBe('');
+
+		await page.locator('[data-testid="copy-room-btn"]').click();
+		const copied = await page.evaluate(() => navigator.clipboard.readText());
+		expect(new URL(copied).hash).toBe(fragment);
+		expect(new URL(copied).pathname).toBe(`/${roomId}`);
+	});
+
+	test('going back into a burned room asks before re-creating it', async ({ page }) => {
+		const roomId = generateTestRoomId('tombstone');
+		await joinRoom(page, roomId);
+		await page.locator('[data-testid="room-menu-btn"]').click();
+		await page.locator('[data-testid="burn-room-btn"]').click();
+		await page.locator('[data-testid="leave-burn-btn"]').click();
+		await page.waitForURL('/');
+
+		await page.goBack();
+		await expect(page.getByTestId('burned-state')).toBeVisible();
+		await page.getByRole('button', { name: 'Open it again' }).click();
+		await expect(page.locator('[data-testid="message-input"]')).toBeVisible();
+	});
+});

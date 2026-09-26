@@ -81,6 +81,12 @@ export class RoomKeyMismatchError extends Error {
 	}
 }
 
+/** 24 bytes of HMAC(k_auth, "mindline/v2/rendezvous", roomId), base64url. */
+async function rendezvousFor(keys: RoomKeys, roomId: string): Promise<string> {
+	const mac = await crypto.subtle.sign('HMAC', keys.auth, lp('mindline/v2/rendezvous', roomId));
+	return toB64url(new Uint8Array(mac).slice(0, 24));
+}
+
 /** Whether two link-static key sets came from the same link key. */
 async function sameRoomKey(roomId: string, a: RoomKeys, b: RoomKeys): Promise<boolean> {
 	const probe = lp('mindline/v2/key-commit', roomId);
@@ -108,6 +114,11 @@ export interface HelloBinding {
 
 export class CryptoSession {
 	readonly roomId: string;
+	/**
+	 * The signaling room name (§3.1): derived from the link key, so the
+	 * operator and anyone who only saw the URL path cannot find the room.
+	 */
+	rendezvousId = '';
 	readonly deviceId: string;
 
 	private keys: RoomKeys;
@@ -161,7 +172,7 @@ export class CryptoSession {
 			if (stored && !(await sameRoomKey(roomId, keys, stored))) {
 				throw new RoomKeyMismatchError();
 			}
-			await saveRoomKeys(roomId, keys);
+			await saveRoomKeys(roomId, keys, fragmentKey);
 			// Generation state: resume where the room ratcheted to, else start
 			// at the link generation (rk_0 = fragment key, §1.4).
 			const state = await loadRatchetState(roomId);
@@ -203,7 +214,9 @@ export class CryptoSession {
 		const replayState = await loadReplayState<import('$lib/crypto/replay').ReplayState>(roomId);
 		const guard = replayState ? ReplayGuard.hydrate(replayState) : new ReplayGuard();
 
-		return new CryptoSession(roomId, keys, identity, kem, ratchet, guard, epoch);
+		const session = new CryptoSession(roomId, keys, identity, kem, ratchet, guard, epoch);
+		session.rendezvousId = await rendezvousFor(keys, roomId);
+		return session;
 	}
 
 	get roomKeys(): RoomKeys {
