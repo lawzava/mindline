@@ -18,7 +18,7 @@ import {
 } from './handlers';
 import { MediaTransferEngine, type MediaKind, type MediaOffer } from '$lib/media/transfer';
 import { saveRoomMessages } from '$lib/storage/messages';
-import type { Message } from '$lib/types/message';
+import type { Message, MessageOrigin } from '$lib/types/message';
 import {
 	connection,
 	user,
@@ -453,6 +453,38 @@ export function broadcastMessage(message: TypedP2PMessage): boolean {
 /**
  * Broadcast a chat message
  */
+// Signing is async; this chain keeps sends in the order the person made them.
+let signedSendTail: Promise<void> = Promise.resolve();
+
+/**
+ * Sign the stored message as its author, keep the signature on it, then
+ * hand the signature to send (PROTOCOL.md §3.5). A failed signature still
+ * sends: live delivery is envelope-authenticated either way; only history
+ * served later would show the copy as unverified.
+ */
+function signThenSend(
+	roomId: string,
+	messageId: string,
+	send: (origin: MessageOrigin | undefined, stored: Message) => void
+): void {
+	const session = cryptoSession;
+	signedSendTail = signedSendTail.then(async () => {
+		const stored = messages.getMessage(roomId, messageId);
+		if (!stored) return;
+		let origin: MessageOrigin | undefined;
+		try {
+			origin = await session?.signMessage(stored);
+		} catch (error) {
+			console.warn('[P2P Manager] could not sign message:', error);
+		}
+		if (origin) {
+			messages.updateMessage(roomId, messageId, { origin });
+			void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+		}
+		send(origin, stored);
+	});
+}
+
 export function broadcastChat(content: string, messageId: string): void {
 	const userState = get(user);
 	const roomId = get(currentRoomId);
@@ -473,20 +505,20 @@ export function broadcastChat(content: string, messageId: string): void {
 		void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 	}
 
-	const message: ChatMessage = {
-		type: 'chat',
-		content,
-		senderId: userState.id,
-		senderName: userState.name,
-		messageId,
-		timestamp: Date.now(),
-		roomId
-	};
-
-	const deliveredCount = p2pConnection.broadcast(message);
-	console.log(
-		`[P2P Manager] Chat broadcast to ${deliveredCount} peers, tracking ${connectedPeers.length}`
-	);
+	signThenSend(roomId, messageId, (origin, stored) => {
+		const message: ChatMessage = {
+			type: 'chat',
+			content,
+			senderId: userState.id,
+			senderName: userState.name,
+			messageId,
+			// The stored time, so the signature covers what receivers store.
+			timestamp: stored.timestamp,
+			roomId,
+			origin
+		};
+		p2pConnection?.broadcast(message);
+	});
 }
 
 /**
@@ -522,16 +554,18 @@ export function broadcastEdit(messageId: string, newContent: string): void {
 		return;
 	}
 
-	const message: EditMessage = {
-		type: 'edit',
-		messageId,
-		roomId,
-		newContent,
-		senderId: userState.id,
-		timestamp: Date.now()
-	};
-
-	p2pConnection.broadcast(message);
+	signThenSend(roomId, messageId, (origin, stored) => {
+		const message: EditMessage = {
+			type: 'edit',
+			messageId,
+			roomId,
+			newContent,
+			senderId: userState.id,
+			timestamp: stored.edit_timestamp ?? Date.now(),
+			origin
+		};
+		p2pConnection?.broadcast(message);
+	});
 }
 
 /**
@@ -546,15 +580,17 @@ export function broadcastDelete(messageId: string): void {
 		return;
 	}
 
-	const message: DeleteMessage = {
-		type: 'delete',
-		messageId,
-		roomId,
-		senderId: userState.id,
-		timestamp: Date.now()
-	};
-
-	p2pConnection.broadcast(message);
+	signThenSend(roomId, messageId, (origin) => {
+		const message: DeleteMessage = {
+			type: 'delete',
+			messageId,
+			roomId,
+			senderId: userState.id,
+			timestamp: Date.now(),
+			origin
+		};
+		p2pConnection?.broadcast(message);
+	});
 }
 
 /**
@@ -813,6 +849,9 @@ export async function sendMediaMessage(
 	};
 	messages.addMessage(roomId, message);
 	void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+	// The live offer is unsigned; the stored copy is signed so history this
+	// device serves later carries the author's signature.
+	signThenSend(roomId, messageId, () => {});
 }
 
 /** Consent controls for large incoming transfers. */
