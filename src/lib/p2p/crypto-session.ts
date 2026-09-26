@@ -11,7 +11,14 @@ import { ENVELOPE_VERSION, openEnvelope, sealEnvelope, type Envelope } from '$li
 import { lp } from '$lib/crypto/lp';
 import { deviceFingerprint, safetyNumber, toHex } from '$lib/crypto/safety';
 import { signOrigin } from '$lib/crypto/origin';
-import { signRosterOp, type RosterAction, type RosterLink, type RosterOp } from './roster';
+import {
+	signRosterOp,
+	signVoucher,
+	type RosterAction,
+	type RosterLink,
+	type RosterOp,
+	type Voucher
+} from './roster';
 import type { Message, MessageOrigin } from '$lib/types/message';
 import {
 	deviceIdFromSpki,
@@ -264,6 +271,11 @@ export class CryptoSession {
 		fields: RosterLink & { device: string; action: RosterAction; salt?: string }
 	): Promise<RosterOp> {
 		return signRosterOp(this.identity, this.roomId, fields);
+	}
+
+	/** Sign a voucher letting a waiting device in, as a member (§3.8). */
+	voucher(fields: { device: string; basis: number; epoch: number }): Promise<Voucher> {
+		return signVoucher(this.identity, this.roomId, fields);
 	}
 
 	/** Sign a message's current state as its author (§3.5). */

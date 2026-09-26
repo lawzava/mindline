@@ -44,6 +44,7 @@
 		admitPeer,
 		denyPeer,
 		setRoomApproval,
+		setMembersAdmit,
 		sendMediaMessage,
 		acceptMediaTransfer,
 		declineMediaTransfer
@@ -66,6 +67,7 @@
 		BellOff,
 		Flame,
 		DoorClosed,
+		Users,
 		Timer
 	} from 'lucide-svelte';
 	import {
@@ -904,6 +906,19 @@
 											>{$admission.approving ? 'On' : 'Off'}</span
 										>
 									</button>
+									<!-- Shown while the room is open too, so the host can always turn it off. -->
+									<button
+										onclick={() => admissionAction(setMembersAdmit(!$admission.membersAdmit))}
+										aria-pressed={$admission.membersAdmit}
+										class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+										data-testid="members-admit-toggle"
+									>
+										<Users class="h-4 w-4 text-muted-foreground" />
+										<span class="flex-1 text-left">Members can let people in</span>
+										<span class="text-xs text-muted-foreground"
+											>{$admission.membersAdmit ? 'On' : 'Off'}</span
+										>
+									</button>
 								{/if}
 								<button
 									onclick={() => (showBurnDialog = true)}
@@ -1006,9 +1021,12 @@
 					{/if}
 				</span>
 				<Button size="sm" onclick={() => admissionAction(admitPeer(deviceId))}>Let in</Button>
-				<Button size="sm" variant="ghost" onclick={() => admissionAction(denyPeer(deviceId))}
-					>Not now</Button
-				>
+				<!-- Only the host's refusal counts (§3.8); members simply leave it to others. -->
+				{#if $admission.host}
+					<Button size="sm" variant="ghost" onclick={() => admissionAction(denyPeer(deviceId))}
+						>Not now</Button
+					>
+				{/if}
 			</div>
 		{/each}
 

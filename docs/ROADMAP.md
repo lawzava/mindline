@@ -115,8 +115,9 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    their founder's key; the host lets newcomers in (one tap while they
    wait), turns people away, removes them, or hands the host role on. The
    roster is a host-signed hash chain, and every removal rotates the room
-   key. Remaining: letting members other than the host admit people
-   (needs a conflict-free multi-writer roster).
+   key. The host can also let members let people in: a member's signed
+   voucher counts while the host allows it and the member stays in, and
+   the host confirms vouchers into the chain when it next sees them.
 6. **Forward secrecy within a generation.** Shipped: periodic rotation
    (every 15 minutes or 200 messages while active), which bounds a device
    compromise to about the last half hour of captured traffic. Not built:
