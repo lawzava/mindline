@@ -9,6 +9,15 @@
  * is signed by the host of the moment (the founder, until it hands the role
  * on). One writer, no clocks: there is nothing to reorder, backdate, or race,
  * and anything a non-host signs is refused before it is stored.
+ *
+ * Members letting people in: when the host allows it (an `admit` of the
+ * pseudo-device DELEGATE, a form older versions already accept), a member
+ * signs a voucher for a waiting device. A voucher sits beside the
+ * chain, not in it, and counts only while the chain still allows member
+ * admission, its signer is still a member under the same admission, and
+ * the device has not been removed. The host confirms vouchers into the
+ * chain when it next sees them; until then, removing the signer or turning
+ * member admission off ends them.
  */
 
 import { fromB64url, toB64url } from '$lib/crypto/b64';
@@ -17,9 +26,17 @@ import { lp } from '$lib/crypto/lp';
 
 /**
  * admit/remove/host name a device (host hands the role to a member);
- * approve/open set the room's mode (device '*').
+ * approve/open set the room's mode (device '*'). admit/remove of DELEGATE
+ * turn member admission on and off.
  */
 export type RosterAction = 'admit' | 'remove' | 'host' | 'approve' | 'open';
+
+/**
+ * The pseudo-device whose admission means "members may let people in".
+ * Real device ids never start with '*', and older versions store it as a
+ * harmless member, so they keep following the chain past it.
+ */
+export const DELEGATE = '*members';
 
 export interface RosterLink {
 	/** Position in the chain; 0 is the founding operation. */
@@ -44,6 +61,16 @@ const ANCHORED_PREFIX = 'f_';
 const MODE = '*';
 const DEVICE_ACTIONS = new Set<RosterAction>(['admit', 'remove', 'host']);
 const MODE_ACTIONS = new Set<RosterAction>(['approve', 'open']);
+/** Vouchers held at once; the host confirms them into the chain. */
+const MAX_VOUCHERS = 32;
+/** Unconfirmed vouchers held per signer, so one member cannot take every slot. */
+const MAX_VOUCHERS_PER_SIGNER = 4;
+/**
+ * The chain's last positions are kept for removals and settings: nobody
+ * (the host included, confirming vouchers) can fill the roster so full that
+ * the host could no longer remove someone.
+ */
+export const ADMIT_LIMIT = MAX_CHAIN - 16;
 const ECDSA = { name: 'ECDSA', hash: 'SHA-256' } as const;
 
 async function founderCommitment(spkiB64: string, salt: string): Promise<string> {
@@ -142,14 +169,96 @@ interface State {
 	mode: 'approve' | 'open';
 	members: Set<string>;
 	removed: Set<string>;
+	/** Members may let people in with vouchers. */
+	membersAdmit: boolean;
+	/**
+	 * Vouchers name this: the seq of the op that last turned member
+	 * admission on or closed the room again. Either voids older vouchers.
+	 */
+	delegateEpoch: number;
+	/** For each member: the seq of the operation that let it in (founder: 0). */
+	basis: Map<string, number>;
 }
 
 const emptyState = (): State => ({
 	host: null,
 	mode: 'approve',
 	members: new Set(),
-	removed: new Set()
+	removed: new Set(),
+	membersAdmit: false,
+	delegateEpoch: -1,
+	basis: new Map()
 });
+
+/** A member's signed "let this device in", valid only as long as §3.8 says. */
+export interface Voucher {
+	device: string;
+	/** The signer, a member. */
+	by: string;
+	/** The seq of the operation that let the signer in: a new admission voids old vouchers. */
+	basis: number;
+	/** The room's delegate epoch when signed (see State.delegateEpoch). */
+	epoch: number;
+	sig: string;
+	spki: string;
+}
+
+function voucherContent(roomId: string, v: Omit<Voucher, 'sig' | 'spki'>): Uint8Array<ArrayBuffer> {
+	return lp('mindline/v1/voucher', roomId, v.device, v.by, String(v.basis), String(v.epoch));
+}
+
+export async function signVoucher(
+	identity: DeviceIdentity,
+	roomId: string,
+	fields: { device: string; basis: number; epoch: number }
+): Promise<Voucher> {
+	const unsigned = {
+		device: fields.device,
+		by: identity.deviceId,
+		basis: fields.basis,
+		epoch: fields.epoch
+	};
+	const sig = await crypto.subtle.sign(
+		ECDSA,
+		identity.privateKey,
+		voucherContent(roomId, unsigned)
+	);
+	return { ...unsigned, sig: toB64url(new Uint8Array(sig)), spki: toB64url(identity.spki) };
+}
+
+function voucherWellFormed(v: unknown): v is Voucher {
+	const o = v as Voucher;
+	return (
+		!!o &&
+		typeof o === 'object' &&
+		typeof o.device === 'string' &&
+		o.device.length > 0 &&
+		o.device.length <= 64 &&
+		!o.device.startsWith('*') &&
+		typeof o.by === 'string' &&
+		Number.isSafeInteger(o.basis) &&
+		o.basis >= 0 &&
+		o.basis < MAX_CHAIN &&
+		Number.isSafeInteger(o.epoch) &&
+		o.epoch >= 0 &&
+		o.epoch < MAX_CHAIN &&
+		typeof o.sig === 'string' &&
+		typeof o.spki === 'string'
+	);
+}
+
+async function voucherSignatureValid(roomId: string, v: Voucher): Promise<boolean> {
+	const spki = fromB64url(v.spki);
+	const sig = fromB64url(v.sig);
+	if (!spki || !sig) return false;
+	try {
+		if ((await deviceIdFromSpki(spki)) !== v.by) return false;
+		const key = await importPeerPublicKey(spki);
+		return await crypto.subtle.verify(ECDSA, key, sig, voucherContent(roomId, v));
+	} catch {
+		return false;
+	}
+}
 
 export class Roster {
 	readonly anchored: boolean;
@@ -157,6 +266,8 @@ export class Roster {
 	private links: string[] = [];
 	private state: State = emptyState();
 	private lock: Promise<void> = Promise.resolve();
+	/** Signature-checked vouchers, keyed by signer and device. */
+	private voucherMap = new Map<string, Voucher>();
 	/** The host signed two conflicting handovers: admission is frozen (§3.8). */
 	forked = false;
 
@@ -181,11 +292,88 @@ export class Roster {
 		return this.anchored && this.state.mode === 'approve';
 	}
 
+	/** The host lets members let people in. */
+	get membersAdmit(): boolean {
+		return this.anchored && this.state.membersAdmit;
+	}
+
+	/** What a voucher signed now must name as its epoch. */
+	get delegateEpoch(): number {
+		return this.state.delegateEpoch;
+	}
+
+	/** The seq of the operation that let this member in, or null (not a chain member). */
+	basisOf(device: string): number | null {
+		return this.state.basis.get(device) ?? null;
+	}
+
+	private voucherValid(v: Voucher): boolean {
+		const s = this.state;
+		return (
+			!this.forked &&
+			s.membersAdmit &&
+			s.delegateEpoch === v.epoch &&
+			s.members.has(v.by) &&
+			s.basis.get(v.by) === v.basis &&
+			!s.removed.has(v.device)
+		);
+	}
+
+	/** Vouchers that count now; void ones are neither honored nor passed on. */
+	vouchers(): Voucher[] {
+		return [...this.voucherMap.values()].filter((v) => this.voucherValid(v));
+	}
+
+	/** Devices let in by a voucher alone: the host confirms these into the chain. */
+	vouchedOnly(): string[] {
+		return [
+			...new Set(
+				this.vouchers()
+					.map((v) => v.device)
+					.filter((d) => !this.state.members.has(d))
+			)
+		];
+	}
+
+	/**
+	 * Take vouchers from anywhere. Only well-formed, correctly signed ones
+	 * are kept, at most MAX_VOUCHERS, void and confirmed ones making room
+	 * first. Returns whether any new voucher was kept.
+	 */
+	async addVouchers(list: unknown): Promise<boolean> {
+		if (!this.anchored || !Array.isArray(list)) return false;
+		for (const [key, v] of this.voucherMap) {
+			if (!this.voucherValid(v) || this.state.members.has(v.device)) this.voucherMap.delete(key);
+		}
+		let changed = false;
+		for (const v of list.slice(0, MAX_VOUCHERS).filter(voucherWellFormed)) {
+			const key = v.by + '>' + v.device;
+			if (this.voucherMap.has(key) || this.voucherMap.size >= MAX_VOUCHERS) continue;
+			const bySigner = [...this.voucherMap.values()].filter((held) => held.by === v.by).length;
+			if (bySigner >= MAX_VOUCHERS_PER_SIGNER) continue;
+			if (!this.voucherValid(v) || !(await voucherSignatureValid(this.roomId, v))) continue;
+			this.voucherMap.set(key, {
+				device: v.device,
+				by: v.by,
+				basis: v.basis,
+				epoch: v.epoch,
+				sig: v.sig,
+				spki: v.spki
+			});
+			changed = true;
+		}
+		return changed;
+	}
+
 	isAdmitted(device: string): boolean {
 		if (!this.anchored) return true;
 		// Until the founder is known, membership cannot be checked: refuse.
 		if (!this.known) return false;
-		return this.state.mode === 'open' || this.state.members.has(device);
+		if (this.state.mode === 'open' || this.state.members.has(device)) return true;
+		for (const v of this.voucherMap.values()) {
+			if (v.device === device && this.voucherValid(v)) return true;
+		}
+		return false;
 	}
 
 	/** This device was removed (as opposed to never let in). */
@@ -287,6 +475,10 @@ export class Roster {
 			);
 		}
 		if (op.salt !== undefined || op.by !== this.state.host) return false;
+		// '*' names the room, DELEGATE the member-admission switch; nothing else.
+		if (op.device !== MODE && op.device.startsWith('*')) {
+			if (op.device !== DELEGATE || op.action === 'host') return false;
+		}
 		// The host hands the role on before leaving; it cannot orphan the room.
 		if (op.action === 'remove' && op.device === this.state.host) return false;
 		if (op.action === 'host' && !this.state.members.has(op.device)) return false;
@@ -300,6 +492,10 @@ export class Roster {
 				if (op.seq === 0) {
 					s.host = op.by;
 					s.members.add(op.by);
+					s.basis.set(op.by, 0);
+				} else {
+					// Closing the room again also ends unconfirmed vouchers.
+					s.delegateEpoch = op.seq;
 				}
 				s.mode = 'approve';
 				break;
@@ -307,12 +503,23 @@ export class Roster {
 				s.mode = 'open';
 				break;
 			case 'admit':
+				if (op.device === DELEGATE) {
+					s.membersAdmit = true;
+					s.delegateEpoch = op.seq;
+					break;
+				}
 				s.members.add(op.device);
 				s.removed.delete(op.device);
+				s.basis.set(op.device, op.seq);
 				break;
 			case 'remove':
+				if (op.device === DELEGATE) {
+					s.membersAdmit = false;
+					break;
+				}
 				s.members.delete(op.device);
 				s.removed.add(op.device);
+				s.basis.delete(op.device);
 				break;
 			case 'host':
 				s.host = op.device;
