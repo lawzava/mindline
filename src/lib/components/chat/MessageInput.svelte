@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Send, Loader2, Paperclip, Camera, Mic, Square, X } from 'lucide-svelte';
+	import { Send, Loader2, Paperclip, Camera, Mic, Square, X, CornerUpLeft } from 'lucide-svelte';
 	import { processImage } from '$lib/media/image';
 	import { mediaKindFor } from '$lib/media/classify';
 	import { Recorder, type Recording } from '$lib/media/recorder';
@@ -26,9 +26,25 @@
 		onTyping?: (content: string) => void;
 		disabled?: boolean;
 		isSending?: boolean;
+		/** The message being answered, shown above the field until sent. */
+		replyTo?: { name: string; text: string } | null;
+		onCancelReply?: () => void;
 	}
 
-	let { onSend, onSendMedia, onTyping, disabled = false, isSending = false }: Props = $props();
+	let {
+		onSend,
+		onSendMedia,
+		onTyping,
+		disabled = false,
+		isSending = false,
+		replyTo = null,
+		onCancelReply
+	}: Props = $props();
+
+	// Choosing Reply puts the cursor where the answer goes.
+	$effect(() => {
+		if (replyTo) inputRef?.focus();
+	});
 	let message = $state('');
 	let inputRef = $state<HTMLTextAreaElement | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
@@ -54,6 +70,11 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && replyTo) {
+			e.preventDefault();
+			onCancelReply?.();
+			return;
+		}
 		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
 			e.preventDefault();
 			handleSubmit();
@@ -314,6 +335,27 @@
 			<span class="sr-only">Stop and send</span>
 		</Button>
 	{:else}
+		{#if replyTo}
+			<div
+				class="flex w-full min-w-0 items-center gap-2 rounded-lg bg-muted/60 px-3 py-1.5"
+				data-testid="reply-preview"
+			>
+				<CornerUpLeft class="h-4 w-4 shrink-0 text-muted-foreground" />
+				<span class="min-w-0 flex-1">
+					<span class="block truncate text-xs font-semibold">Replying to {replyTo.name}</span>
+					<span class="block truncate text-sm text-muted-foreground">{replyTo.text}</span>
+				</span>
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-8 w-8 shrink-0"
+					onclick={() => onCancelReply?.()}
+					aria-label="Cancel reply"
+				>
+					<X class="h-4 w-4" />
+				</Button>
+			</div>
+		{/if}
 		<div class="flex w-full items-center gap-1.5 px-1 text-xs text-muted-foreground">
 			<span id="live-typing-note">
 				{liveTyping

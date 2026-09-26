@@ -261,3 +261,9 @@
 			0 3px 10px oklch(0 0 0 / 0.4);
 	}
 }
+
+/* A quoted message briefly marked after jumping to it from a reply. */
+.reply-target {
+	background: color-mix(in oklab, var(--draft) 10%, transparent);
+	border-radius: 1rem;
+}

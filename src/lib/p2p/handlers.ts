@@ -161,7 +161,9 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 		edited: false,
 		edit_timestamp: null,
 		original_content: null,
-		reply_to: null,
+		// A quoted id is only a pointer; the quote is rendered from local history.
+		reply_to:
+			typeof message.replyTo === 'string' && message.replyTo.length <= 128 ? message.replyTo : null,
 		reactions: {},
 		mentions: [],
 		local_timestamp: Date.now(),

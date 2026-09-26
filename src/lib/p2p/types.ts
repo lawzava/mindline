@@ -119,6 +119,8 @@ export interface ChatMessage {
 	roomId: string;
 	/** Author signature over the message state (PROTOCOL.md §3.5). */
 	origin?: MessageOrigin;
+	/** Id of the message this one replies to. */
+	replyTo?: string;
 }
 
 /** Typing indicator showing what a peer is currently typing */
