@@ -265,11 +265,16 @@ test.describe('Encryption Key Persistence', () => {
 							const req = db.transaction('rooms').objectStore('rooms').get(id);
 							req.onsuccess = () => {
 								db.close();
-								const rec = req.result as Record<string, CryptoKey> | undefined;
-								resolve({
-									found: !!rec,
-									extractable: rec ? Object.values(rec).map((k) => k.extractable) : []
-								});
+								const rec = req.result as Record<string, unknown> | undefined;
+								// Every key in the record, including the wrapping key of the
+								// kept invite, must be non-extractable.
+								const keys = rec
+									? [
+											...Object.values(rec),
+											(rec.invite as { wrapKey?: unknown } | undefined)?.wrapKey
+										].filter((v): v is CryptoKey => v instanceof CryptoKey)
+									: [];
+								resolve({ found: !!rec, extractable: keys.map((k) => k.extractable) });
 							};
 							req.onerror = () => reject(req.error);
 						};

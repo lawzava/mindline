@@ -24,6 +24,7 @@ import { user } from '$lib/stores/user';
 import { saveRoomMessages } from '$lib/storage/messages';
 import { remotePeerOwnsMessage } from './ownership';
 import { applyReaction } from './reactions';
+import { verifyOrigin } from '$lib/crypto/origin';
 import { paginateSyncMessages } from './sync';
 import type { Message } from '$lib/types/message';
 import type { MediaAbort, MediaAccept, MediaOffer } from '$lib/media/transfer';
@@ -91,7 +92,7 @@ export function routeP2PMessage(message: TypedP2PMessage, peerId: string): void 
 				void handleSyncRequest(message, peerId);
 				break;
 			case 'sync-response':
-				handleSyncResponse(message, peerId);
+				void handleSyncResponse(message, peerId);
 				break;
 			case 'user-connected':
 				handleUserConnected(message, peerId);
@@ -171,6 +172,7 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 
 	messages.addMessage(targetRoomId, messageObj);
 	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+	keepOrigin(targetRoomId, messageObj.id, message.origin);
 
 	// Send delivery acknowledgment back to sender
 	acknowledge(peerId, targetRoomId, messageObj.id);
@@ -292,7 +294,13 @@ async function handleSyncRequest(message: SyncRequestMessage, peerId: string): P
 /**
  * Handle sync response from peer
  */
-function handleSyncResponse(message: SyncResponseMessage, peerId: string): void {
+/** Synced messages dated beyond this much clock skew are refused. */
+const MAX_FUTURE_SKEW_MS = 10 * 60_000;
+
+const isDeletedState = (m: Message) =>
+	m.message_type === 'Deleted' || m.content === '[Message deleted]';
+
+async function handleSyncResponse(message: SyncResponseMessage, peerId: string): Promise<void> {
 	const { messages: syncedMessages } = message;
 	const targetRoomId = sessionRoom(message.roomId);
 	if (!targetRoomId) return;
@@ -306,54 +314,71 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 	// Start sync tracking
 	connection.startSync(peerId);
 
-	const processedMessages = syncedMessages;
-
-	// Get existing messages to check for duplicates and state
-	const existingMessages = messages.getRoomMessages(targetRoomId);
-	const existingById = new Map(existingMessages.map((msg) => [msg.id, msg]));
-
-	// Filter out duplicates and add/update messages with progress tracking
 	let newCount = 0;
+	let changed = false;
 	let processedCount = 0;
 	const selfIds = new Set([get(user).id, selfDeviceFn()].filter(Boolean));
 
-	for (const msg of processedMessages) {
+	for (const msg of syncedMessages) {
 		processedCount++;
+		if (!msg || typeof msg.id !== 'string' || typeof msg.timestamp !== 'number') continue;
+		// A member cannot pin its messages to the end of everyone's history.
+		if (msg.timestamp > Date.now() + MAX_FUTURE_SKEW_MS) continue;
 
-		const existingMsg = existingById.get(msg.id);
+		// History is served by a member, not its authors (§3.5). A copy that
+		// carries an author signature must verify; a broken one is a forgery.
+		const signed = !!msg.origin && (await verifyOrigin(targetRoomId, msg));
+		if (msg.origin && !signed) continue;
+
+		const existingMsg = messages.getMessage(targetRoomId, msg.id);
 		if (!existingMsg) {
-			// Synced history is peer-asserted (unsigned per message), so it may
-			// not put words in this user's mouth: a copy of our own message is
-			// only ever accepted when we already hold it.
+			// It may not put words in this user's mouth: a copy of our own
+			// message is only ever accepted when we already hold it.
 			if (selfIds.has(msg.sender_id) || (msg.sender_device && selfIds.has(msg.sender_device))) {
 				continue;
 			}
-			messages.addMessage(targetRoomId, { ...msg, room_id: targetRoomId, synced: true });
+			messages.addMessage(targetRoomId, {
+				...msg,
+				room_id: targetRoomId,
+				synced: true,
+				unsigned: !signed
+			});
 			newCount++;
 			// Only the author learns anything from this: a member's own message
 			// that reached us through its history is now delivered to us.
 			if (msg.sender_device === peerId) acknowledge(peerId, targetRoomId, msg.id);
 		} else {
-			// Message exists - check if synced version has important updates
-			// Prefer deleted state: if synced message is deleted but local isn't, update local
-			const syncedIsDeleted = msg.message_type === 'Deleted' || msg.content === '[Message deleted]';
-			const localIsDeleted =
-				existingMsg.message_type === 'Deleted' || existingMsg.content === '[Message deleted]';
-
-			if (syncedIsDeleted && !localIsDeleted) {
-				// Synced version is deleted but local isn't - apply deletion
-				messages.updateMessage(targetRoomId, msg.id, {
-					content: '[Message deleted]',
-					message_type: 'Deleted'
-				});
+			// Deletions and edits change what someone said, so through sync
+			// they apply only when the author signed that state.
+			const byAuthor =
+				signed && !!existingMsg.sender_device && existingMsg.sender_device === msg.sender_device;
+			if (byAuthor && !isDeletedState(existingMsg)) {
+				if (isDeletedState(msg)) {
+					messages.updateMessage(targetRoomId, msg.id, {
+						content: '[Message deleted]',
+						message_type: 'Deleted',
+						origin: msg.origin
+					});
+					changed = true;
+				} else if (msg.edited && (msg.edit_timestamp ?? 0) > (existingMsg.edit_timestamp ?? 0)) {
+					messages.updateMessage(targetRoomId, msg.id, {
+						content: msg.content,
+						edited: true,
+						edit_timestamp: msg.edit_timestamp,
+						original_content: existingMsg.original_content ?? existingMsg.content,
+						origin: msg.origin
+					});
+					changed = true;
+				}
 			}
-			// Also sync reactions if synced has more/different reactions
+			// Reaction maps stay the serving member's assertion (§3.7).
 			if (msg.reactions && Object.keys(msg.reactions).length > 0) {
 				const mergedReactions = { ...existingMsg.reactions, ...msg.reactions };
 				if (JSON.stringify(mergedReactions) !== JSON.stringify(existingMsg.reactions)) {
 					messages.updateMessage(targetRoomId, msg.id, {
 						reactions: mergedReactions
 					});
+					changed = true;
 				}
 			}
 		}
@@ -364,7 +389,7 @@ function handleSyncResponse(message: SyncResponseMessage, peerId: string): void 
 		}
 	}
 
-	if (newCount > 0) {
+	if (newCount > 0 || changed) {
 		void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
 	}
 
@@ -424,6 +449,8 @@ function handleEditMessage(message: EditMessage, peerId: string): void {
 	});
 
 	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+	// The old signature covered the old words; keep only one for the new ones.
+	keepOrigin(targetRoomId, messageId, message.origin);
 }
 
 /**
@@ -454,6 +481,7 @@ function handleDeleteMessage(message: DeleteMessage, peerId: string): void {
 	});
 
 	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
+	keepOrigin(targetRoomId, messageId, message.origin);
 }
 
 /**
@@ -505,6 +533,26 @@ function handleDeliveryAck(message: DeliveryAckMessage, peerId: string): void {
 	if (!done) return;
 	messages.updateMessage(roomId, messageId, { status: 'Delivered' });
 	void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+}
+
+/**
+ * Store the author's signature once it verifies over the message as stored
+ * here, so this device can serve the message to others as the author's
+ * words (§3.5). The message itself is already envelope-authenticated.
+ */
+function keepOrigin(roomId: string, messageId: string, origin: Message['origin']): void {
+	const current = messages.getMessage(roomId, messageId);
+	if (!current) return;
+	if (!origin) {
+		if (current.origin) messages.updateMessage(roomId, messageId, { origin: undefined });
+		return;
+	}
+	void verifyOrigin(roomId, { ...current, origin }).then((ok) => {
+		const latest = messages.getMessage(roomId, messageId);
+		if (!latest) return;
+		messages.updateMessage(roomId, messageId, { origin: ok ? origin : undefined });
+		void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+	});
 }
 
 /** Tell a member its own message reached this device. */
