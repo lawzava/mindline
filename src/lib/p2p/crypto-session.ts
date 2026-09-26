@@ -10,6 +10,8 @@ import { fromB64url, toB64url } from '$lib/crypto/b64';
 import { ENVELOPE_VERSION, openEnvelope, sealEnvelope, type Envelope } from '$lib/crypto/envelope';
 import { lp } from '$lib/crypto/lp';
 import { deviceFingerprint, safetyNumber, toHex } from '$lib/crypto/safety';
+import { signOrigin } from '$lib/crypto/origin';
+import type { Message, MessageOrigin } from '$lib/types/message';
 import {
 	deviceIdFromSpki,
 	importPeerPublicKey,
@@ -246,6 +248,11 @@ export class CryptoSession {
 	/** Per-transfer media subkey (PROTOCOL.md §5.2). */
 	async mediaKey(transferId: string): Promise<CryptoKey> {
 		return deriveMediaKey(this.keys, transferId);
+	}
+
+	/** Sign a message's current state as its author (§3.5). */
+	signMessage(msg: Message): Promise<MessageOrigin> {
+		return signOrigin(this.identity, this.roomId, msg);
 	}
 
 	isVerified(deviceId: string): boolean {
