@@ -807,6 +807,79 @@ synced message only when the member serving it is its author
 message delivered. The outcome is stored on the message (`status`), so it
 survives reloads. Missing receipt history does not imply delivery.
 
+### 3.8 Admission
+
+The link proves membership in the cryptographic sense (it opens the hello);
+admission decides whether members let a device in.
+
+**Anchor.** A room made on the landing page gets an id that commits to its
+founder: `roomId = "f_" ‖ base64url(SHA-256(lp("mindline/v1/founder",
+spki_b64, salt))[0..16))`. The founding operation (an `approve` carrying the
+salt) is valid only if it hashes to the room id, so any device can check who
+founded the room without trusting whoever relays the operation, and a device
+that merely holds the link cannot found, flip, or join the room by signing
+operations of its own. Rooms whose ids carry no anchor (made before §3.8)
+are always open: every hello-verified device is a member.
+
+**Roster.** The roster is a single hash chain written by one device at a
+time: the **host** (the founder, until it hands the role to a member). Each
+operation is
+`ECDSA-P256(signer, lp("mindline/v2/roster", roomId, seq, prev, device, action, by, salt))`
+where `seq` is its position, `prev` is the SHA-256 of the previous
+operation's signed content (not its signature, so re-encoded signatures
+cannot fork the chain), and `action` is `admit | remove | host` for a device
+or `approve | open` for the room (device `*`). An operation is accepted only
+if it continues the chain and is signed by the host at that point; the host
+cannot remove itself without handing the role on. There are no clocks: a
+removed member cannot backdate its way back, a device that is not the host
+cannot store anything, and there are no concurrent writers to reconcile. A
+complete chain replaces the one a device holds if it contains it and goes
+further. Two valid operations at one position mean whoever was host there
+signed both: the branch whose operation hands the host role on wins (an
+ex-host cannot legitimately sign past its own handover); if both branches
+hand it on, the host equivocated, admission freezes where it is, and the UI
+says so. Merges are serialized, so peers sending the chain at once cannot
+interleave appends. Until a device has seen the founding operation
+it treats nobody as a member. A room opened by the host admits everyone; the
+host can close it again. A device keeps its chain locally; burn deletes it.
+The trade-off is availability: only the host lets people in or removes them,
+so a room whose host is offline cannot admit anyone until the host returns.
+
+**Enforcement** is on every member's side. A device that is not admitted is
+**waiting**: the connection seals nothing for it under room keys (no chat,
+drafts, sync, media, or generation grants), answers none of its generation
+requests, adopts none of its grants, and drops every body it sends. Members
+adopt only grants whose minter is a member, so a line minted by a device
+that was never let in cannot enter anyone's history even when forwarded.
+Every connection in an anchored room carries an `admission` notice on the
+`hs` class (`pending | admitted | denied | removed`, readable with the
+link-static handshake key, so no grant is needed) with the sender's roster
+operations; the receiver merges them and derives its own standing from the
+roster, never from the notice's claim (a `denied` counts only from the
+host). Admitting welcomes the new member as usual
+(names, history) and mints a new generation at once; every member that
+learns of a removal (or of the room closing again) also mints at once, so the last generation anyone mints
+postdates the removal everywhere and the removed device reads nothing sent
+after it. Join requests show a device fingerprint and flag names that match
+a current member; at most five wait for an answer at once, and a device
+turned away is not shown again that session. Relay-only devices cannot
+receive notices or grants and stay waiting until a direct path exists; members
+also send their chain to every member they connect to, over any transport,
+so a member that was offline learns of removals from whoever it meets. Each
+peer may send at most 8 roster messages per 10 seconds (verifying a chain
+costs signatures), and at most 20 waiting devices are tracked at once.
+
+What admission does not change: the link still decrypts hellos and anything
+sealed at the link generation (g = 0) — none of which is sent to a waiting
+device; a removed device keeps what it already received; and whoever holds
+the link can knock again, which a member must answer. A roster is sent whole
+in each notice and caps at 512 operations (about 40 fit the relay's frame
+limit); a full roster needs a new room. Names on join requests are
+self-chosen: the request shows 8 characters of the device id and flags an
+exact name match with someone present, but not look-alike names. A device
+holding the link can keep knocking under fresh identities to crowd the
+request list.
+
 ## 4. Storage at rest
 
 - `mindline-messages` (IndexedDB): per room, AES-GCM blobs of message pages

@@ -38,8 +38,10 @@ import type {
 	DeleteMessage,
 	ReactionMessage,
 	UserConnectedMessage,
-	SyncRequestMessage
+	SyncRequestMessage,
+	PeerTransport
 } from './types';
+import { AdmissionController, resetAdmission } from './admission';
 import { get } from 'svelte/store';
 
 /** Thrown when the URL has no key fragment and no stored keys exist. */
@@ -54,6 +56,7 @@ export class NoRoomKeyError extends Error {
 let p2pConnection: P2PConnection | null = null;
 let cryptoSession: CryptoSession | null = null;
 let mediaEngine: MediaTransferEngine | null = null;
+let admissionCtl: AdmissionController | null = null;
 let reconnectAttempts = 0;
 let reconnectInterval: ReturnType<typeof setInterval> | null = null;
 let lastP2PConfig: Partial<P2PConfig> | undefined = undefined;
@@ -96,7 +99,11 @@ function scheduleRekey(): void {
 			!isDisconnecting &&
 			cryptoSession !== null &&
 			p2pConnection !== null &&
-			shouldMint(cryptoSession.deviceId, p2pConnection.getDirectPeers()),
+			// Members only: a waiting device must not be the designated minter (§3.8).
+			shouldMint(
+				cryptoSession.deviceId,
+				p2pConnection.getDirectPeers().filter((id) => admissionCtl?.isAdmitted(id) ?? true)
+			),
 		mint: () => {
 			if (!isDisconnecting) void mintAndBroadcast();
 		}
@@ -204,31 +211,48 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 	setSendToPeerFn(p2pConnection.sendToPeer.bind(p2pConnection));
 	setSelfDeviceFn(() => cryptoSession?.deviceId ?? null);
 
+	// Admission (PROTOCOL.md §3.8): who is let in. The connection gates every
+	// outbound path on it; inbound bodies from waiting devices are dropped here.
+	const admitSession = cryptoSession;
+	const ctl = new AdmissionController({
+		roomId,
+		deviceId: admitSession.deviceId,
+		sign: (fields) => admitSession.rosterOp(fields),
+		conn: p2pConnection,
+		onAdmitted: (peerId, transport) => welcomePeer(peerId, transport, roomId),
+		onSelfAdmitted: (by) => setTimeout(() => requestSyncFrom(by, roomId), 300),
+		// Not debounced: after a membership change the next generation must
+		// postdate it on every member (§3.8); concurrent mints converge (§1.4).
+		rekey: () => void mintAndBroadcast()
+	});
+	admissionCtl = ctl;
+	await ctl.load();
+	p2pConnection.setAdmission((deviceId) => ctl.isAdmitted(deviceId));
+
 	// Set up handlers
 	p2pConnection.onMessage((message, peerId) => {
+		if (message.type === 'admission' || message.type === 'roster') {
+			void ctl.handleMessage(message as unknown as Record<string, unknown>, peerId);
+			return;
+		}
+		if (!ctl.isAdmitted(peerId)) return;
 		routeP2PMessage(message, peerId);
 	});
 
 	p2pConnection.onPeerConnected((peerId, transport) => {
 		console.log('[P2P Manager] Peer connected:', peerId, `(${transport})`);
-		connection.addPeer(peerId, undefined, transport);
-
-		// Target only the new peer: broadcasting here caused O(N^2)
-		// hello/sync storms in heavy rooms (ported stability fix).
-		sendUserConnectedTo(peerId);
-
-		// Request sync from the new peer after the channel stabilizes.
-		// History never relays (§3.5): only direct peers can serve sync.
-		if (transport === 'direct') {
-			setTimeout(() => requestSyncFrom(peerId, roomId), 1000);
-		}
-
-		// Re-announce in case the first one raced the channel opening
-		setTimeout(() => sendUserConnectedTo(peerId), 500);
+		const name = admitSession.peerName(peerId) ?? 'Someone';
+		void ctl.onVerifiedPeer(peerId, name, transport).then((member) => {
+			if (member && admissionCtl === ctl) welcomePeer(peerId, transport, roomId);
+		});
 	});
 
 	p2pConnection.onPeerDisconnected((peerId) => {
 		console.log('[P2P Manager] Peer disconnected:', peerId);
+		const wasMember = ctl.isAdmitted(peerId);
+		ctl.onPeerGone(peerId);
+		// A device that was only waiting at the door never joined.
+		if (!wasMember) return;
 
 		// Get peer name before removing (for friendly notification)
 		const peerName = connection.getPeerName(peerId);
@@ -369,6 +393,8 @@ export function disconnectP2P(): void {
 		p2pConnection = null;
 	}
 	cryptoSession = null;
+	admissionCtl = null;
+	resetAdmission();
 	mediaEngine = null;
 	setMediaControlFn(null);
 	transfers.clear();
@@ -403,6 +429,8 @@ async function disconnectP2PAsync(): Promise<void> {
 		clearRekeyState();
 		mediaEngine?.destroy();
 		mediaEngine = null;
+		admissionCtl = null;
+		resetAdmission();
 		setMediaControlFn(null);
 		transfers.clear();
 		mediaConsent.clear();
@@ -494,8 +522,8 @@ export function broadcastChat(content: string, messageId: string): void {
 		return;
 	}
 
-	// Get connected peers for delivery tracking
-	const connectedPeers = p2pConnection.getConnectedPeers();
+	// Members only: a waiting device receives nothing (§3.8)
+	const connectedPeers = memberPeers();
 
 	// Initialize delivery tracking for this message
 	delivery.trackMessage(messageId, roomId, connectedPeers);
@@ -663,6 +691,46 @@ export function announceName(): void {
 }
 
 /**
+ * The usual welcome for a member: names, and history from a direct peer.
+ * Targets only the new peer: broadcasting here caused O(N^2) hello/sync
+ * storms in heavy rooms (ported stability fix).
+ */
+function welcomePeer(peerId: string, transport: PeerTransport, roomId: string): void {
+	connection.addPeer(peerId, cryptoSession?.peerName(peerId), transport);
+	sendUserConnectedTo(peerId);
+	// History never relays (§3.5): only direct peers can serve sync.
+	if (transport === 'direct') setTimeout(() => requestSyncFrom(peerId, roomId), 1000);
+	// Re-announce in case the first one raced the channel opening
+	setTimeout(() => sendUserConnectedTo(peerId), 500);
+}
+
+/** Connected devices that are let in (§3.8). */
+function memberPeers(): string[] {
+	const peers = p2pConnection?.getConnectedPeers() ?? [];
+	return admissionCtl ? peers.filter((id) => admissionCtl!.isAdmitted(id)) : peers;
+}
+
+export function admitPeer(deviceId: string): Promise<void> {
+	return admissionCtl?.admit(deviceId) ?? Promise.resolve();
+}
+
+export function denyPeer(deviceId: string): Promise<void> {
+	return admissionCtl?.deny(deviceId) ?? Promise.resolve();
+}
+
+export function removeMember(deviceId: string): Promise<void> {
+	return admissionCtl?.remove(deviceId) ?? Promise.resolve();
+}
+
+export function makeHost(deviceId: string): Promise<void> {
+	return admissionCtl?.makeHost(deviceId) ?? Promise.resolve();
+}
+
+export function setRoomApproval(on: boolean): Promise<void> {
+	return admissionCtl?.setApproving(on) ?? Promise.resolve();
+}
+
+/**
  * Announce ourselves to one newly connected peer
  */
 function sendUserConnectedTo(peerDeviceId: string): void {
@@ -802,7 +870,7 @@ export async function sendMediaMessage(
 
 	// Media never relays (§3.6): offering to relay-only peers would show
 	// the attachment as sent while the bytes can never arrive.
-	const directPeers = p2pConnection.getDirectPeers();
+	const directPeers = p2pConnection.getDirectPeers().filter((id) => memberPeers().includes(id));
 	if (directPeers.length === 0 && p2pConnection.getConnectedPeers().length > 0) {
 		throw new Error('Direct connection needed for files — the relay cannot carry media.');
 	}

@@ -69,8 +69,14 @@ export {
 	cleanupPageLifecycleHandlers,
 	NoRoomKeyError,
 	announceName,
-	getPeerSafety
+	getPeerSafety,
+	admitPeer,
+	denyPeer,
+	removeMember,
+	makeHost,
+	setRoomApproval
 } from './manager';
+export { admission, NEW_ROOM_KEY, forgetRoster } from './admission';
 
 // Crypto session
 export { CryptoSession, RoomKeyMismatchError } from './crypto-session';
