@@ -7,6 +7,9 @@
 	import { cn } from '$lib/utils';
 	import { onMount } from 'svelte';
 	import { createRoomKey, toKeyFragment } from '$lib/crypto/keys';
+	import { NEW_ROOM_KEY } from '$lib/p2p/admission';
+	import { founderRoomId } from '$lib/p2p/roster';
+	import { getOrCreateIdentity } from '$lib/crypto/keystore';
 	import { Plus, ArrowRight } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -53,7 +56,11 @@
 	async function createRoom() {
 		ensureUser();
 		// The fragment carries the room key; it never reaches any server.
-		await goto(`/${crypto.randomUUID()}#${toKeyFragment(createRoomKey())}`);
+		// Rooms made here start closed, and their id commits to this device's
+		// key: joiners can check who founded it (PROTOCOL.md §3.8).
+		const { roomId: id, salt } = await founderRoomId((await getOrCreateIdentity()).spki);
+		sessionStorage.setItem(NEW_ROOM_KEY, JSON.stringify({ roomId: id, salt }));
+		await goto(`/${id}#${toKeyFragment(createRoomKey())}`);
 	}
 
 	async function joinRoom() {

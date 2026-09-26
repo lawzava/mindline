@@ -11,7 +11,8 @@
 		relayedPeers,
 		rotationStranded
 	} from '$lib/stores';
-	import { getPeerSafety, reconnectP2P } from '$lib/p2p';
+	import { admission, getPeerSafety, makeHost, reconnectP2P, removeMember } from '$lib/p2p';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { verified, verifyStatus, type VerifyStatus } from '$lib/stores/verified';
 	import SafetyNumberDialog from './SafetyNumberDialog.svelte';
 	import { Loader2, User } from 'lucide-svelte';
@@ -119,6 +120,12 @@
 	});
 
 	let dialogPeer = $state<string | null>(null);
+	// Removal (§3.8) asks first: it is immediate and rotates the room key.
+	let removePeerId = $state<string | null>(null);
+	let removeOpen = $state(false);
+	// Handing the host role on is irreversible from this device: ask first.
+	let hostPeerId = $state<string | null>(null);
+	let hostOpen = $state(false);
 	// The dialog replaces the peer list: a popover left open behind it keeps
 	// focus trapped, and Enter in the composer would not send.
 	let peerListOpen = $state(false);
@@ -207,6 +214,30 @@
 										>
 											{statusText[vs]}
 										</button>
+										{#if $admission.host}
+											<button
+												onclick={() => {
+													hostPeerId = peerId;
+													peerListOpen = false;
+													hostOpen = true;
+												}}
+												class="rounded-sm text-xs font-medium text-muted-foreground outline-ring/50 hover:underline"
+											>
+												Make host
+											</button>
+										{/if}
+										{#if $admission.host && $admission.approving}
+											<button
+												onclick={() => {
+													removePeerId = peerId;
+													peerListOpen = false;
+													removeOpen = true;
+												}}
+												class="rounded-sm text-xs font-medium text-muted-foreground outline-ring/50 hover:text-destructive hover:underline"
+											>
+												Remove
+											</button>
+										{/if}
 									</span>
 								</div>
 							{/each}
@@ -251,6 +282,58 @@
 		{/if}
 	{/if}
 </div>
+
+<AlertDialog.Root bind:open={removeOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>
+				Remove {removePeerId ? getPeerDisplayName(removePeerId) : ''}?
+			</AlertDialog.Title>
+			<AlertDialog.Description>
+				They stop receiving messages right away, and the room key changes so nothing sent from now
+				on reaches them. They keep what they already received. Someone can let them in again if they
+				open the link.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action
+				onclick={() => {
+					if (removePeerId)
+						removeMember(removePeerId).catch((e) => toast.error(String(e?.message ?? e)));
+					removeOpen = false;
+				}}
+				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+			>
+				Remove from room
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<AlertDialog.Root bind:open={hostOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>
+				Make {hostPeerId ? getPeerDisplayName(hostPeerId) : ''} the host?
+			</AlertDialog.Title>
+			<AlertDialog.Description>
+				The host decides who is let in and who is removed. Only they can hand the role back.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action
+				onclick={() => {
+					if (hostPeerId) makeHost(hostPeerId).catch((e) => toast.error(String(e?.message ?? e)));
+					hostOpen = false;
+				}}
+			>
+				Make host
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
 
 <SafetyNumberDialog
 	bind:open={dialogOpen}

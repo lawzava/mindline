@@ -11,6 +11,7 @@ import { ENVELOPE_VERSION, openEnvelope, sealEnvelope, type Envelope } from '$li
 import { lp } from '$lib/crypto/lp';
 import { deviceFingerprint, safetyNumber, toHex } from '$lib/crypto/safety';
 import { signOrigin } from '$lib/crypto/origin';
+import { signRosterOp, type RosterAction, type RosterLink, type RosterOp } from './roster';
 import type { Message, MessageOrigin } from '$lib/types/message';
 import {
 	deviceIdFromSpki,
@@ -97,7 +98,7 @@ async function sameRoomKey(roomId: string, a: RoomKeys, b: RoomKeys): Promise<bo
 }
 
 /** Body types that ride the `hs` class — and only the `hs` class (§2). */
-const HS_BODY_TYPES = new Set(['hello', 'rekey-grant', 'rekey-request']);
+const HS_BODY_TYPES = new Set(['hello', 'rekey-grant', 'rekey-request', 'admission']);
 
 /** Display-name cap in hellos (§3.4) — keeps relay hellos frame-bounded. */
 export const HELLO_NAME_MAX = 64;
@@ -248,6 +249,21 @@ export class CryptoSession {
 	/** Per-transfer media subkey (PROTOCOL.md §5.2). */
 	async mediaKey(transferId: string): Promise<CryptoKey> {
 		return deriveMediaKey(this.keys, transferId);
+	}
+
+	/**
+	 * An admission notice (§3.8) on the handshake class: readable by a device
+	 * that holds the link but has not been granted the current generation.
+	 */
+	sealAdmission(body: Record<string, unknown>): Promise<string> {
+		return this.sealHs(body);
+	}
+
+	/** Sign a roster change as this device (§3.8). */
+	rosterOp(
+		fields: RosterLink & { device: string; action: RosterAction; salt?: string }
+	): Promise<RosterOp> {
+		return signRosterOp(this.identity, this.roomId, fields);
 	}
 
 	/** Sign a message's current state as its author (§3.5). */
@@ -601,11 +617,20 @@ export class CryptoSession {
 	 * with any swapped context, yields nothing), then adopt on the engine,
 	 * whose gid == H(rk) check ties the unwrapped secret to the signed cert.
 	 */
-	async handleRekeyGrant(body: RekeyGrantBody): Promise<AdoptOutcome> {
+	/**
+	 * mayMint (§3.8): whether the grant's minter is a member. Members only
+	 * adopt member-minted tips, so no line minted by a device that was never
+	 * let in can enter anyone's history, even when a member forwards it.
+	 */
+	async handleRekeyGrant(
+		body: RekeyGrantBody,
+		mayMint: (deviceId: string) => boolean = () => true
+	): Promise<AdoptOutcome> {
 		const { wrap, ...cert } = body.grant;
 		// §1.4 order: the cert is verified before the (more expensive) KEM
 		// decapsulation runs; adopt() re-verifies as part of convergence.
 		if (!(await verifyCert(cert, this.roomId))) throw new Error('invalid grant certificate');
+		if (!mayMint(cert.minter)) throw new Error('grant minted by a non-member');
 		const ct = wrap && fromB64url(wrap.ct);
 		const n = wrap && fromB64url(wrap.n);
 		const wrapped = wrap && fromB64url(wrap.wrapped);

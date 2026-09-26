@@ -34,7 +34,7 @@ test.describe('Landing Page', () => {
 		await createBtn.click();
 
 		// Should navigate to a room with UUID-like path
-		await page.waitForURL(/\/[a-f0-9-]+#k=/);
+		await page.waitForURL(/\/[A-Za-z0-9_-]+#k=/);
 
 		// Room page should show connection status
 		await waitForConnectionStatus(page);
