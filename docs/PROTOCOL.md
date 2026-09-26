@@ -18,7 +18,7 @@ window (§2); canonical `lp()` in every binding and media-key derivation
 no install base: deployed v2 sessions stop interoperating and must
 reload. v3 receivers drop `v: 2` envelopes.
 
-Revision 4 (owner-decided, 2026-06-12): per-device **hybrid post-quantum
+Revision 4: per-device **hybrid post-quantum
 wrapping of generation secrets**. Every device adds an X-Wing
 (X25519 + ML-KEM-768) KEM keypair beside its ECDSA identity (§1.3),
 advertised and TOFU-pinned in the hello (§3.4); a rekey-grant carries
@@ -136,8 +136,7 @@ to switch keys the user burns the room first.
   reloads; names remain self-asserted and bind to deviceId via TOFU.
 - Per-device **X-Wing KEM keypair** (X25519 + ML-KEM-768,
   draft-connolly-cfrg-xwing-kem-10; implementation `@noble/post-quantum`
-  0.6.1, exact-pinned, pure JS — **not independently audited**, the caveat
-  is named in CLAIMS.md). It receives the hybrid grant wraps of §1.4. The
+  0.6.1, exact-pinned, pure JS — **not independently audited**). It receives the hybrid grant wraps of §1.4. The
   keypair is deterministic from a 32-byte seed; because no native WebCrypto
   PQC exists, the seed cannot be a non-extractable CryptoKey — it is
   persisted only AES-256-GCM-wrapped under a non-extractable wrapping key
@@ -165,7 +164,7 @@ to switch keys the user burns the room first.
   jsQR loaded only when a scan starts). The code holds public-key-derived
   digits only, nothing secret.
 
-**Quantum-signature posture (Phase-2 item 9, owner-decided 2026-06-12).**
+**Quantum-signature posture.**
 Signatures stay classical ECDSA P-256, deliberately. The reasoning, in
 full, because it bounds what a quantum adversary gets:
 
@@ -197,7 +196,7 @@ full, because it bounds what a quantum adversary gets:
   budget, and put an unaudited PQC implementation on the *integrity*
   path, where a bug forges rather than merely fails to add protection.
 
-**Named residual** (CLAIMS.md): a link-holding adversary with a live
+**Named residual**: a link-holding adversary with a live
 CRQC could impersonate existing members and minters until rotation —
 an attribution break, not a confidentiality one.
 
@@ -217,7 +216,7 @@ minted by the ratcheting member — deliberately *not* an HKDF chain from
 leaked link derive every future generation, which is precisely the
 property being removed. `k_msg(g)`/`k_eph(g)` derive from `rk_g` (§1.2).
 
-**What this buys (exact claim — CLAIMS.md must not exceed it).** Wire
+**What this buys (the exact claim).** Wire
 ciphertext a **passive** adversary captured — in practice the signaling
 operator archiving relay frames, the only party that ever sees envelope
 ciphertext (§3.6; direct paths are DTLS) — becomes undecryptable with a
@@ -225,7 +224,7 @@ later-leaked link for every generation `g ≥ 1`, because `rk_g` never
 derives from the link and never transits a relay. Once members destroy a
 generation's keys (retention policy below), it is gone on their side too.
 
-**What it does not buy** (each a named CLAIMS residual). (1) A leaked
+**What it does not buy** (each a named residual). (1) A leaked
 link still grants *entry* — join, then history-by-sync. That is the
 capability-URL membership model, unchanged and visible: a joiner appears
 as a peer, runs §3.4, and is TOFU-pinned. (2) At-rest history stays
@@ -327,7 +326,7 @@ accumulated run connects to it — so missed generations are never keyed,
 only their rk-free lineage is verified, and the missed content re-syncs at
 the current generation (§3.5). The accumulator is held only in memory (a
 reload re-fetches it, which also denies a reloaded engine a fresh sibling
-window — the P2.0-F2 property). Each round costs at most `MAX_CHAIN` cert
+window). Each round costs at most `MAX_CHAIN` cert
 verifications and is paced by the per-recipient request cooldown; total
 speculative accumulation is bounded by `MAX_SEGMENTED_DEPTH`
 (= 8·`MAX_CHAIN`), past which the member gives up to link re-entry. The
@@ -374,12 +373,12 @@ integer `< 2³²`. Among admissible grants:
   connected partition and a later lone sibling is rejected (a
   genuinely-behind member instead requests the established generation).
   This stops a member from forcing unbounded ever-lower same-`g`
-  siblings to bloat retained keys and trial-decrypt (review #3). The
+  siblings to bloat retained keys and trial-decrypt. The
   window opens only when a generation *becomes* current (mint or adopt)
   and is **never re-opened by a reload**: a revived engine treats its
   current generation's window as closed — otherwise any member could
   wait out a peer's reload and plant a lone sibling that the rest of
-  the room rejects, splitting that peer off (review P2.0-F2).
+  the room rejects, splitting that peer off.
 
 **Bootstrap (newcomer).** A member still at the link generation that has
 never adopted or minted accepts its **first verified grant at any
@@ -467,7 +466,7 @@ first (idle generations are left alone), through the same debounced,
 minter-selected path. With retired keys destroyed two generations on, a
 device compromise opens at most the current and previous generations of
 captured traffic, about the last half hour of an active room. Per-message
-forward secrecy (sender-key chains) is not built; see ROADMAP.md.
+forward secrecy within a generation is the optional sender-key chains of §1.5.
 
 Join-triggered ratchets are debounced (one ratchet per burst of joins
 within a short window) so a churning room does not ratchet per-join.
@@ -507,9 +506,8 @@ recipient's KEM key. Content keys themselves remain symmetric-only
 quantum-adequate (Grover → ~128-bit effective, §6). The PQC
 implementation choice (pure JS, unaudited — no independently audited
 pure-JS PQC exists as of 2026-06; WASM alternatives are likewise
-unaudited and would loosen CSP) is an owner-accepted, CLAIMS-named
-caveat. ECDSA signatures remain classical (Phase-2 item 9: documented
-argument, §1.3 posture — landing in the same change series).
+unaudited and would loosen CSP) is an accepted, stated caveat. ECDSA
+signatures remain classical (§1.3 posture).
 
 ### 1.5 Sender-key chains (per-room, host's switch)
 
@@ -632,7 +630,7 @@ interface Envelope {
   increment, put in one transaction — IDB transactions are atomic) —
   **not** a plain read-increment-write, which races two tabs onto the
   same `(epoch, seq=0)` and gets the second tab's traffic rejected as
-  duplicates (review #5). Concurrent tabs thus get **distinct, strictly
+  duplicates. Concurrent tabs thus get **distinct, strictly
   increasing** epochs. `seq` restarts at 0 per session (per tab). The
   high-water never regresses, so the epoch a device presents always
   exceeds any value a peer persisted for it. Bound: the high-water is a
@@ -644,7 +642,7 @@ interface Envelope {
   clears room keys/history/replay and the *room*-scoped epoch markers,
   not the device keypair). So a burned device keeps a monotonic epoch
   line and is never censored by peers' persisted high-water — the
-  property the Phase-0 wall-clock seed delivered, now without the
+  property an earlier wall-clock seed delivered, now without the
   regression hazard a corrected clock created. This **replaces** the
   channel-bound guard-reset the design first considered: because the
   epoch can no longer move backwards, no peer ever needs to reset its
@@ -1113,9 +1111,8 @@ request list.
 - `k_storage` is link-static and does **not** ratchet with §1.4: at-rest
   protection targets device theft/forensics, and the §1.4 forward-secrecy
   claim explicitly excludes it (a leaked link plus a copy of a member
-  device's IndexedDB pages still decrypts them). Named in CLAIMS.md.
-  **At-rest generation re-keying is a decided no (Phase 3, 2026-06-13),
-  not merely deferred.** The only adversary any re-keying would defeat is
+  device's IndexedDB pages still decrypts them).
+  **At-rest generation re-keying is not done, by design.** The only adversary any re-keying would defeat is
   one who captured the `mindline-messages` page ciphertext but **not** the
   `mindline-keys` key records, while also holding the link — because today
   `k_storage` is link-derived, that adversary needs no key DB at all.
@@ -1140,8 +1137,7 @@ request list.
   a near-fictional read-path by forfeiting a real recovery-path fails the
   project's honesty bar. **Revisit triggers:** at-rest pages moving out of
   same-origin IndexedDB into a separately-capturable store, or a platform
-  shipping per-database isolation worth defending. CLAIMS.md's
-  forward-secrecy at-rest exclusion stands unchanged.
+  shipping per-database isolation worth defending.
 
 ## 5. Media transfer
 

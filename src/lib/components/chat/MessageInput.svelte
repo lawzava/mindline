@@ -130,7 +130,7 @@
 	/** Tallest the input grows before it scrolls internally (matches max-h-40). */
 	const MAX_INPUT_PX = 160;
 
-	/** Grow 1-6 rows with the content (audit fix: no more single-line cage). */
+	/** Grow 1-6 rows with the content. */
 	function autogrow() {
 		const el = inputRef;
 		if (!el) return;

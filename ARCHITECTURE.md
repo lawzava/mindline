@@ -71,5 +71,4 @@ grant delivery all interact. Do not change that area casually; read
 
 Run two local processes: `pnpm dev` for the SvelteKit app and
 `pnpm run signaling` for the WebSocket signaling/relay server. Use
-`docs/PROTOCOL.md` as the full implementation spec and `docs/CLAIMS.md` as the
-graded security-claims register.
+`docs/PROTOCOL.md` as the full implementation spec.

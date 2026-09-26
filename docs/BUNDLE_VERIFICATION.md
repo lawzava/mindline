@@ -4,8 +4,8 @@ Mindline is a web app: every page load runs whatever JavaScript the
 origin and CDN deliver. End-to-end encryption stops the infrastructure
 from _reading_ your messages; it cannot stop a malicious _build_ of the
 app from using your keys in place. This document is the honest evaluation
-of what can and cannot raise that ceiling — the Phase-1 §1.7 follow-up to
-the README "Honest limits" disclosure.
+of what can and cannot raise that ceiling, and of what Mindline ships to
+narrow it. The README "Honest limits" section links here.
 
 ## Why Subresource Integrity (SRI) does not raise this ceiling
 
@@ -67,40 +67,9 @@ forge. Three mechanisms, in increasing strength:
    signature-checked. Trust reduces to the signing key and the platform's
    update integrity. This is outside a pure-web deployment.
 
-## Recommendation and decision boundary
+## Shipped: reproducible build and a public check
 
-- **In scope now (doc-only, this file):** state the SRI assessment
-  plainly so the project never advertises a guarantee it lacks, and name
-  the genuine mechanisms.
-- **Small, owner-optional next step:** reproducible build + a
-  `bundle-manifest.json` digest published per release, linked from the
-  release notes. This is a small build/CI change, not heavy infra.
-- **Owner sign-off required (heavier infra):** a verification pipeline,
-  a pinned-verifier extension, or an installed signed client. These are
-  real engineering efforts with their own threat models and maintenance
-  cost; they are flagged here, not built, per the Phase-1 brief.
-
-The README "Honest limits" served-code bullet links here; CLAIMS.md row
-"You don't have to trust the server with content" remains
-TRUE-WITH-CAVEATS, with this document as the detailed ceiling analysis.
-
-## Owner decision (Phase 3, 2026-06-13)
-
-**Do nothing beyond this documented assessment, for now.** Pre-launch,
-with no install base to protect, building reproducible-build/digest
-infrastructure (Option 1) or a pinned verifier (Option 2) is not yet
-worth the engineering and ongoing maintenance: the served-code ceiling
-is the ceiling of every web-delivered E2EE app and is already disclosed
-honestly in the README and CLAIMS.md, so no user-facing claim overstates
-what the deployment provides. Revisit at launch — Option 1 (reproducible
-build + per-release `bundle-manifest.json` digest) is the natural first
-step if/when a verifiable supply chain becomes a launch requirement. No
-infrastructure is built under this decision.
-
-## Shipped: reproducible build and a public check (2026-09-26)
-
-Option 1 is now in place, because the product is live and an install base
-now exists to protect.
+Option 1 is in place.
 
 - **Reproducible build.** SvelteKit's version name is the commit hash
   (`BUILD_VERSION`, else `CF_PAGES_COMMIT_SHA`, else `GITHUB_SHA`) instead of
@@ -162,6 +131,6 @@ every client on a broken build.
   last 20 visited pages only as an offline fallback. It pins nothing, so
   updates arrive as they would without it (PROTOCOL.md §4).
 
-Remaining: a verifier outside the page (a browser extension that checks
+Not built: a verifier outside the page (a browser extension that checks
 each loaded file against the published list, or an installed, signed
-client). Distributing one needs a store listing under the owner's account.
+client).

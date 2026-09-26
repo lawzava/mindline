@@ -46,7 +46,7 @@ export function kemKeypair(seed: Uint8Array): { publicKey: Uint8Array; secretKey
  * A well-sized byte string is not necessarily a valid X-Wing public key:
  * ML-KEM rejects out-of-range moduli at encapsulation time. Dry-run an
  * encapsulation so an unusable key is rejected at the hello, not when a
- * grant is first wrapped for it (review V4-PQ-02).
+ * grant is first wrapped for it.
  */
 export function isUsableKemPublicKey(publicKey: Uint8Array): boolean {
 	if (publicKey.length !== KEM_PUBLIC_KEY_BYTES) return false;

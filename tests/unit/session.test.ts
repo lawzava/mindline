@@ -266,7 +266,7 @@ describe('session generations (PROTOCOL.md §1.4 — ratchet wiring)', () => {
 		expect(s2.generation.g).toBe(2);
 	});
 
-	test('a fork at depth exactly MAX_CHAIN heals in-protocol (§1.4 depth bound, P2.0 F3)', async () => {
+	test('a fork at depth exactly MAX_CHAIN heals in-protocol (§1.4 depth bound)', async () => {
 		const { a, b } = await verifiedPair('room-deep-fork');
 		await a.mintGeneration();
 		const g1 = await b.openMessage(JSON.parse(await a.grantWireFor(b.deviceId, 0)));
@@ -403,7 +403,7 @@ describe('per-device KEM grant wrapping (PROTOCOL.md §1.4 v4)', () => {
 	test('a hello with a well-sized but invalid X-Wing key is rejected before pinning', async () => {
 		// A link holder can mint an identity and a proof-valid hello carrying
 		// 1216 random bytes as its kem key; encapsulation against it throws
-		// at grant time. Reject at the door instead (review V4-PQ-02).
+		// at grant time. Reject at the door instead.
 		const key = createRoomKey();
 		const b = await isolatedDevice('room-kem-bogus', key);
 		const identity = await createDeviceIdentity();
