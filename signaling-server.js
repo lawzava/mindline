@@ -2,6 +2,14 @@ import WebSocket, { WebSocketServer } from 'ws';
 import http from 'http';
 import crypto from 'crypto';
 import { generateTurnIceServers, DEFAULT_TTL_SECONDS } from './turn-credentials.js';
+import {
+	clientLimitKey,
+	createConnectionCounter,
+	parseTrustedProxyConfig,
+	resolveClientIp,
+	roomHasSpace,
+	turnCredentialRecipients
+} from './signaling-policy.js';
 
 const server = http.createServer();
 
@@ -24,8 +32,59 @@ function readPositiveIntEnv(name, fallback) {
 const SERVER_LIMITS = {
 	maxConnections: 1000, // Maximum concurrent WebSocket connections
 	maxRooms: 500, // Maximum concurrent rooms
-	maxRateLimitEntries: 10000 // Maximum entries in rate limit maps (LRU-style cleanup)
+	maxRateLimitEntries: 10000, // Maximum entries in rate limit maps (LRU-style cleanup)
+	// Per-client (IPv4 address / IPv6 /64) concurrent sockets, so one host
+	// cannot fill the global connection and room caps.
+	maxConnectionsPerIp: readPositiveIntEnv('MAX_CONNECTIONS_PER_IP', 20),
+	// Members per room; the product targets 2 to 8 people.
+	maxRoomMembers: readPositiveIntEnv('MAX_ROOM_MEMBERS', 16),
+	// Unsent bytes a socket may queue before further sends to it are dropped.
+	// Honest browsers read promptly; this bounds memory for a peer that never
+	// reads (it can still keep itself alive with unsolicited pongs).
+	maxBufferedBytes: 256 * 1024
 };
+
+// Which request header carries the real client IP, and which TCP peers may set
+// it (TRUSTED_PROXY_HEADER / TRUSTED_PROXY_CIDRS, see .env.example). Unset keeps
+// the legacy cf-connecting-ip → x-forwarded-for chain from any peer.
+const TRUSTED_PROXY = parseTrustedProxyConfig(
+	process.env.TRUSTED_PROXY_HEADER,
+	process.env.TRUSTED_PROXY_CIDRS
+);
+if (TRUSTED_PROXY.invalidCidrs.length > 0) {
+	console.warn(
+		`⚠️ Ignoring invalid TRUSTED_PROXY_CIDRS entries: ${TRUSTED_PROXY.invalidCidrs.join(', ')}`
+	);
+}
+if (TRUSTED_PROXY.headers.length > 0 && TRUSTED_PROXY.trustAnyPeer) {
+	console.warn(
+		`⚠️ Trusting client IP header(s) ${TRUSTED_PROXY.headers.join(', ')} from any peer. ` +
+			'Anyone who can reach this server directly can spoof their IP past per-IP limits. ' +
+			'Set TRUSTED_PROXY_CIDRS to your proxy ranges, or TRUSTED_PROXY_HEADER=none.'
+	);
+}
+
+// Live sockets per client key (see clientLimitKey), for maxConnectionsPerIp.
+const connectionsPerClient = createConnectionCounter(SERVER_LIMITS.maxConnectionsPerIp);
+
+/**
+ * Send unless the socket is closed or its outbound buffer is over the cap.
+ * Dropping (rather than queueing without bound) is the only safe choice for a
+ * peer that stopped reading; its client recovers through ICE deadlines and
+ * signaling reconnects.
+ */
+function sendTo(client, payload) {
+	if (client.readyState !== WebSocket.OPEN) return;
+	if (client.bufferedAmount > SERVER_LIMITS.maxBufferedBytes) {
+		if (!client.sendsDropped) {
+			client.sendsDropped = true;
+			console.log(`⚠️ Dropping sends to backlogged client: ${client.clientId?.slice(0, 8)}...`);
+		}
+		return;
+	}
+	client.sendsDropped = false;
+	client.send(payload);
+}
 
 // Allowed browser origins for both HTTP CORS and the WebSocket upgrade.
 // Self-hosters set ALLOWED_ORIGINS (comma-separated) to their app origin(s).
@@ -204,22 +263,46 @@ function checkRoomJoinRateLimit(clientId) {
 }
 
 // Cloudflare TURN credentials, minted server-side (the app frontend is static
-// and can't hold the CF secret) and handed to clients on the signaling welcome
-// message. Refreshed on a timer rather than per request, so clients can never
-// trigger credential generation. Stays empty when CF_TURN_* env is unset, in
-// which case clients fall back to STUN-only.
+// and can't hold the CF secret). Refreshed on a timer rather than per request,
+// so clients can never trigger credential generation. Delivered only to sockets
+// in a room with at least one other member (deliverTurnCredentials), never on
+// the bare welcome. Stays empty when CF_TURN_* env is unset, in which case
+// clients fall back to STUN-only.
 let turnIceServers = [];
+const TURN_TTL_SECONDS = readPositiveIntEnv('CF_TURN_TTL_SECONDS', DEFAULT_TTL_SECONDS);
 
 async function refreshTurnIceServers() {
 	const next = await generateTurnIceServers(
 		process.env.CF_TURN_TOKEN_ID,
-		process.env.CF_TURN_API_TOKEN
+		process.env.CF_TURN_API_TOKEN,
+		{ ttl: TURN_TTL_SECONDS }
 	);
 	const configured = process.env.CF_TURN_TOKEN_ID && process.env.CF_TURN_API_TOKEN;
 	// Keep the last good set if a refresh returns empty due to a transient
 	// Cloudflare error while still configured — don't flap clients to STUN-only.
 	if (next.length > 0 || !configured) {
 		turnIceServers = next;
+	}
+}
+
+/**
+ * Hand the current TURN credentials to every member of a room that now has a
+ * peer to relay to (PROTOCOL.md §3.1). Reuses the 'client-id' message, which
+ * the client already treats as "replace my managed ICE servers"; it must be
+ * sent before 'room-joined' / 'peer-joined' so the RTCPeerConnection built for
+ * the new pair includes TURN.
+ */
+function deliverTurnCredentials(room) {
+	if (turnIceServers.length === 0) return;
+	for (const client of turnCredentialRecipients(room)) {
+		sendTo(
+			client,
+			JSON.stringify({
+				type: 'client-id',
+				clientId: client.clientId,
+				iceServers: turnIceServers
+			})
+		);
 	}
 }
 
@@ -238,16 +321,23 @@ wss.on('connection', (ws, req) => {
 	// Generate server-assigned client ID (prevents client-side spoofing)
 	const serverClientId = crypto.randomUUID();
 
-	// Get client IP for rate limiting (check Cloudflare headers first)
-	const clientIP =
-		req.headers['cf-connecting-ip'] ||
-		req.headers['x-forwarded-for']?.split(',')[0] ||
-		req.socket.remoteAddress;
+	// Client IP for rate limiting, from a proxy header only when trusted
+	const clientIP = resolveClientIp(req.headers, req.socket.remoteAddress, TRUSTED_PROXY);
+	const clientKey = clientLimitKey(clientIP);
 
 	// Check connection rate limit
-	if (!checkConnectionRateLimit(clientIP)) {
+	if (!checkConnectionRateLimit(clientKey)) {
 		console.log(`⚠️ Connection rate limit exceeded for IP: ${clientIP}`);
 		ws.close(1008, 'Rate limit exceeded');
+		return;
+	}
+
+	// Check per-IP concurrent connections (released in the close handler below)
+	if (!connectionsPerClient.tryAcquire(clientKey)) {
+		console.log(
+			`⚠️ Max connections per IP (${SERVER_LIMITS.maxConnectionsPerIp}) for: ${clientIP}`
+		);
+		ws.close(1013, 'Too many connections');
 		return;
 	}
 
@@ -264,24 +354,62 @@ wss.on('connection', (ws, req) => {
 		ws.isAlive = true;
 	});
 
-	// Send the server-assigned client ID to the client, plus any managed TURN
-	// credentials so peers behind strict NATs can relay (PROTOCOL.md §3).
-	ws.send(
+	// Send the server-assigned client ID to the client. Managed TURN credentials
+	// follow on a later 'client-id' once the socket shares a room with a peer
+	// (deliverTurnCredentials); an empty list here keeps clients STUN-only.
+	sendTo(
+		ws,
 		JSON.stringify({
 			type: 'client-id',
 			clientId: serverClientId,
-			iceServers: turnIceServers
+			iceServers: []
 		})
 	);
 
+	// Remove this socket from its room and tell the remaining members. Clearing
+	// currentRoom matters: without it a socket that sent 'leave' could keep
+	// relaying into the room while no longer listed as a member.
+	function leaveCurrentRoom() {
+		const room = currentRoom ? rooms.get(currentRoom) : undefined;
+		if (room && room.delete(ws)) {
+			room.forEach((client) => {
+				sendTo(
+					client,
+					JSON.stringify({
+						type: 'peer-left',
+						clientId: serverClientId
+					})
+				);
+			});
+			if (room.size === 0) {
+				rooms.delete(currentRoom);
+			}
+		}
+		currentRoom = null;
+	}
+
 	ws.on('message', (message) => {
+		// Rate limit before parsing, so malformed frames cannot bypass it
+		if (!checkMessageRateLimit(serverClientId)) {
+			console.log(`⚠️ Message rate limit exceeded for client: ${serverClientId}`);
+			sendTo(
+				ws,
+				JSON.stringify({
+					type: 'error',
+					message: 'Rate limit exceeded. Please slow down.'
+				})
+			);
+			return;
+		}
+
 		// Wrap JSON parsing in try-catch to handle malformed messages
 		let data;
 		try {
 			data = JSON.parse(message);
 		} catch (parseError) {
 			console.error('Invalid JSON message received:', parseError.message);
-			ws.send(
+			sendTo(
+				ws,
 				JSON.stringify({
 					type: 'error',
 					message: 'Invalid message format'
@@ -291,24 +419,13 @@ wss.on('connection', (ws, req) => {
 		}
 
 		try {
-			// Check message rate limit using server-assigned ID
-			if (!checkMessageRateLimit(serverClientId)) {
-				console.log(`⚠️ Message rate limit exceeded for client: ${serverClientId}`);
-				ws.send(
-					JSON.stringify({
-						type: 'error',
-						message: 'Rate limit exceeded. Please slow down.'
-					})
-				);
-				return;
-			}
-
-			switch (data.type) {
+			switch (data?.type) {
 				case 'join': {
 					// Check room join rate limit
 					if (!checkRoomJoinRateLimit(serverClientId)) {
 						console.log(`⚠️ Room join rate limit exceeded for client: ${serverClientId}`);
-						ws.send(
+						sendTo(
+							ws,
 							JSON.stringify({
 								type: 'error',
 								message: 'Too many room join attempts. Please wait.'
@@ -324,7 +441,8 @@ wss.on('connection', (ws, req) => {
 						data.roomId.length < 4 ||
 						data.roomId.length > 100
 					) {
-						ws.send(
+						sendTo(
+							ws,
 							JSON.stringify({
 								type: 'error',
 								message: 'Invalid room ID'
@@ -335,7 +453,8 @@ wss.on('connection', (ws, req) => {
 
 					// Check max rooms limit
 					if (!rooms.has(data.roomId) && rooms.size >= SERVER_LIMITS.maxRooms) {
-						ws.send(
+						sendTo(
+							ws,
 							JSON.stringify({
 								type: 'error',
 								message: 'Server at capacity. Cannot create new rooms.'
@@ -344,13 +463,21 @@ wss.on('connection', (ws, req) => {
 						return;
 					}
 
-					// Leave current room if any
-					if (currentRoom && rooms.has(currentRoom)) {
-						const room = rooms.get(currentRoom);
-						room.delete(ws);
-						if (room.size === 0) {
-							rooms.delete(currentRoom);
-						}
+					// Check per-room member limit
+					if (!roomHasSpace(rooms.get(data.roomId), ws, SERVER_LIMITS.maxRoomMembers)) {
+						sendTo(
+							ws,
+							JSON.stringify({
+								type: 'error',
+								message: 'Room is full.'
+							})
+						);
+						return;
+					}
+
+					// Leave current room if any (notifying its members)
+					if (currentRoom !== data.roomId) {
+						leaveCurrentRoom();
 					}
 
 					// Join new room
@@ -363,10 +490,15 @@ wss.on('connection', (ws, req) => {
 					const room = rooms.get(currentRoom);
 					room.add(ws);
 
+					// TURN only once there is a peer to reach, and ahead of the
+					// peer-joined / room-joined messages that build connections
+					deliverTurnCredentials(room);
+
 					// Notify others in room (use server-assigned ID)
 					room.forEach((client) => {
 						if (client !== ws && client.readyState === WebSocket.OPEN) {
-							client.send(
+							sendTo(
+								client,
 								JSON.stringify({
 									type: 'peer-joined',
 									clientId: serverClientId,
@@ -384,7 +516,8 @@ wss.on('connection', (ws, req) => {
 						}
 					});
 
-					ws.send(
+					sendTo(
+						ws,
 						JSON.stringify({
 							type: 'room-joined',
 							roomId: currentRoom,
@@ -406,7 +539,8 @@ wss.on('connection', (ws, req) => {
 						room.forEach((client) => {
 							if (client.clientId === data.targetId && client.readyState === WebSocket.OPEN) {
 								// Use server-assigned ID as fromId (prevents spoofing)
-								client.send(
+								sendTo(
+									client,
 									JSON.stringify({
 										type: data.type,
 										data: data.data,
@@ -421,7 +555,8 @@ wss.on('connection', (ws, req) => {
 				case 'relay':
 					// Rate limit relay messages too (was missing!)
 					if (!checkMessageRateLimit(serverClientId)) {
-						ws.send(
+						sendTo(
+							ws,
 							JSON.stringify({
 								type: 'error',
 								message: 'Rate limit exceeded for relay messages.'
@@ -445,14 +580,14 @@ wss.on('connection', (ws, req) => {
 							// Send to specific peer
 							room.forEach((client) => {
 								if (client.clientId === data.targetId && client.readyState === WebSocket.OPEN) {
-									client.send(relayMessage);
+									sendTo(client, relayMessage);
 								}
 							});
 						} else {
 							// Broadcast to all peers in room
 							room.forEach((client) => {
 								if (client !== ws && client.readyState === WebSocket.OPEN) {
-									client.send(relayMessage);
+									sendTo(client, relayMessage);
 								}
 							});
 						}
@@ -460,31 +595,13 @@ wss.on('connection', (ws, req) => {
 					break;
 
 				case 'leave':
-					if (currentRoom && rooms.has(currentRoom)) {
-						const room = rooms.get(currentRoom);
-						room.delete(ws);
-
-						// Notify others
-						room.forEach((client) => {
-							if (client.readyState === WebSocket.OPEN) {
-								client.send(
-									JSON.stringify({
-										type: 'peer-left',
-										clientId: serverClientId
-									})
-								);
-							}
-						});
-
-						if (room.size === 0) {
-							rooms.delete(currentRoom);
-						}
-					}
+					leaveCurrentRoom();
 					break;
 			}
 		} catch (error) {
 			console.error('Error handling message:', error.message);
-			ws.send(
+			sendTo(
+				ws,
 				JSON.stringify({
 					type: 'error',
 					message: 'Internal server error'
@@ -495,30 +612,12 @@ wss.on('connection', (ws, req) => {
 
 	ws.on('close', () => {
 		// Clean up on disconnect
-		if (currentRoom && rooms.has(currentRoom)) {
-			const room = rooms.get(currentRoom);
-			room.delete(ws);
-
-			// Notify others
-			room.forEach((client) => {
-				if (client.readyState === WebSocket.OPEN) {
-					client.send(
-						JSON.stringify({
-							type: 'peer-left',
-							clientId: serverClientId
-						})
-					);
-				}
-			});
-
-			if (room.size === 0) {
-				rooms.delete(currentRoom);
-			}
-		}
+		leaveCurrentRoom();
 		console.log(`Client ${serverClientId.slice(0, 8)}... disconnected`);
 
-		// Update connection monitoring counter
+		// Update connection monitoring counters
 		totalConnections--;
+		connectionsPerClient.release(clientKey);
 		console.log(`📱 Connection closed (Total: ${totalConnections}, Rooms: ${rooms.size})`);
 	});
 });
@@ -558,7 +657,8 @@ const keepaliveInterval = setInterval(() => {
 
 // Mint TURN credentials at startup and refresh at half the TTL to stay well
 // ahead of expiry. No-op (leaves turnIceServers empty) when CF_TURN_* is unset.
-const TURN_REFRESH_MS = (DEFAULT_TTL_SECONDS / 2) * 1000;
+// Clamped to what setInterval accepts, and never faster than every 30s.
+const TURN_REFRESH_MS = Math.min(Math.max((TURN_TTL_SECONDS / 2) * 1000, 30000), 2 ** 31 - 1);
 void refreshTurnIceServers();
 const turnRefreshInterval = setInterval(refreshTurnIceServers, TURN_REFRESH_MS);
 
@@ -575,6 +675,15 @@ server.listen(PORT, HOST, () => {
 	console.log(`   WebSocket Path: /ws`);
 	console.log(
 		`   Rate limits: msg/s=${RATE_LIMITS.messagesPerSecond}, conn/min=${RATE_LIMITS.connectionAttempts}, joins/min=${RATE_LIMITS.roomJoinsPerMinute}`
+	);
+	console.log(
+		`   Caps: conns/IP=${SERVER_LIMITS.maxConnectionsPerIp}, members/room=${SERVER_LIMITS.maxRoomMembers}`
+	);
+	console.log(
+		`   Client IP: ${TRUSTED_PROXY.headers.join(', ') || 'socket address'}` +
+			(TRUSTED_PROXY.trustAnyPeer
+				? ''
+				: ` (trusted peers: ${TRUSTED_PROXY.cidrs.join(', ') || 'none'})`)
 	);
 	console.log(`💓 Keepalive enabled (${KEEPALIVE_INTERVAL / 1000}s interval)`);
 	console.log(`   Ready for connections!`);

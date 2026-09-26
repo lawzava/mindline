@@ -43,10 +43,16 @@ operator, contain at most the metadata listed above.
 
 ## What other parties see
 
-- **Peers see each other's IP addresses.** Connections are direct
-  browser-to-browser (no TURN relay is configured), so anyone in the room
-  learns your IP address, and you learn theirs. If that matters for who
-  you talk to, use a VPN.
+- **Peers usually see each other's IP addresses.** Connections are direct
+  browser-to-browser when the network allows, so anyone in the room learns
+  your IP address, and you learn theirs. If that matters for who you talk
+  to, use a VPN.
+- **Cloudflare helps connections form.** Your browser asks Cloudflare's
+  STUN server for your public address. When no direct path exists,
+  Cloudflare's TURN relay carries the WebRTC traffic, which is already
+  end-to-end encrypted; it sees both IP addresses and traffic volume, and
+  the peers then do not learn each other's address. TURN credentials are
+  handed out only once someone else is in your room.
 - **Cloudflare fronts both the app and the signaling server.** It sees the
   same connection metadata the signaling server does — IP addresses,
   timing, which room IDs rendezvous — plus ordinary web logs for page

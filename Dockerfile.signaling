@@ -9,8 +9,12 @@ RUN apk add --no-cache curl && corepack enable && corepack prepare pnpm@9.15.0 -
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile
 
-COPY signaling-server.js turn-credentials.js ./
-RUN mkdir -p logs
+COPY signaling-server.js signaling-policy.js turn-credentials.js ./
+RUN mkdir -p logs && chown node:node logs
+
+# Drop root: the server needs no privileges (it listens on 3000 and only
+# writes to logs/). The image's `node` user owns nothing else in /app.
+USER node
 
 EXPOSE 3000
 

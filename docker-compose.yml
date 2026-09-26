@@ -32,6 +32,13 @@ services:
       - RATE_LIMIT_MESSAGES_PER_SECOND=50
       - RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE=240
       - RATE_LIMIT_ROOM_JOINS_PER_MINUTE=30
+      - CF_TURN_TTL_SECONDS=${CF_TURN_TTL_SECONDS:-86400}
+      - MAX_CONNECTIONS_PER_IP=${MAX_CONNECTIONS_PER_IP:-20}
+      - MAX_ROOM_MEMBERS=${MAX_ROOM_MEMBERS:-16}
+      # Which header carries the client IP, and which proxy peers may set it
+      # (see .env.example). Empty keeps cf-connecting-ip → x-forwarded-for.
+      - TRUSTED_PROXY_HEADER=${TRUSTED_PROXY_HEADER:-}
+      - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:-}
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
