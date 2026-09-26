@@ -1000,6 +1000,17 @@ request list.
   announce the lock going on or off over a BroadcastChannel. Forensics:
   IndexedDB engines may keep replaced values (including the pre-lock room
   records) on disk until they compact their files.
+- **Offline pages.** The service worker (`src/service-worker.js`) keeps
+  the build's files in a per-version cache and the last 20 pages visited in
+  `mindline-pages-<version>` (path only, no fragment; a room's page is its
+  server-rendered shell, nothing from the conversation). Pages are fetched
+  network-first, so updates arrive as without a worker; the cache answers
+  only when the network fails. Only a page of the worker's own build is
+  kept (the `x-mindline-build` response header), so an offline page never
+  names files the worker lacks; a full quota only skips the keeping. A new
+  version drops the old caches. Burn, and removing a room from Recent
+  rooms, delete the room's page. The Recent rooms list already holds these room
+  ids; the passkey lock does not cover either.
 - **Disappearing messages.** Any member sets the room's timer (off, 5
   minutes, 1 hour, 1 day, 1 week) by sending a timer event: a `chat` body
   whose `timer` field is the new lifetime in ms (0 = off), shown as a line
@@ -1161,7 +1172,7 @@ AAD   = lp(transferId, str(chunkIndex))
 | Past participant           | Keeps everything already synced, and the link (can rejoin visibly). Loses passive read of post-departure traffic once the leave-triggered ratchet lands (§1.4) |
 | Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, delete, or react as others (signatures + §3.7 authorization); can misrepresent history it serves to a syncing device (§3.5); can grief the ratchet — fork a joiner, mint-flood, grind low gids to re-root lines (§1.4) — an availability nuisance, never a read of traffic it was not granted |
 | Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB. With the passkey lock on, also needs the passkey (and its user verification) to open any room; without it, gets metadata, plus any room link the browser's own history still holds from before the lock or from an outside link (§4). In a room with a disappearing-messages timer, gets only what has not expired yet (§4) |
-| XSS / malicious extension  | Game over (can use keys in place). Mitigation: strict CSP — `connect-src` pinned to self + the signaling origin (no any-host WebSocket exfil), zero third-party runtime origins, self-hosted fonts |
+| XSS / malicious extension  | Game over (can use keys in place). Mitigation: strict CSP — `connect-src` pinned to self + the signaling origin (no any-host WebSocket exfil) + one GitHub path for the opt-in code check (`raw.githubusercontent.com/lawzava/mindline/bundle-digests/`), no third-party scripts, self-hosted fonts |
 
 Platform residuals, documented user-facing: Safari evicts IndexedDB after
 7 days without interaction unless `persist()` is granted — history and

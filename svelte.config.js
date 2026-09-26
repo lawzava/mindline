@@ -53,7 +53,13 @@ const config = {
 							// (above). No scheme-wide ws: — that allowed any script
 							// to open a WebSocket to any host (exfil). Self-hosters
 							// rebuild with VITE_SIGNALING_SERVER.
-							'connect-src': ['self', signalingOrigin],
+							// Only the opt-in code check fetches from GitHub, and only the
+							// published bundle digests (PRIVACY.md).
+							'connect-src': [
+								'self',
+								signalingOrigin,
+								'https://raw.githubusercontent.com/lawzava/mindline/bundle-digests/'
+							],
 							'object-src': ['none'],
 							'base-uri': ['self'],
 							'form-action': ['self'],

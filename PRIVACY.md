@@ -68,9 +68,18 @@ operator, contain at most the metadata listed above.
   timing, which rendezvous names meet, the room ID in page URLs you load — plus ordinary web logs for page
   loads. It never sees message content or the link key.
 
+- **GitHub, only if you ask.** The start page's "check it now" link
+  fetches the published build list from GitHub (raw.githubusercontent.com),
+  which sees your IP address and that you use Mindline. Nothing is sent
+  unless you click it.
+
 ## What stays on your device
 
 - Chat history (encrypted), received media (encrypted)
+- The last 20 pages you opened, kept by the app's service worker so they
+  load offline. A room's page holds its room ID and nothing from the
+  conversation; burning the room or removing it from Recent rooms deletes
+  it.
 - Your display name and theme preference
 - Room keys (non-extractable browser CryptoKeys) and your device keypair
 
