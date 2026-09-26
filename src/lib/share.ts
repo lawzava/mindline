@@ -11,7 +11,8 @@ export function rememberInvite(roomId: string, fragment: string): void {
 	cachedInvite = { path: `/${encodeURIComponent(roomId)}`, fragment };
 }
 
-function inviteUrl(): string {
+/** The open room's full invite URL, key fragment included (a bearer capability). */
+export function inviteUrl(): string {
 	const url = new URL(window.location.href);
 	url.search = '';
 	if (!url.hash) {
