@@ -863,8 +863,45 @@ says so. Merges are serialized, so peers sending the chain at once cannot
 interleave appends. Until a device has seen the founding operation
 it treats nobody as a member. A room opened by the host admits everyone; the
 host can close it again. A device keeps its chain locally; burn deletes it.
-The trade-off is availability: only the host lets people in or removes them,
-so a room whose host is offline cannot admit anyone until the host returns.
+The trade-off is availability: only the host writes the chain, so on its
+own a room whose host is offline cannot admit anyone until the host returns.
+
+**Members letting people in.** The host can allow it: an `admit` of the
+pseudo-device `*members` turns it on and a `remove` of it turns it off (real
+device ids never start with `*`; versions that predate this store it as a
+harmless member and keep following the chain past it). A member then
+answers a join request with a **voucher**:
+`ECDSA-P256(member, lp("mindline/v1/voucher", roomId, device, by, basis, epoch))`,
+where `basis` is the seq of the chain operation that let the member in (the
+founder's is 0) and `epoch` is the seq of the operation that last turned
+member admission on or closed the room again. Vouchers travel beside the
+chain in roster messages and notices (at most 32 held, at most 4 per
+signer), and a voucher counts only while, in the chain as it stands now:
+member admission is on at that `epoch`, the signer is a member whose last
+admission is at `basis`, the device has not been removed, and the chain has
+not forked. There is no clock and no chain position to backdate: removing
+the signer (or letting it in again), turning member admission off (or off
+and on again), closing the room again, or removing the device voids the
+voucher at once, on every device, including vouchers signed after the
+fact. Only chain members vouch, and only while the room asks before
+letting people in: a device let in by a voucher alone cannot vouch until
+the host confirms it. The host confirms valid vouchers into the chain (an
+`admit` it signs) for devices actually present (waiting at its door or
+connected), at most 8 per member each session (throwaway devices are cheap;
+the rest stay vouchers, which end with their signer), never for made-up ids
+or anyone it turned away that session, and does so again before removing a
+member or turning member admission off, so the admissions it has seen
+outlast those changes; ones it never saw end with them. The host signs no
+`admit` into the chain's last 16 positions, so nobody can push the roster
+so full that the host could no longer remove someone or turn member
+admission off (enforced when signing, so chains written before this rule
+still load). Letting someone in by voucher mints a new generation like any
+admission, and turning member admission off mints one on every member.
+Removal and the room's settings stay with the host. Turning someone away
+("Not now", shown only to the host; only its refusal counts) does not bind
+members: a member can still let that device in, and removing it is what
+keeps it out. Versions that predate vouchers treat a voucher-admitted
+device as waiting until the host confirms it.
 
 **Enforcement** is on every member's side. A device that is not admitted is
 **waiting**: the connection seals nothing for it under room keys (no chat,

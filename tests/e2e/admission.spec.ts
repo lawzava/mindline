@@ -80,3 +80,42 @@ test('turning approval off lets the next person straight in', async ({ page, bro
 
 	await cleanup(contextD);
 });
+
+test('when the host allows it, a member lets someone in while the host is away', async ({
+	page,
+	browser
+}) => {
+	const roomId = await createRoom(page);
+	const contextB = await createSecondContext(browser);
+	const pageB = await contextB.newPage();
+	await joinRoom(pageB, roomId);
+	const request = page.getByTestId('admission-request');
+	await expect(request).toBeVisible({ timeout: 30000 });
+	await request.getByRole('button', { name: 'Let in' }).click();
+	await expect(pageB.getByTestId('admission-waiting')).toBeHidden({ timeout: 15000 });
+
+	await page.getByTestId('room-menu-btn').click();
+	await page.getByTestId('members-admit-toggle').click();
+	await expect(page.getByTestId('members-admit-toggle')).toContainText('On');
+	await page.keyboard.press('Escape');
+	// B learns the setting, then the host leaves.
+	await sendMessage(page, 'members may let people in now');
+	await waitForMessage(pageB, 'members may let people in now', 20000);
+	await page.getByTestId('leave-room-btn').click();
+
+	const contextC = await createSecondContext(browser);
+	const pageC = await contextC.newPage();
+	await joinRoom(pageC, roomId);
+	await expect(pageC.getByTestId('admission-waiting')).toBeVisible({ timeout: 30000 });
+	const requestAtB = pageB.getByTestId('admission-request');
+	await expect(requestAtB).toBeVisible({ timeout: 30000 });
+	await requestAtB.getByRole('button', { name: 'Let in' }).click();
+	await expect(pageC.getByTestId('admission-waiting')).toBeHidden({ timeout: 15000 });
+	await sendMessage(pageB, 'come in, C');
+	await waitForMessage(pageC, 'come in, C', 20000);
+	await sendMessage(pageC, 'hello B');
+	await waitForMessage(pageB, 'hello B', 20000);
+
+	await cleanup(contextC);
+	await cleanup(contextB);
+});

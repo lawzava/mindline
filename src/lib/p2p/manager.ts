@@ -256,6 +256,7 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 		roomId,
 		deviceId: admitSession.deviceId,
 		sign: (fields) => admitSession.rosterOp(fields),
+		vouch: (fields) => admitSession.voucher(fields),
 		conn: p2pConnection,
 		onAdmitted: (peerId, transport) => welcomePeer(peerId, transport, roomId),
 		onSelfAdmitted: (by) => setTimeout(() => requestSyncFrom(by, roomId), 300),
@@ -777,6 +778,10 @@ export function makeHost(deviceId: string): Promise<void> {
 
 export function setRoomApproval(on: boolean): Promise<void> {
 	return admissionCtl?.setApproving(on) ?? Promise.resolve();
+}
+
+export function setMembersAdmit(on: boolean): Promise<void> {
+	return admissionCtl?.setMembersAdmit(on) ?? Promise.resolve();
 }
 
 /**
