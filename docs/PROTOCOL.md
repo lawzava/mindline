@@ -141,6 +141,16 @@ to switch keys the user burns the room first.
   of the ECDSA SPKI alone.
 - Residual limit (documented, inherent to capability URLs): a key-holder can
   mint new identities; they cannot impersonate an existing deviceId.
+- **Safety numbers.** A device fingerprint is
+  `SHA-256(lp("mindline/safety/v1/device", spki_b64, kem_b64))`, covering both
+  hello keys. A pair's safety number is `SHA-512(lp("mindline/safety/v1/pair",
+  hex(lo), hex(hi)))` over the byte-sorted fingerprints, shown as 12 groups of
+  `uint40(5 bytes) mod 100000`; both sides see the same 60 digits. Comparing
+  them out of band confirms nobody substituted keys between the two devices
+  (the link alone proves membership, not identity). A person's verification
+  is stored locally as `(deviceId → fingerprint, name)` and applies across
+  rooms. The UI flags a verified device whose fingerprint changed, and a
+  different device presenting a verified device's name.
 
 **Quantum-signature posture.**
 Signatures stay classical ECDSA P-256, deliberately. The reasoning, in
