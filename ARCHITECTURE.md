@@ -25,7 +25,8 @@ fragments are not sent to the server.
 | `src/lib/stores/` | Svelte stores for user, room, messages, drafts, connection, delivery, transfers. |
 | `src/lib/components/` | Chat/layout/UI components; they render state and emit UI events, but do not own protocol rules. |
 | `src/routes/` | Landing/create/join flow and room lifecycle: load keys/history, initialize P2P, handle send/edit/delete/reaction/media UI events. |
-| `signaling-server.js` | Node `ws` server: origin/rate limits, in-memory room membership, server-assigned client IDs, SDP/ICE forwarding, encrypted relay forwarding, `/health`. |
+| `signaling-server.js` | Node `ws` server: origin/rate limits, per-IP and per-room caps, in-memory room membership, server-assigned client IDs, SDP/ICE forwarding, encrypted relay forwarding, TURN credential delivery, `/health`. |
+| `signaling-policy.js` | Pure helpers for the server: trusted-proxy client IP resolution, per-IP connection counting, room cap and TURN recipient rules. |
 
 ## Lifecycle of one message
 

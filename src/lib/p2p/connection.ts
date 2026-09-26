@@ -719,7 +719,7 @@ export class P2PConnection {
 	}
 
 	private buildRtcConfig(): RTCConfiguration {
-		const iceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
+		const iceServers: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
 		if (!this.config.strictDirect) {
 			if (this.config.turnServers?.length) iceServers.push(...this.config.turnServers);
 			if (this.managedIceServers.length) iceServers.push(...this.managedIceServers);

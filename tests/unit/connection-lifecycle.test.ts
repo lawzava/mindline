@@ -125,6 +125,13 @@ describe('P2P peer callback lifecycle', () => {
 		expect(pc.configuration?.iceCandidatePoolSize).toBe(0);
 	});
 
+	test('STUN goes to the operator CDN already in the path, never a new third party', async () => {
+		const pc = await join();
+		const urls = (pc.configuration?.iceServers ?? []).flatMap((s) => [s.urls].flat());
+		expect(urls).toContain('stun:stun.cloudflare.com:3478');
+		expect(urls.some((u) => u.includes('google'))).toBe(false);
+	});
+
 	test('a newly created connection gets a deadline without any state-change event', async () => {
 		vi.stubGlobal(
 			'RTCPeerConnection',
