@@ -29,6 +29,9 @@ importers:
       tailwind-variants:
         specifier: ^3.2.2
         version: 3.2.2(tailwind-merge@3.4.0)(tailwindcss@4.1.18)
+      uqr:
+        specifier: ^0.1.3
+        version: 0.1.3
       ws:
         specifier: ^8.14.2
         version: 8.18.3
@@ -2326,6 +2329,9 @@ packages:
     resolution: {integrity: sha512-N6uOhuW6zO95P3Mel2I2zMsbsanvvtgn6jVqJv4vbVcz/JN0OkL9suomjQGmWtxJQXOCqUJvquc1sMeNz/IwlA==}
     engines: {node: '>= 0.8.0'}
 
+  uqr@0.1.3:
+    resolution: {integrity: sha512-0rjE8iEJe4YmT9TOhwsZtqCMRLc5DXZUI2UEYUUg63ikBkqqE5EYWaI0etFe/5KUcmcYwLih2RND1kq+hrUJXA==}
+
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
@@ -4469,6 +4475,8 @@ snapshots:
   union@0.5.0:
     dependencies:
       qs: 6.14.1
+
+  uqr@0.1.3: {}
 
   uri-js@4.4.1:
     dependencies:
