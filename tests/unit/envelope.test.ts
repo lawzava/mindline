@@ -243,3 +243,73 @@ describe('device identity', () => {
 		expect(alice.deviceId).not.toBe(bob.deviceId);
 	});
 });
+
+describe('chained envelopes (§1.5)', () => {
+	const chain = { id: 'chain-abc', index: 7 };
+
+	test('the chain id and index ride in the header and are bound by AAD and signature', async () => {
+		const env = await sealEnvelope(body, {
+			key: gen1.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 1,
+			chain
+		});
+		expect(env).toMatchObject({ k: 'chain-abc', i: 7 });
+		const opened = await openEnvelope(env, {
+			key: gen1.msg,
+			roomId: ROOM,
+			senderPublicKey: alice.publicKey
+		});
+		expect(opened).toEqual(body);
+		for (const changed of [
+			{ ...env, i: 8 },
+			{ ...env, k: 'chain-xyz' },
+			{ ...env, k: undefined, i: undefined }
+		]) {
+			await expect(
+				openEnvelope(changed as Envelope, {
+					key: gen1.msg,
+					roomId: ROOM,
+					senderPublicKey: alice.publicKey
+				})
+			).rejects.toThrow();
+		}
+	});
+
+	test('only msg envelopes may carry a chain position, and a malformed one is refused', async () => {
+		await expect(
+			sealEnvelope(body, {
+				key: gen1.eph,
+				roomId: ROOM,
+				identity: alice,
+				klass: 'eph',
+				g: 1,
+				chain
+			})
+		).rejects.toThrow();
+		const env = await sealEnvelope(body, {
+			key: gen1.msg,
+			roomId: ROOM,
+			identity: alice,
+			klass: 'msg',
+			g: 1,
+			chain
+		});
+		for (const bad of [
+			{ ...env, i: -1 },
+			{ ...env, i: 1.5 },
+			{ ...env, k: '' },
+			{ ...env, k: 'x'.repeat(65) }
+		]) {
+			await expect(
+				openEnvelope(bad as Envelope, {
+					key: gen1.msg,
+					roomId: ROOM,
+					senderPublicKey: alice.publicKey
+				})
+			).rejects.toThrow();
+		}
+	});
+});

@@ -32,6 +32,10 @@ export interface Envelope {
 	n: string;
 	c: string;
 	sig?: string;
+	/** Sender-key chain id (§1.5), 'msg' only; with `i`, bound by AAD and signature. */
+	k?: string;
+	/** Index of this message in chain `k`. */
+	i?: number;
 }
 
 export interface SealOptions {
@@ -42,6 +46,8 @@ export interface SealOptions {
 	klass: EnvelopeClass;
 	/** Key generation (§1.4). Must be 0 for 'hs'. */
 	g: number;
+	/** Sender-key chain position (§1.5); `key` is then the chain's message key. */
+	chain?: { id: string; index: number };
 }
 
 export interface OpenOptions {
@@ -60,15 +66,32 @@ function isSigned(klass: EnvelopeClass): boolean {
 	return klass === 'msg' || klass === 'hs';
 }
 
-/** Version/room/sender/class/generation context (PROTOCOL.md §2). */
+/**
+ * Version/room/sender/class/generation context (PROTOCOL.md §2), plus the
+ * chain id and index for a chained message (§1.5). lp() length-prefixes
+ * every field, so a chained and an unchained context never coincide.
+ */
 function buildAad(
 	v: number,
 	roomId: string,
 	senderId: string,
 	klass: string,
-	g: number
+	g: number,
+	chain?: { id: string; index: number }
 ): Uint8Array<ArrayBuffer> {
-	return lp(String(v), roomId, senderId, klass, String(g));
+	return chain
+		? lp(String(v), roomId, senderId, klass, String(g), 'chain', chain.id, String(chain.index))
+		: lp(String(v), roomId, senderId, klass, String(g));
+}
+
+function validChain(k: unknown, i: unknown): boolean {
+	return (
+		typeof k === 'string' &&
+		k.length > 0 &&
+		k.length <= 64 &&
+		Number.isSafeInteger(i) &&
+		(i as number) >= 0
+	);
 }
 
 function concat(...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
@@ -82,10 +105,13 @@ function concat(...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
 }
 
 export async function sealEnvelope(body: unknown, opts: SealOptions): Promise<Envelope> {
-	const { key, roomId, identity, klass, g } = opts;
+	const { key, roomId, identity, klass, g, chain } = opts;
 	if (klass === 'hs' && g !== 0) throw new Error("'hs' envelopes must use generation 0");
+	if (chain && (klass !== 'msg' || !validChain(chain.id, chain.index))) {
+		throw new Error('only msg envelopes carry a chain position');
+	}
 	const nonce = crypto.getRandomValues(new Uint8Array(12));
-	const aad = buildAad(ENVELOPE_VERSION, roomId, identity.deviceId, klass, g);
+	const aad = buildAad(ENVELOPE_VERSION, roomId, identity.deviceId, klass, g, chain);
 	const plaintext = textEncoder.encode(JSON.stringify(body));
 	const ciphertext = new Uint8Array(
 		await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, additionalData: aad }, key, plaintext)
@@ -97,7 +123,8 @@ export async function sealEnvelope(body: unknown, opts: SealOptions): Promise<En
 		g,
 		s: identity.deviceId,
 		n: toB64url(nonce),
-		c: toB64url(ciphertext)
+		c: toB64url(ciphertext),
+		...(chain ? { k: chain.id, i: chain.index } : {})
 	};
 
 	if (isSigned(klass)) {
@@ -110,6 +137,36 @@ export async function sealEnvelope(body: unknown, opts: SealOptions): Promise<En
 	}
 
 	return envelope;
+}
+
+/**
+ * Check a signed envelope's signature alone, before any costly work the
+ * receiver would otherwise do for it (chain derivation, §1.5).
+ */
+export async function envelopeSignatureValid(
+	envelope: Envelope,
+	roomId: string,
+	senderPublicKey: CryptoKey
+): Promise<boolean> {
+	const nonce = fromB64url(envelope.n);
+	const ciphertext = fromB64url(envelope.c);
+	const signature = envelope.sig ? fromB64url(envelope.sig) : null;
+	if (!nonce || !ciphertext || !signature) return false;
+	const chained =
+		typeof envelope.k === 'string' && Number.isSafeInteger(envelope.i)
+			? { id: envelope.k, index: envelope.i! }
+			: undefined;
+	const aad = buildAad(ENVELOPE_VERSION, roomId, envelope.s, envelope.t, envelope.g, chained);
+	try {
+		return await crypto.subtle.verify(
+			{ name: 'ECDSA', hash: 'SHA-256' },
+			senderPublicKey,
+			signature as BufferSource,
+			concat(aad, nonce, ciphertext) as BufferSource
+		);
+	} catch {
+		return false;
+	}
 }
 
 export async function openEnvelope(envelope: Envelope, opts: OpenOptions): Promise<unknown> {
@@ -130,7 +187,18 @@ export async function openEnvelope(envelope: Envelope, opts: OpenOptions): Promi
 	const ciphertext = fromB64url(envelope.c);
 	if (!nonce || nonce.length !== 12 || !ciphertext) throw new Error('malformed envelope');
 
-	const aad = buildAad(ENVELOPE_VERSION, roomId, envelope.s, envelope.t, envelope.g);
+	const chained = envelope.k !== undefined || envelope.i !== undefined;
+	if (chained && (envelope.t !== 'msg' || !validChain(envelope.k, envelope.i))) {
+		throw new Error('malformed chain position');
+	}
+	const aad = buildAad(
+		ENVELOPE_VERSION,
+		roomId,
+		envelope.s,
+		envelope.t,
+		envelope.g,
+		chained ? { id: envelope.k!, index: envelope.i! } : undefined
+	);
 
 	if (isSigned(envelope.t)) {
 		if (!envelope.sig) throw new Error(`missing signature on ${envelope.t} envelope`);

@@ -510,6 +510,72 @@ pure-JS PQC exists as of 2026-06; WASM alternatives are likewise
 unaudited and would loosen CSP) is an accepted, stated
 caveat. ECDSA signatures remain classical.
 
+### 1.5 Sender-key chains (per-room, host's switch)
+
+Within a generation, every member seals under the same `k_msg(g)`, which
+stays in the keystore while the generation is retained (§1.4). A device
+read later therefore opens recorded traffic of the generations it still
+holds, about the last half hour. Sender-key chains close that window for
+rooms that want it.
+
+- **Switch.** The host turns chains on or off with an `admit` or `remove`
+  of the pseudo-device `*chains` (§3.8), the same compatible form as member
+  admission. Rooms without a founder anchor never use chains.
+- **Chain.** Each sender tab draws a random 32-byte chain key `ck_0` and a
+  random chain id for its current generation; a new generation starts a
+  new chain. Message `i` is sealed under
+  `AES-GCM(HKDF(ck_i, "mindline/v1/chain-msg"))`, then
+  `ck_{i+1} = HKDF(ck_i, "mindline/v1/chain-next")` and `ck_i` is
+  overwritten. Chain state is in memory only; a reload starts a new chain.
+  Chain use is serialized, so no two messages share an index.
+- **Envelope.** A chained `msg` envelope carries the chain id `k` and index
+  `i`; the AAD becomes `lp(str(v), roomId, s, t, str(g), "chain", k, str(i))`,
+  and the signature covers it as before. The receiver checks the signature
+  before any chain work, then opens it only with the chain key it was
+  granted, never the generation key.
+- **Chain keys.** Each tab also draws an X-Wing key pair used only to
+  receive chain grants, held in memory and never stored. It sends the
+  public key to each member it talks to as a signed `chain-key` body, and
+  answers one with its own. Until a member has sent its key, messages to it
+  stay under the generation key.
+- **Grant.** Before its first chained message to a member, the sender sends
+  a `chain-grant` `{g, k, i, wrap}`: its current chain key wrapped to that
+  member's in-memory chain key, with wrap AAD
+  `lp("chain-wrap", roomId, g, sender/k/i, recipient)`, sealed as an
+  ordinary `msg` at the generation the member holds (a grant that would be
+  sealed at a newer one is not sent; the generation grant goes first). A
+  grant re-sent by another member, naming another generation, or addressed
+  to another tab unwraps to nothing; a grant never moves a held chain
+  backwards; a member granted at index `i` cannot open anything before
+  `i`. A receiver keeps at most 4 chains per sender (256 in all). One that
+  cannot open a chained message (no grant, or more than 2000 steps ahead)
+  asks the sender with `chain-request`, at most 3 times per chain, 5
+  seconds apart; the sender answers only for its current chain, at most
+  once per 5 seconds per member, with its current position, so what was
+  already sent stays unreadable to the asker.
+- **Receiving.** A receiver advances a chain to the envelope's index (at
+  most 2000 steps at once), derives that message key, and commits the new
+  position only after the envelope decrypts and passes the replay check.
+  An index already passed is refused. Chains of generations the receiver
+  no longer holds are dropped.
+- **Paths.** Chain keys, grants, and requests never relay (§3.6), and a
+  chained envelope never falls back to the relay, so chains run on direct
+  paths only; relayed messages keep the generation key, as relay-only peers
+  cannot receive rotations either. Drafts (`eph`, which carry the live text
+  being typed), handshake (`hs`) bodies, and chain bodies themselves are
+  not chained.
+- **What it buys.** A device read later (its storage, after the tab is
+  gone) holds no chain keys and no chain-receiving key, so it cannot open
+  recorded chained traffic it sent or received. Recording direct traffic
+  needs a break of DTLS (for example, a future quantum computer against its
+  classical key exchange). Limits: drafts stay under `k_eph(g)`; messages
+  sent before a member's chain key arrives, and all relayed traffic, stay
+  under `k_msg(g)`; reading a running tab's memory yields its chain-receiving
+  key, which opens every recorded grant to that tab, so everything it received
+  chained since it opened (the key is per tab, not per generation);
+  versions that predate chains cannot read chained messages, so turning
+  chains on shuts out any member still running one until it reloads.
+
 ## 2. Envelope (everything on the wire)
 
 Every DataChannel payload and every relayed payload is exactly one JSON

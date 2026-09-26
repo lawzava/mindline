@@ -267,6 +267,7 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 	admissionCtl = ctl;
 	await ctl.load();
 	p2pConnection.setAdmission((deviceId) => ctl.isAdmitted(deviceId));
+	p2pConnection.setChains(() => ctl.chainsOn);
 	startRotation(config?.rotationMaxAgeMs ?? ROTATION.maxAgeMs);
 
 	// Set up handlers
@@ -778,6 +779,10 @@ export function makeHost(deviceId: string): Promise<void> {
 
 export function setRoomApproval(on: boolean): Promise<void> {
 	return admissionCtl?.setApproving(on) ?? Promise.resolve();
+}
+
+export function setChains(on: boolean): Promise<void> {
+	return admissionCtl?.setChains(on) ?? Promise.resolve();
 }
 
 export function setMembersAdmit(on: boolean): Promise<void> {

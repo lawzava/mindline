@@ -29,6 +29,8 @@ export interface KemWrapContext {
 	g: number;
 	gid: string;
 	recipientDeviceId: string;
+	/** What the secret is for: 'grant-wrap' (generation, default) or 'chain-wrap' (§1.5). */
+	purpose?: 'grant-wrap' | 'chain-wrap';
 }
 
 export function generateKemSeed(): Uint8Array {
@@ -57,7 +59,7 @@ export function isUsableKemPublicKey(publicKey: Uint8Array): boolean {
 }
 
 function wrapAad(ctx: KemWrapContext): Uint8Array {
-	return lp('grant-wrap', ctx.roomId, String(ctx.g), ctx.gid, ctx.recipientDeviceId);
+	return lp(ctx.purpose ?? 'grant-wrap', ctx.roomId, String(ctx.g), ctx.gid, ctx.recipientDeviceId);
 }
 
 async function wrapKeyFrom(sharedSecret: Uint8Array, usage: KeyUsage): Promise<CryptoKey> {

@@ -12,6 +12,7 @@
 import { writable } from 'svelte/store';
 import {
 	ADMIT_LIMIT,
+	CHAINS,
 	DELEGATE,
 	Roster,
 	type RosterAction,
@@ -35,6 +36,8 @@ export interface AdmissionState {
 	host: boolean;
 	/** The host lets members let people in (§3.8 vouchers). */
 	membersAdmit: boolean;
+	/** The host turned sender-key chains on (§1.5). */
+	chains: boolean;
 	/** This device may answer join requests: the host, or a member when allowed. */
 	canAdmit: boolean;
 	/** Join requests shown to the host (a few at a time). */
@@ -50,6 +53,7 @@ const initial = (): AdmissionState => ({
 	anchored: false,
 	host: false,
 	membersAdmit: false,
+	chains: false,
 	canAdmit: false,
 	pending: new Map(),
 	self: 'in',
@@ -272,6 +276,19 @@ export class AdmissionController {
 	}
 
 	/** Let members let people in (§3.8), or stop them. Host only. */
+	/** Seal direct messages under sender-key chains (§1.5), or stop. Host only. */
+	async setChains(on: boolean): Promise<void> {
+		if (!this.roster.anchored || on === this.roster.chains) return;
+		if (!(await this.change(CHAINS, on ? 'admit' : 'remove'))) {
+			throw new Error('only the host can change how messages are keyed');
+		}
+	}
+
+	/** Whether this room seals direct messages under sender-key chains. */
+	get chainsOn(): boolean {
+		return this.roster.chains;
+	}
+
 	async setMembersAdmit(on: boolean): Promise<void> {
 		if (!this.roster.anchored || on === this.roster.membersAdmit) return;
 		// Admissions the host has seen stay; unseen ones end with the switch.
@@ -392,10 +409,7 @@ export class AdmissionController {
 				'The host signed conflicting changes; start a new room to be sure who is in.'
 			);
 		}
-		if (
-			this.roster.length >= 512 ||
-			(action === 'admit' && device !== DELEGATE && this.roster.length >= ADMIT_LIMIT)
-		) {
+		if (this.roster.length >= 512 || (action === 'admit' && this.roster.length >= ADMIT_LIMIT)) {
 			throw new Error("This room's member history is full. Start a new room.");
 		}
 		const op = await this.deps.sign({ ...this.roster.nextLink(), device, action });
@@ -443,6 +457,7 @@ export class AdmissionController {
 			anchored: this.roster.anchored,
 			host: this.amHost,
 			membersAdmit: this.roster.membersAdmit,
+			chains: this.roster.chains,
 			canAdmit: this.canAdmit,
 			pending,
 			self,
