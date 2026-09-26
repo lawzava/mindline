@@ -140,9 +140,11 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
 7. **Code trust.** Shipped: reproducible builds, a public bundle check,
    and a daily watchdog (docs/BUNDLE_VERIFICATION.md); a pinned verifier or
    signed client remains.
-8. **Protect saved history (next).** The larger exposure once a device is
-   taken: wrap `k_storage` with a device key unlocked by a passkey (WebAuthn
-   PRF), and add disappearing messages so history does not outlive its use.
+8. **Protect saved history.** The larger exposure once a device is taken.
+   Shipped: disappearing messages (any member sets the room's timer; each
+   message's lifetime is signed with it; every device deletes expired
+   messages and their media, and sync never serves them). Next: wrap
+   `k_storage` with a device key unlocked by a passkey (WebAuthn PRF).
 
 Product:
 

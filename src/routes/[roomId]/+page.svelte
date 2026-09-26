@@ -65,8 +65,18 @@
 		Bell,
 		BellOff,
 		Flame,
-		DoorClosed
+		DoorClosed,
+		Timer
 	} from 'lucide-svelte';
+	import {
+		TIMER_CHOICES,
+		nextExpiry,
+		nextTimerTimestamp,
+		roomTimer,
+		timerLabel,
+		timerNotice,
+		withoutExpired
+	} from '$lib/disappearing';
 	import { copyInvite, rememberInvite, shareInvite } from '$lib/share';
 	import ReadingSettings from '$lib/components/ReadingSettings.svelte';
 	import { loadInviteKey } from '$lib/crypto/keystore';
@@ -356,34 +366,93 @@
 		};
 	}
 
+	/** A message from this device, ready to store and broadcast. */
+	function ownMessage(room: string, content: string, extra: Partial<Message>): Message {
+		return {
+			id: crypto.randomUUID(),
+			sender_id: $user.id,
+			sender_name: $user.name,
+			message_type: 'Text',
+			content,
+			timestamp: Date.now(),
+			room_id: room,
+			status: 'Sent',
+			edited: false,
+			edit_timestamp: null,
+			original_content: null,
+			reply_to: null,
+			reactions: {},
+			mentions: [],
+			local_timestamp: Date.now(),
+			delivery_attempts: 0,
+			size_bytes: new TextEncoder().encode(content).length,
+			sender_device: getSessionDeviceId() ?? undefined,
+			...extra
+		};
+	}
+
+	// Disappearing messages (PROTOCOL.md §4): the room's timer is the
+	// latest signed timer event; new messages carry it as their lifetime.
+	const timer = $derived(roomTimer($currentRoomMessages));
+
+	function setDisappearing(ms: number) {
+		if (!roomId || ms === timer) return;
+		const content = timerNotice(ms);
+		const message = ownMessage(roomId, content, {
+			message_type: 'Timer',
+			timer: ms,
+			timestamp: nextTimerTimestamp(messages.getRoomMessages(roomId))
+		});
+		messages.addMessage(roomId, message);
+		void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
+		broadcastChat(content, message.id);
+	}
+
+	function sweepExpired(id: string) {
+		const { kept, expired } = withoutExpired(messages.getRoomMessages(id));
+		if (expired.length === 0) return;
+		messages.setRoomMessages(id, kept);
+		// The save also deletes the stored page copy and the media (§4).
+		void saveRoomMessages(id, kept);
+	}
+
+	// Each message goes when its time comes, whoever is looking. The tick
+	// re-runs this after every wake-up, including the hourly ones that find
+	// nothing due yet.
+	let sweepTick = $state(0);
+	$effect(() => {
+		void sweepTick;
+		const id = roomId;
+		const list = $currentRoomMessages;
+		if (!id) return;
+		if (withoutExpired(list).expired.length > 0) {
+			sweepExpired(id);
+			return;
+		}
+		const next = nextExpiry(list);
+		if (next === null) return;
+		// Capped: long timers re-arm hourly instead of trusting one huge delay.
+		const handle = setTimeout(
+			() => {
+				sweepExpired(id);
+				sweepTick++;
+			},
+			Math.min(next - Date.now(), 3_600_000)
+		);
+		return () => clearTimeout(handle);
+	});
+
 	async function handleSend(content: string) {
 		if (!roomId || isSending) return;
 
 		isSending = true;
 
 		try {
-			const messageId = crypto.randomUUID();
-
-			const message: Message = {
-				id: messageId,
-				sender_id: $user.id,
-				sender_name: $user.name,
-				message_type: 'Text',
-				content,
-				timestamp: Date.now(),
-				room_id: roomId,
-				status: 'Sent',
-				edited: false,
-				edit_timestamp: null,
-				original_content: null,
+			const message = ownMessage(roomId, content, {
 				reply_to: replyTarget?.id ?? null,
-				reactions: {},
-				mentions: [],
-				local_timestamp: Date.now(),
-				delivery_attempts: 0,
-				size_bytes: new TextEncoder().encode(content).length,
-				sender_device: getSessionDeviceId() ?? undefined
-			};
+				...(timer ? { ttl: timer } : {})
+			});
+			const messageId = message.id;
 
 			messages.addMessage(roomId, message);
 			replyTarget = null;
@@ -689,7 +758,20 @@
 					>
 						{roomLabel}
 					</button>
-					<ConnectionStatus />
+					<div class="flex max-w-full items-center gap-2">
+						<ConnectionStatus />
+						{#if timer}
+							<span
+								class="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+								title={`Messages disappear after ${timerLabel(timer)}`}
+								data-testid="timer-badge"
+							>
+								<Timer class="h-3 w-3" aria-hidden="true" />
+								<span class="sr-only">Messages disappear after</span>
+								{timerLabel(timer)}
+							</span>
+						{/if}
+					</div>
 				</div>
 				<ReadingSettings compact class="shrink-0 text-muted-foreground" />
 				<Button
@@ -776,6 +858,22 @@
 										Dark theme
 									{/if}
 								</button>
+								<label
+									class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+								>
+									<Timer class="h-4 w-4 text-muted-foreground" />
+									<span class="flex-1 text-left">Disappearing messages</span>
+									<select
+										value={timer}
+										onchange={(e) => setDisappearing(Number(e.currentTarget.value))}
+										class="rounded-sm bg-transparent text-xs text-muted-foreground outline-ring/50"
+										data-testid="timer-select"
+									>
+										{#each TIMER_CHOICES as choice (choice.ms)}
+											<option value={choice.ms}>{choice.label}</option>
+										{/each}
+									</select>
+								</label>
 								{#if $admission.anchored && $admission.host}
 									<button
 										onclick={() => admissionAction(setRoomApproval(!$admission.approving))}

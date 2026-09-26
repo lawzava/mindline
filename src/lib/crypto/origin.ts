@@ -25,6 +25,10 @@ export interface OriginFields {
 	editedAt: number | null;
 	/** The message this one answers, or '' (a quote is part of what was said). */
 	replyTo: string;
+	/** Lifetime in ms (§4), or null for a message that stays. */
+	ttl: number | null;
+	/** Timer event only: the room's new lifetime, 0 = off. */
+	timer: number | null;
 }
 
 /** The signed state of a stored message. */
@@ -45,13 +49,20 @@ export function originOf(roomId: string, msg: Message): OriginFields {
 		kind,
 		body,
 		editedAt: kind === 'text' && msg.edited ? (msg.edit_timestamp ?? null) : null,
-		replyTo: kind === 'deleted' ? '' : (msg.reply_to ?? '')
+		replyTo: kind === 'deleted' ? '' : (msg.reply_to ?? ''),
+		// A deletion keeps its lifetime: the tombstone expires with the message.
+		ttl: msg.ttl ? msg.ttl : null,
+		timer: typeof msg.timer === 'number' ? msg.timer : null
 	};
 }
 
+/**
+ * Messages that stay keep the v1 form, which older clients verify. A
+ * lifetime or timer setting moves the signature to v2, so a copy with one
+ * stripped, added, or changed no longer verifies under either label.
+ */
 function originBytes(f: OriginFields): Uint8Array<ArrayBuffer> {
-	return lp(
-		'mindline/v1/origin',
+	const common = [
 		f.roomId,
 		f.id,
 		f.device,
@@ -60,6 +71,13 @@ function originBytes(f: OriginFields): Uint8Array<ArrayBuffer> {
 		f.body,
 		f.editedAt === null ? '' : String(f.editedAt),
 		f.replyTo
+	];
+	if (f.ttl === null && f.timer === null) return lp('mindline/v1/origin', ...common);
+	return lp(
+		'mindline/v2/origin',
+		...common,
+		f.ttl === null ? '' : String(f.ttl),
+		f.timer === null ? '' : String(f.timer)
 	);
 }
 

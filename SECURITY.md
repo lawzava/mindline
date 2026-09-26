@@ -66,6 +66,10 @@ detail: `docs/PROTOCOL.md` §6 and `docs/CLAIMS.md`.)
 - **Peers see each other's IP addresses** when connecting directly (no TURN).
 - **History at rest is encrypted under a link-derived key (`k_storage`)** that
   does not ratchet; it is not forward-secret against later link disclosure.
+  Rooms with a disappearing-messages timer keep only what has not expired.
+- **Disappearing messages rely on every member's device.** A member can keep
+  what it saw (screenshots, an older or modified client). Deletion happens by
+  each device's clock when Mindline runs on it (`docs/PROTOCOL.md` §4).
 - **Classical signatures (ECDSA P-256) are quantum-forgeable.** This is an
   authenticity risk against link-holders only, not a confidentiality break, and
   has no harvest-now-decrypt-later exposure (`docs/PROTOCOL.md` §1.3).
