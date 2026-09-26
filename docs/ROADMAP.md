@@ -126,8 +126,11 @@ Product:
 2. ~~Replies, copy text, and jump-to-latest.~~ Shipped: replies quote from
    local history, the quote jumps to the original, and the signature covers
    the quoted id.
-3. Recent rooms as the home screen for returning users: last message,
-   unread dot, who is online.
+3. ~~Recent rooms as the home screen.~~ Shipped: each recent room shows the
+   last thing said, decrypted from this device's history for display only.
+   Not applicable: unread dots (messages only arrive while you are in the
+   room) and who is online (it would mean probing the signaling server for
+   rooms you are not in, which tells the operator you are watching them).
 4. ~~QR invite on the empty-room screen for phone-to-phone sharing.~~ Shipped.
 5. ~~Installable PWA.~~ Shipped as manifest, icons, and home-screen meta;
    no service worker until the update-check model (security item 6) is
