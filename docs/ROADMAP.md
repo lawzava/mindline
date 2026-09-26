@@ -89,9 +89,9 @@ UX:
 
 Security (from the audit; see PROTOCOL.md §6 for accepted limits):
 
-1. **Safety numbers.** A per-room fingerprint or QR over members' device
-   keys, with key-change warnings. Signal-grade identity verification is
-   fully possible in a web app and nothing like it exists today.
+1. **Safety numbers.** Shipped: per-pair 60-digit numbers in the peer list,
+   locally stored verifications, and warnings for changed keys or a
+   borrowed verified name. A QR form comes with the QR invite work.
 2. **Signed history.** Sign each message at origin and carry the signature
    through sync, so served history is verifiable (closes the §3.5 caveat).
 3. **Signaling hardening.** Done: client-IP headers honored only from

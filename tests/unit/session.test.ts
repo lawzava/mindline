@@ -51,6 +51,22 @@ describe('CryptoSession', () => {
 		expect(await b.acceptHello(hello, bind('bind'))).toBeNull();
 	});
 
+	test('two verified peers see the same safety number for each other', async () => {
+		const key = createRoomKey();
+		const a = (await CryptoSession.create('room-s', key))!;
+		// Separate devices: each needs its own keystore and identity.
+		indexedDB = new IDBFactory();
+		const b = (await CryptoSession.create('room-s', key))!;
+		await b.acceptHello(await a.makeHello('Alice', bind('bind')), bind('bind'));
+		await a.acceptHello(await b.makeHello('Bob', bind('bind')), bind('bind'));
+		const fromA = await a.safetyFor(b.deviceId);
+		const fromB = await b.safetyFor(a.deviceId);
+		expect(fromA?.number).toMatch(/^(\d{5} ){11}\d{5}$/);
+		expect(fromA?.number).toBe(fromB?.number);
+		expect(fromA?.fingerprint).not.toBe(fromB?.fingerprint);
+		expect(await a.safetyFor('nobody')).toBeNull();
+	});
+
 	test('messages round-trip between verified peers', async () => {
 		const { a, b } = await twoSessions();
 		await b.acceptHello(await a.makeHello('Alice', bind('bind')), bind('bind'));

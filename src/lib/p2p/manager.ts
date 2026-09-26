@@ -726,6 +726,13 @@ export function getP2PConnection(): P2PConnection | null {
 }
 
 /** The authenticated device id for this session's room, if joined. */
+/** Safety number with a connected, hello-verified peer (PROTOCOL.md §1.3). */
+export async function getPeerSafety(
+	deviceId: string
+): Promise<{ number: string; fingerprint: string } | null> {
+	return (await cryptoSession?.safetyFor(deviceId)) ?? null;
+}
+
 export function getSessionDeviceId(): string | null {
 	return cryptoSession?.deviceId ?? null;
 }

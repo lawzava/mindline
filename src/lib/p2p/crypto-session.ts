@@ -9,6 +9,7 @@
 import { fromB64url, toB64url } from '$lib/crypto/b64';
 import { ENVELOPE_VERSION, openEnvelope, sealEnvelope, type Envelope } from '$lib/crypto/envelope';
 import { lp } from '$lib/crypto/lp';
+import { deviceFingerprint, safetyNumber, toHex } from '$lib/crypto/safety';
 import {
 	deviceIdFromSpki,
 	importPeerPublicKey,
@@ -236,6 +237,20 @@ export class CryptoSession {
 
 	isVerified(deviceId: string): boolean {
 		return this.peers.has(deviceId);
+	}
+
+	/**
+	 * Safety number with a hello-verified peer (§1.3), plus the peer's hex
+	 * fingerprint so a person's verification can be pinned to exact keys.
+	 */
+	async safetyFor(deviceId: string): Promise<{ number: string; fingerprint: string } | null> {
+		const peer = this.peers.get(deviceId);
+		if (!peer) return null;
+		const [mine, theirs] = await Promise.all([
+			deviceFingerprint(toB64url(this.identity.spki), toB64url(this.kem.publicKey)),
+			deviceFingerprint(peer.spki, peer.kem)
+		]);
+		return { number: await safetyNumber(mine, theirs), fingerprint: toHex(theirs) };
 	}
 
 	peerName(deviceId: string): string | undefined {

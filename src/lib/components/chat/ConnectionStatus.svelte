@@ -11,7 +11,9 @@
 		relayedPeers,
 		rotationStranded
 	} from '$lib/stores';
-	import { reconnectP2P } from '$lib/p2p';
+	import { getPeerSafety, reconnectP2P } from '$lib/p2p';
+	import { verified, verifyStatus, type VerifyStatus } from '$lib/stores/verified';
+	import SafetyNumberDialog from './SafetyNumberDialog.svelte';
 	import { Loader2, User } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { cn } from '$lib/utils';
@@ -77,6 +79,60 @@
 				$connectionStatus === 'local')
 	);
 
+	// Safety numbers (PROTOCOL.md §1.3) for connected peers, computed once
+	// per device; the cache is per page, so a reload recomputes from the
+	// keys the peer presents now.
+	let safety = $state<Record<string, { number: string; fingerprint: string }>>({});
+	const pendingSafety = new Set<string>();
+	$effect(() => {
+		for (const id of $connectedPeers) {
+			if (safety[id] || pendingSafety.has(id)) continue;
+			pendingSafety.add(id);
+			void getPeerSafety(id).then((s) => {
+				pendingSafety.delete(id);
+				if (s) safety = { ...safety, [id]: s };
+			});
+		}
+	});
+
+	function statusOf(id: string): VerifyStatus {
+		const s = safety[id];
+		if (!s) return 'unverified';
+		return verifyStatus($verified, id, s.fingerprint, $peerNames.get(id));
+	}
+
+	// Warn once per device: changed keys, or a stranger using a verified name.
+	const warned = new Set<string>();
+	$effect(() => {
+		for (const id of $connectedPeers) {
+			const st = statusOf(id);
+			if ((st !== 'changed' && st !== 'impostor') || warned.has(id)) continue;
+			warned.add(id);
+			const name = getPeerDisplayName(id);
+			toast.warning(
+				st === 'changed'
+					? `${name}'s safety number changed. Compare it again before trusting them.`
+					: `${name} is not the device you verified under that name.`,
+				{ duration: 10000 }
+			);
+		}
+	});
+
+	let dialogPeer = $state<string | null>(null);
+	let dialogOpen = $state(false);
+
+	function markVerified() {
+		const s = dialogPeer ? safety[dialogPeer] : null;
+		if (dialogPeer && s) verified.mark(dialogPeer, s.fingerprint, getPeerDisplayName(dialogPeer));
+	}
+
+	const statusText: Record<VerifyStatus, string> = {
+		verified: 'Verified',
+		changed: 'Keys changed',
+		impostor: 'Not verified',
+		unverified: 'Verify'
+	};
+
 	async function handleReconnect() {
 		isManualReconnecting = true;
 		try {
@@ -121,15 +177,33 @@
 						<div class="max-h-48 space-y-1 overflow-y-auto">
 							{#each $connectedPeers as peerId (peerId)}
 								{@const isRelayed = $relayedPeers.includes(peerId)}
+								{@const vs = statusOf(peerId)}
 								<div class="flex items-center gap-2 rounded-md px-2 py-1.5">
 									<span
 										class={cn('h-1.5 w-1.5 rounded-full', isRelayed ? 'bg-warning' : 'bg-success')}
 									></span>
 									<User class="h-3.5 w-3.5 text-muted-foreground" />
 									<span class="truncate text-sm">{getPeerDisplayName(peerId)}</span>
-									{#if isRelayed}
-										<span class="ml-auto shrink-0 text-xs text-muted-foreground">relay</span>
-									{/if}
+									<span class="ml-auto flex shrink-0 items-center gap-2">
+										{#if isRelayed}
+											<span class="text-xs text-muted-foreground">relay</span>
+										{/if}
+										<button
+											onclick={() => {
+												dialogPeer = peerId;
+												dialogOpen = true;
+											}}
+											class={cn(
+												'rounded-sm text-xs font-medium outline-ring/50 hover:underline',
+												vs === 'verified' && 'text-success',
+												(vs === 'changed' || vs === 'impostor') && 'text-destructive',
+												vs === 'unverified' && 'text-primary'
+											)}
+											data-testid="verify-status"
+										>
+											{statusText[vs]}
+										</button>
+									</span>
 								</div>
 							{/each}
 						</div>
@@ -173,3 +247,12 @@
 		{/if}
 	{/if}
 </div>
+
+<SafetyNumberDialog
+	bind:open={dialogOpen}
+	name={dialogPeer ? getPeerDisplayName(dialogPeer) : ''}
+	number={dialogPeer ? (safety[dialogPeer]?.number ?? null) : null}
+	status={dialogPeer ? statusOf(dialogPeer) : 'unverified'}
+	onVerify={markVerified}
+	onUnverify={() => dialogPeer && verified.unmark(dialogPeer)}
+/>
