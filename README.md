@@ -46,7 +46,10 @@ one of them is a bug.
 
 - **The link is a bearer capability.** Anyone who obtains it (including via
   a leaked chat where it was shared, or browser history sync to a cloud
-  account without E2E sync enabled) gets full access, including history.
+  account without E2E sync enabled) can reach the room. New rooms ask the
+  host to let each newcomer in, and the host can remove people; a room
+  switched to open grants full access, including history, to anyone with
+  the link.
 - **Forward secrecy is scoped, not absolute.** Room keys rotate on joins
   and leaves (fresh random generations, PROTOCOL.md §1.4), so ciphertext
   the signaling operator archived while relaying stays unreadable even if

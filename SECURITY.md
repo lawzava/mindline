@@ -54,8 +54,10 @@ detail: `docs/PROTOCOL.md` §6 and `docs/CLAIMS.md`.)
   CryptoKeys, so an attacker cannot exfiltrate the key bytes — but same-origin
   script can *use* the keys in place. The strict CSP is the mitigation.
 - **The invite link is a bearer capability.** Anyone who obtains the full link
-  (`#k=…`) can read and write the room, including history. Leaking the link is
-  not a vulnerability in Mindline.
+  (`#k=…`) can reach the room. In a room that asks before letting people in
+  (the default for new rooms), the room's host must let them in before they
+  receive anything; in an open room they can read and write, including history.
+  Leaking the link is not a vulnerability in Mindline.
 - **Rendezvous metadata is visible to the operator.** The signaling server sees a
   key-derived rendezvous name; Cloudflare also sees room IDs in page URLs.
   Both see per-device identifiers, IP addresses, and timing —

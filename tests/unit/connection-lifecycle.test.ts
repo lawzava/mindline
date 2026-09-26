@@ -89,6 +89,7 @@ describe('P2P peer callback lifecycle', () => {
 			sealMessage: vi.fn(async (body: Record<string, unknown>) => JSON.stringify(body)),
 			sealDraft: vi.fn(async (body: Record<string, unknown>) => JSON.stringify(body)),
 			grantWireFor: vi.fn(async () => '{"type":"rekey-grant"}'),
+			sealAdmission: vi.fn(async () => '{"hs":true}'),
 			mintGeneration: vi.fn(async () => {}),
 			verifySignalingAuth: vi.fn(async () => true),
 			signalingAuth: vi.fn(async () => 'auth')
@@ -353,6 +354,59 @@ describe('P2P peer callback lifecycle', () => {
 		await vi.advanceTimersByTimeAsync(0);
 		expect(session.openMessage).toHaveBeenCalledWith(expect.anything(), hello.deviceId);
 		expect(message).toHaveBeenCalledWith(expect.anything(), hello.deviceId);
+	});
+
+	describe('admission gate (PROTOCOL.md §3.8)', () => {
+		test('a device that is not let in receives no messages, drafts, grants, or media', async () => {
+			connection.setAdmission(() => false);
+			session.generation = { g: 2, gid: 'generation-2' };
+			const pc = await join();
+			await verify(pc);
+			// Our own hello goes out during the handshake; count only what follows.
+			const sent = () => pc.channels.flatMap((c) => c.send.mock.calls).length;
+			const afterHandshake = sent();
+			connection.broadcast({ type: 'chat', content: 'secret' } as unknown as TypedP2PMessage);
+			connection.broadcast({ type: 'typing', content: 'draft' } as unknown as TypedP2PMessage);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(sent()).toBe(afterHandshake);
+			expect(session.sealMessage).not.toHaveBeenCalled();
+			expect(session.sealDraft).not.toHaveBeenCalled();
+			expect(session.grantWireFor).not.toHaveBeenCalled();
+			expect(connection.openMediaChannel(hello.deviceId, 'media-x')).toBeNull();
+		});
+
+		test('key grants from a device that is not let in are ignored', async () => {
+			connection.setAdmission(() => false);
+			const pc = await join();
+			await verify(pc);
+			session.openMessage.mockResolvedValueOnce({ type: 'rekey-grant' });
+			pc.channels[0].onmessage?.({ data: '{}' });
+			await vi.advanceTimersByTimeAsync(0);
+			expect(session.handleRekeyGrant).not.toHaveBeenCalled();
+		});
+
+		test('admission notices still reach a waiting device, without a key grant', async () => {
+			connection.setAdmission(() => false);
+			session.generation = { g: 2, gid: 'generation-2' };
+			const pc = await join();
+			await verify(pc);
+			await connection.sendAdmission(hello.deviceId, { type: 'admission', state: 'pending' });
+			expect(session.sealAdmission).toHaveBeenCalledWith({ type: 'admission', state: 'pending' });
+			expect(pc.channels[0].send).toHaveBeenCalledWith('{"hs":true}');
+			expect(session.grantWireFor).not.toHaveBeenCalled();
+		});
+
+		test('once let in, the device gets its grant before the next message', async () => {
+			let admitted = false;
+			connection.setAdmission(() => admitted);
+			session.generation = { g: 2, gid: 'generation-2' };
+			const pc = await join();
+			await verify(pc);
+			admitted = true;
+			connection.broadcast({ type: 'chat', content: 'welcome' } as unknown as TypedP2PMessage);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(session.grantWireFor).toHaveBeenCalled();
+		});
 	});
 
 	test('stale channel messages are ignored, including decryption already in progress', async () => {

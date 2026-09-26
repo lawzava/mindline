@@ -3,6 +3,7 @@
  */
 
 import type { Message, MessageOrigin } from '$lib/types/message';
+import type { RosterOp } from './roster';
 import type { MediaAbort, MediaAccept, MediaOffer } from '$lib/media/transfer';
 
 // ============================================
@@ -220,7 +221,22 @@ export type TypedP2PMessage =
 	| MediaOffer
 	| MediaAccept
 	| MediaAbort
-	| ReadyMessage;
+	| ReadyMessage
+	| RosterMessage
+	| AdmissionMessage;
+
+/** Signed roster changes between members (PROTOCOL.md §3.8). */
+export interface RosterMessage {
+	type: 'roster';
+	ops: RosterOp[];
+}
+
+/** A member tells a device where it stands (handshake class, §3.8). */
+export interface AdmissionMessage {
+	type: 'admission';
+	state: 'pending' | 'admitted' | 'denied' | 'removed';
+	roster?: RosterOp[];
+}
 
 // Legacy P2PMessage type for backwards compatibility
 export interface P2PMessage {
