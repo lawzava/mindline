@@ -91,8 +91,8 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
 
 1. **Safety numbers.** Shipped: per-pair 60-digit numbers in the peer list,
    locally stored verifications, and warnings for changed keys or a
-   borrowed verified name. A scannable QR form of the safety number is not
-   built yet.
+   borrowed verified name. In person, one side shows the number as a QR
+   code and the other scans it: a match marks the device verified.
 2. **Signed history.** Shipped: authors sign each message state, history
    carries the signatures, forged copies are dropped, and unsigned copies
    from older clients show as "unverified copy". Media offers are signed on
