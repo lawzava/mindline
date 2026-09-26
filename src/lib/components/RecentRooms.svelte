@@ -4,6 +4,29 @@
 	import { senderHue } from '$lib/utils';
 	import { Input } from '$lib/components/ui/input';
 	import { Pencil, X, Check, CornerUpLeft } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { loadRoomMessages } from '$lib/storage/messages';
+	import { previewOf } from '$lib/preview';
+
+	// The last line said in each of the most recent rooms, decrypted from this
+	// device's history for display only (never stored).
+	const PREVIEWED = 10;
+	let previews = $state<Record<string, string>>({});
+	onMount(() => {
+		let cancelled = false;
+		void (async () => {
+			for (const room of $recentRooms.slice(0, PREVIEWED)) {
+				try {
+					const line = previewOf(await loadRoomMessages(room.id), $user.id);
+					if (cancelled) return;
+					if (line) previews = { ...previews, [room.id]: line };
+				} catch {
+					/* no keys or history on this device: show the time only */
+				}
+			}
+		})();
+		return () => (cancelled = true);
+	});
 
 	let editingId = $state<string | null>(null);
 	let editValue = $state('');
@@ -124,8 +147,12 @@
 						aria-label={`Rejoin ${label(room)}`}
 					>
 						<span class="block truncate text-sm font-medium">{label(room)}</span>
-						<span class="block truncate text-xs text-muted-foreground">
-							{relativeTime(room.lastActive)}
+						<span class="flex min-w-0 gap-1 text-xs text-muted-foreground">
+							{#if previews[room.id]}
+								<span class="min-w-0 truncate" data-testid="room-preview">{previews[room.id]}</span>
+								<span aria-hidden="true">·</span>
+							{/if}
+							<span class="shrink-0">{relativeTime(room.lastActive)}</span>
 						</span>
 					</button>
 					<button

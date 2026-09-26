@@ -349,3 +349,13 @@ test('reading history shows a jump-to-latest button that returns to the bottom',
 		page.getByTestId('message-list').getByText('sent from history', { exact: true })
 	).toBeInViewport();
 });
+
+test('recent rooms show the last thing said, decrypted on this device', async ({ page }) => {
+	await joinRoom(page, generateTestRoomId('preview'));
+	await page.getByTestId('message-input').fill('see you at nine');
+	await page.getByTestId('send-btn').click();
+	await expect(page.getByTestId('message-list').getByText('see you at nine')).toBeVisible();
+	await page.getByTestId('leave-room-btn').click();
+	await page.waitForURL('/');
+	await expect(page.getByTestId('room-preview').first()).toHaveText('You: see you at nine');
+});
