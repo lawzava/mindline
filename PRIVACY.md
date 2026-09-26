@@ -20,6 +20,9 @@ link), when, and from which IP addresses.
   each other's messages, edits, or deletions.
 - Chat history and received media are also encrypted at rest in your
   browser's storage, using a key derived from the same link key.
+- You can lock Mindline with a passkey. Your rooms on that device then
+  open only after your fingerprint, face, or PIN. The passkey stays with
+  your device or passkey provider; Mindline has no server that sees it.
 - Anyone in a room can turn on disappearing messages. Each device then
   deletes every new message and its media when the chosen time is up.
   People in the room can still keep what they saw, for example with a

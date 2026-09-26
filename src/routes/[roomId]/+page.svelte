@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
 	import { MessageList, MessageInput, ConnectionStatus } from '$lib/components/chat';
 	import {
@@ -80,6 +80,9 @@
 	import { copyInvite, rememberInvite, shareInvite } from '$lib/share';
 	import ReadingSettings from '$lib/components/ReadingSettings.svelte';
 	import { loadInviteKey } from '$lib/crypto/keystore';
+	import { deviceLock, lockReady } from '$lib/stores/lock';
+	import { LockedError, isUnlocked } from '$lib/crypto/lock';
+	import { peekRoomKey } from '$lib/crypto/handoff';
 	import { parseKeyFragment, toKeyFragment } from '$lib/crypto/keys';
 	import { clearBurned, isBurned } from '$lib/storage/tombstone';
 	import { toggleMode, mode } from 'mode-watcher';
@@ -122,6 +125,9 @@
 			isLoading = false;
 			return;
 		}
+		// A locked device opens nothing: the layout shows the lock instead,
+		// and this page mounts again once the passkey opens it (§4).
+		if ((await lockReady()) === 'locked') return;
 
 		try {
 			burnChannel = new BroadcastChannel('mindline_burn');
@@ -154,7 +160,7 @@
 		}
 
 		const id = roomId;
-		if (parseKeyFragment(window.location.hash) && (await isBurned(id))) {
+		if ((parseKeyFragment(window.location.hash) || peekRoomKey(id)) && (await isBurned(id))) {
 			isBurnedHere = true;
 			isLoading = false;
 			return;
@@ -230,6 +236,12 @@
 				// Setup page lifecycle handlers for all devices (graceful cleanup)
 				setupPageLifecycleHandlers();
 			} catch (error) {
+				if (error instanceof LockedError) {
+					// Another tab turned the lock on: show the lock, not an empty room.
+					deviceLock.set('locked');
+					releaseRoom();
+					return;
+				}
 				if (error instanceof NoRoomKeyError) {
 					// No key in the URL and none stored: this device can't read
 					// the room. Honest state, no silent empty-room creation.
@@ -259,6 +271,11 @@
 			// we're actually in it — never for the knocking state, where we have no
 			// key and never entered. The key fragment is stored so rejoin is one tap.
 			if (current() && !isKnocking && !isKeyMismatch) {
+				// With the lock on, the key is saved sealed; the address bar must not
+				// keep a copy in browser history (§4). Invites still copy from the menu.
+				if (window.location.hash && isUnlocked()) {
+					replaceState(window.location.pathname + window.location.search, page.state);
+				}
 				recentRooms.record(id, Date.now());
 				void loadInviteKey(id).then((raw) => raw && rememberInvite(id, toKeyFragment(raw)));
 			}

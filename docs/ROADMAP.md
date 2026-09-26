@@ -109,7 +109,8 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    (old plaintext entries migrate), the signaling rendezvous id is derived
    from the key, and Back into a burned room asks first. Decided against
    stripping the fragment from the address bar: people copy invites from
-   it, and a keyless URL locks the recipient out.
+   it, and a keyless URL locks the recipient out. Exception: with the
+   passkey lock on, the key stays out of the address bar and history.
 5. **Admission and removal.** Shipped: new rooms have ids that commit to
    their founder's key; the host lets newcomers in (one tap while they
    wait), turns people away, removes them, or hands the host role on. The
@@ -143,8 +144,10 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
 8. **Protect saved history.** The larger exposure once a device is taken.
    Shipped: disappearing messages (any member sets the room's timer; each
    message's lifetime is signed with it; every device deletes expired
-   messages and their media, and sync never serves them). Next: wrap
-   `k_storage` with a device key unlocked by a passkey (WebAuthn PRF).
+   messages and their media, and sync never serves them), and an optional
+   passkey lock (WebAuthn PRF): room records keep only the link key sealed
+   under the passkey-derived key, and no room opens until the passkey is
+   used. Metadata (Recent rooms, rosters) stays readable.
 
 Product:
 
