@@ -915,6 +915,49 @@ request list.
   messages + blobs.
 - Quota: `navigator.storage.estimate()` before accepting media; refuse at
   <2× incoming size headroom. `persist()` requested at key creation (§1.2).
+- **Passkey lock (optional, per device).** The start page offers "Lock
+  Mindline with a passkey". A WebAuthn passkey with the PRF extension
+  (user verification required) evaluates a random 32-byte salt; the output
+  goes through HKDF-SHA-256 (salt, info `lp("mindline/v1/device-lock")`)
+  to a non-extractable AES-256-GCM lock key held in the tab's memory only.
+  With the lock on, each `mindline-keys` room record holds only
+  `locked = AES-GCM(lock key, link key, AAD lp("mindline/v1/locked-room", roomId))`
+  and no CryptoKeys; `k_storage`, `k_auth`, `k_hs` and the media base are derived
+  again after each unlock. The device record `lock` keeps the credential id,
+  the salt, and a known text under the lock key, which tells a wrong passkey
+  from a right one. Turning the lock on converts every room and writes the
+  lock record in one IndexedDB transaction; rooms whose link key this device
+  never kept cannot be locked, so they are named and removed first (without
+  a burn tombstone). While a lock record exists, the keystore refuses to
+  write any room in the clear (`LockedError`), and each unlock locks or
+  removes room records another tab wrote in the clear meanwhile. The app
+  shows only the lock screen until the passkey is used; every full page
+  load starts locked, and "Lock now" reloads. Losing the passkey leaves one
+  way out: remove every room from the device (rejoin with the links).
+  Turning the lock off (needs it open) restores ordinary records. Limits:
+  a tab left open is open; history pages and media stay encrypted under
+  `k_storage` as before, which the lock now keeps off the device; generation
+  state (§1.4), device identity, and metadata stay readable (Recent rooms
+  with their names and times, rosters, verified safety numbers); a synced
+  passkey unlocks from any device where it is available, with that device
+  also holding a copy of this one's data; a passkey provider without PRF
+  cannot be used, and the option is hidden where WebAuthn is missing or
+  the browser reports no PRF support.
+  Link keys and browser history: with the lock on, a room made or joined
+  from the start page gets its key handed over in memory, never through
+  the address bar, and a link opened from elsewhere has its fragment
+  replaced out of the address bar once the room is saved (invites still
+  copy from the room menu). A link opened before the lock, or the original
+  visit of an outside link, may remain in the browser's own history
+  database; the confirmation says to clear it. Tabs: every lock write
+  happens in one transaction that first checks the lock record is still
+  the one it was prepared for (so a tab with a stale view cannot lock over
+  an existing lock or write a room in the clear while another tab turns it
+  on); an in-memory key is checked against the current record before use;
+  sweeps skip rooms rewritten or burned since they were read; and tabs
+  announce the lock going on or off over a BroadcastChannel. Forensics:
+  IndexedDB engines may keep replaced values (including the pre-lock room
+  records) on disk until they compact their files.
 - **Disappearing messages.** Any member sets the room's timer (off, 5
   minutes, 1 hour, 1 day, 1 week) by sending a timer event: a `chat` body
   whose `timer` field is the new lifetime in ms (0 = off), shown as a line
@@ -1076,7 +1119,7 @@ AAD   = lp(transferId, str(chunkIndex))
 | Link-holder (intended or leaked) | Entry + history-by-sync, as a visible peer (§1.1, §1.4). Passive + later leak: captured grant ciphertext — relay-archived (never happens), endpoint-captured, or future-quantum-recovered from recorded DTLS — stays unreadable: `rk_g` is hybrid-wrapped (X-Wing) to the recipient device's KEM key (§1.4 v4); only compromise of that device's key store opens it |
 | Past participant           | Keeps everything already synced, and the link (can rejoin visibly). Loses passive read of post-departure traffic once the leave-triggered ratchet lands (§1.4) |
 | Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, delete, or react as others (signatures + §3.7 authorization); can misrepresent history it serves to a syncing device (§3.5); can grief the ratchet — fork a joiner, mint-flood, grind low gids to re-root lines (§1.4) — an availability nuisance, never a read of traffic it was not granted |
-| Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB. In a room with a disappearing-messages timer, gets only what has not expired yet (§4) |
+| Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB. With the passkey lock on, also needs the passkey (and its user verification) to open any room; without it, gets metadata, plus any room link the browser's own history still holds from before the lock or from an outside link (§4). In a room with a disappearing-messages timer, gets only what has not expired yet (§4) |
 | XSS / malicious extension  | Game over (can use keys in place). Mitigation: strict CSP — `connect-src` pinned to self + the signaling origin (no any-host WebSocket exfil), zero third-party runtime origins, self-hosted fonts |
 
 Platform residuals, documented user-facing: Safari evicts IndexedDB after

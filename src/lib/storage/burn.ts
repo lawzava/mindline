@@ -15,14 +15,23 @@ import { clearRoomMessages } from './messages';
 import { markBurned } from './tombstone';
 import { forgetRoster } from '$lib/p2p/admission';
 
-export async function burnRoomData(roomId: string): Promise<void> {
+/**
+ * tombstone: false removes the room without marking it burned, for rooms
+ * cleared by the passkey lock rather than by the person (§4).
+ */
+export async function burnRoomData(
+	roomId: string,
+	{ tombstone = true }: { tombstone?: boolean } = {}
+): Promise<void> {
 	const failures: string[] = [];
 	const steps: Array<[string, () => Promise<void>]> = [
 		['keys', () => burnRoom(roomId)],
 		['history', () => clearRoomMessages(roomId)],
 		['media', () => burnRoomBlobs(roomId)],
 		// Back into the old invite URL must not quietly re-create the room.
-		['tombstone', () => markBurned(roomId)],
+		...(tombstone
+			? [['tombstone', () => markBurned(roomId)] as [string, () => Promise<void>]]
+			: []),
 		['roster', async () => forgetRoster(roomId)]
 	];
 	for (const [name, step] of steps) {
