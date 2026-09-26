@@ -4,7 +4,8 @@ Mindline is a web app: every page load runs whatever JavaScript the
 origin and CDN deliver. End-to-end encryption stops the infrastructure
 from _reading_ your messages; it cannot stop a malicious _build_ of the
 app from using your keys in place. This document is the honest evaluation
-of what can and cannot raise that ceiling.
+of what can and cannot raise that ceiling, and of what Mindline ships to
+narrow it. The README "Honest limits" section links here.
 
 ## Why Subresource Integrity (SRI) does not raise this ceiling
 
@@ -66,10 +67,9 @@ forge. Three mechanisms, in increasing strength:
    signature-checked. Trust reduces to the signing key and the platform's
    update integrity. This is outside a pure-web deployment.
 
-## Shipped: reproducible build and a public check (2026-09-26)
+## Shipped: reproducible build and a public check
 
-Option 1 is now in place, because the product is live and an install base
-now exists to protect.
+Option 1 is in place.
 
 - **Reproducible build.** SvelteKit's version name is the commit hash
   (`BUILD_VERSION`, else `CF_PAGES_COMMIT_SHA`, else `GITHUB_SHA`) instead of
@@ -131,6 +131,6 @@ every client on a broken build.
   last 20 visited pages only as an offline fallback. It pins nothing, so
   updates arrive as they would without it (PROTOCOL.md §4).
 
-Remaining: a verifier outside the page (a browser extension that checks
+Not built: a verifier outside the page (a browser extension that checks
 each loaded file against the published list, or an installed, signed
-client). Distributing one needs a store listing under the project's account.
+client).

@@ -160,8 +160,7 @@ signaling-server.js  discovery + ciphertext relay of last resort
 
 New here? [`ARCHITECTURE.md`](ARCHITECTURE.md) is the one-page orientation.
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md) is the full wire protocol and threat
-model, and [`docs/CLAIMS.md`](docs/CLAIMS.md) grades every security claim
-against the code that enforces it.
+model.
 
 ## Contributing
 

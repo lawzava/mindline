@@ -772,7 +772,7 @@ export async function loadKemIdentity(): Promise<KemIdentity | null> {
 }
 
 /**
- * Atomic get-or-create of the device KEM identity (review F1): a plain
+ * Atomic get-or-create of the device KEM identity: a plain
  * load-then-save races two first-launch tabs onto divergent seeds under
  * the same deviceId — the losing tab's hellos are then TOFU-rejected by
  * every peer that pinned the winner. Same cure as the §2 epoch

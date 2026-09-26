@@ -167,9 +167,9 @@ export function certOf(grant: RekeyGrant): GrantCert {
 	return { g, minter, minterSpki, gid, prevGid, cert };
 }
 
-/** Same-`g` sibling convergence window (§1.4 review #3). */
+/** Same-`g` sibling convergence window (§1.4). */
 export const SIBLING_WINDOW_MS = 30_000;
-/** Max distinct generation instances witnessed per `g` (§1.4 review #3). */
+/** Max distinct generation instances witnessed per `g` (§1.4). */
 export const MAX_SIBLINGS_PER_G = 3;
 /** Max ancestor certs carried per grant; longer gaps iterate requests. */
 export const MAX_CHAIN = 32;
@@ -252,7 +252,7 @@ export class GenerationRatchet {
 	 * prevGid-linked run of rk-free certs immediately above `curG` on our
 	 * own line, grown across rounds until a round connects it to the tip.
 	 * In-memory only — never persisted (a reload re-fetches at MAX_CHAIN
-	 * per round, which also avoids the reload-window bug class P2.0-F2).
+	 * per round, which also denies a reloaded engine a fresh sibling window).
 	 */
 	private ahead: GrantCert[] = [];
 	/** Mutation queue: adopt/mint decide on state across awaits, so they
@@ -560,7 +560,7 @@ export class GenerationRatchet {
 		}
 
 		if (grant.g === div.g) {
-			// Lone same-g sibling: windowed and capped (§1.4 review #3).
+			// Lone same-g sibling: windowed and capped (§1.4).
 			if (div.g !== this.curG) return 'rejected'; // stub of an old fork
 			// Absent stamp fails closed: an unknown window is an expired one.
 			const since = this.firstSeen.get(this.curG) ?? 0;

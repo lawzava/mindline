@@ -1,4 +1,4 @@
-// Reading settings before first paint (DESIGN.md "Reading mode"): a
+// Reading settings before first paint: a
 // returning reader's text size and contrast apply before anything renders,
 // so large text never flashes small first. A static file, not an inline
 // script, so the CSP needs no new hash. It mirrors parseReading and

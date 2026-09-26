@@ -3,9 +3,8 @@
 Mindline is an end-to-end-encrypted, peer-to-peer chat application. Its
 security claims are documented and enforced against the code — see
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md) (the implementation-defining spec and
-threat model) and [`docs/CLAIMS.md`](docs/CLAIMS.md) (every user-facing claim,
-graded, with the code/test that enforces it). If the code and those documents
-disagree, that is a bug, and we want to hear about it.
+threat model). If the code and that document disagree, that is a bug, and we
+want to hear about it.
 
 ## Reporting a vulnerability
 
@@ -43,7 +42,7 @@ In scope:
 
 These are documented properties of the design, not undiscovered bugs. Reports
 that restate them will be closed as "by design" with a pointer here. (Full
-detail: `docs/PROTOCOL.md` §6 and `docs/CLAIMS.md`.)
+detail: `docs/PROTOCOL.md` §6.)
 
 - **A malicious or compromised build of the app is game-over.** Like any
   web-delivered messenger, every page load runs the JavaScript the server/CDN
