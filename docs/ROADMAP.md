@@ -94,11 +94,14 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    fully possible in a web app and nothing like it exists today.
 2. **Signed history.** Sign each message at origin and carry the signature
    through sync, so served history is verifiable (closes the §3.5 caveat).
-3. **Signaling hardening.** Trust `x-forwarded-for` only from configured
-   proxies, add per-IP connection caps, issue short-lived per-connection
-   TURN credentials after a peer is present, and self-host STUN (the
-   hard-coded Google STUN server sees every user's IP; disclose it until
-   then).
+3. **Signaling hardening.** Done: client-IP headers honored only from
+   configured proxies (`TRUSTED_PROXY_*`), per-IP connection and per-room
+   member caps, TURN credentials delivered only once a peer is present.
+   STUN moved from Google to Cloudflare (already in the path) and is
+   disclosed in PRIVACY.md. Remaining: short-lived per-connection TURN
+   credentials (today one timer-minted credential is shared; per-connection
+   minting would let clients trigger Cloudflare API calls, so it needs its
+   own rate limit). The server deploy is the operator's step.
 4. **Link hygiene.** Stop keeping raw link keys in localStorage for Recent
    rooms (wrap them like the KEM seed), strip the fragment after import,
    and bind the signaling rendezvous id to the key so the operator cannot

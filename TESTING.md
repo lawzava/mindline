@@ -93,3 +93,6 @@ without asserting.
   Normal room visits use fifteen seconds before entering restart backoff.
 - The signaling server rate-limits per IP. Helpers throttle room
   navigations, but reloads and reconnects also consume connection attempts.
+  It also caps concurrent sockets per IP (`MAX_CONNECTIONS_PER_IP`, default
+  20); raise it on the target server for single-machine load tests such as
+  `pnpm run test:signaling:soak`.

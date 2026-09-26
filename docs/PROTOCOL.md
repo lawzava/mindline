@@ -589,6 +589,16 @@ deviceId↔clientId binding is established by the first authenticated
 offer/answer or relay broadcast, including after signaling reconnects.
 Healthy DataChannels are never torn down by signaling loss.
 
+Managed TURN credentials (when the operator configures Cloudflare TURN) ride
+a repeated `client-id` message carrying the socket's own `clientId` plus
+`iceServers`; clients replace their managed ICE servers on each one. The
+welcome `client-id` carries none. The server sends credentials only once the
+socket's room holds another member, to every member, ahead of the
+`room-joined` / `peer-joined` that builds the new pair's connections. The
+server also caps members per room and concurrent sockets per client IP; an
+over-cap join gets an `error` message and an over-cap socket is closed
+(1013), like the existing capacity limits.
+
 Incoming signaling preserves event order through asynchronous authentication.
 Outgoing offers, answers, and ICE candidates preserve order through signing
 and dispatch. Both queues are bounded and discard work from obsolete sockets
