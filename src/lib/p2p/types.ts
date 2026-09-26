@@ -27,6 +27,7 @@ export interface P2PConfig {
 	// Test mode settings
 	fastConnect?: boolean; // Reduces delays for test environments
 	meshCheckInterval?: number; // Mesh monitoring interval (ms), default 10000
+	rotationMaxAgeMs?: number; // Rotate an active generation this often (ms), default 15 min
 }
 
 export const DEFAULT_CONFIG: P2PConfig = {

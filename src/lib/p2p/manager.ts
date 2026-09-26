@@ -5,7 +5,7 @@
 
 import { P2PConnection } from './connection';
 import { CryptoSession } from './crypto-session';
-import { shouldMint } from './rekey-policy';
+import { ROTATION, rotationDue, shouldMint } from './rekey-policy';
 import { RekeyScheduler } from './rekey-scheduler';
 import { parseKeyFragment } from '$lib/crypto/keys';
 import { getNetworkInfo } from './config';
@@ -91,6 +91,36 @@ const REKEY_DEBOUNCE_MS = 2000;
 const REKEY_FALLBACK_MS = 6000;
 const rekeyScheduler = new RekeyScheduler(REKEY_DEBOUNCE_MS, REKEY_FALLBACK_MS);
 
+// Periodic rotation (§1.4): joins and leaves are not the only reason to move
+// on. An active generation is retired after a time window or a burst of
+// messages, so a device compromise opens only recent captured traffic.
+let generationStartedAt = Date.now();
+let messagesInGeneration = 0;
+let rotationTimer: ReturnType<typeof setInterval> | null = null;
+const ROTATION_CHECK_MS = 5000;
+
+function startRotation(maxAgeMs: number): void {
+	stopRotation();
+	generationStartedAt = Date.now();
+	messagesInGeneration = 0;
+	rotationTimer = setInterval(() => {
+		if (isDisconnecting || !cryptoSession || !p2pConnection) return;
+		if (memberPeers().filter((id) => p2pConnection!.getDirectPeers().includes(id)).length === 0) {
+			return;
+		}
+		const due = rotationDue(
+			{ startedAt: generationStartedAt, now: Date.now(), messages: messagesInGeneration },
+			{ ...ROTATION, maxAgeMs }
+		);
+		if (due) scheduleRekey();
+	}, ROTATION_CHECK_MS);
+}
+
+function stopRotation(): void {
+	if (rotationTimer) clearInterval(rotationTimer);
+	rotationTimer = null;
+}
+
 function scheduleRekey(): void {
 	if (isDisconnecting || !cryptoSession || !p2pConnection) return;
 	rekeyScheduler.schedule({
@@ -123,6 +153,7 @@ async function mintAndBroadcast(): Promise<void> {
 }
 
 function clearRekeyState(): void {
+	stopRotation();
 	rekeyScheduler.clear();
 	rekeyChannel?.close();
 	rekeyChannel = null;
@@ -189,6 +220,8 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 	connection.setGeneration(cryptoSession.generation.g, cryptoSession.generation.gid);
 	cryptoSession.onGenerationChange((g, gid) => {
 		connection.setGeneration(g, gid);
+		generationStartedAt = Date.now();
+		messagesInGeneration = 0;
 		try {
 			rekeyChannel?.postMessage({ roomId, g, gid });
 		} catch {
@@ -228,6 +261,7 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 	admissionCtl = ctl;
 	await ctl.load();
 	p2pConnection.setAdmission((deviceId) => ctl.isAdmitted(deviceId));
+	startRotation(config?.rotationMaxAgeMs ?? ROTATION.maxAgeMs);
 
 	// Set up handlers
 	p2pConnection.onMessage((message, peerId) => {
@@ -236,6 +270,7 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 			return;
 		}
 		if (!ctl.isAdmitted(peerId)) return;
+		if (message.type === 'chat') messagesInGeneration++;
 		routeP2PMessage(message, peerId);
 	});
 
@@ -524,6 +559,7 @@ export function broadcastChat(content: string, messageId: string): void {
 
 	// Members only: a waiting device receives nothing (§3.8)
 	const connectedPeers = memberPeers();
+	messagesInGeneration++;
 
 	// Initialize delivery tracking for this message
 	delivery.trackMessage(messageId, roomId, connectedPeers);
