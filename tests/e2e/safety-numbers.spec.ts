@@ -5,6 +5,8 @@ import {
 	generateTestRoomId,
 	handleUnavailableP2P,
 	joinRoom,
+	sendMessage,
+	waitForMessage,
 	waitForPeersConnected
 } from './helpers/test-utils';
 
@@ -37,6 +39,11 @@ test('both people see the same safety number, and verification survives a reload
 	const fromA = await openSafetyNumber(page);
 	const fromB = await openSafetyNumber(pageB);
 	expect(fromA).toBe(fromB);
+
+	// Closing the dialog hands the keyboard back to the conversation.
+	await pageB.getByRole('button', { name: 'Close' }).click();
+	await sendMessage(pageB, 'sent right after comparing');
+	await waitForMessage(page, 'sent right after comparing');
 
 	await page.getByRole('button', { name: 'Mark as verified' }).click();
 	await page.getByTestId('peer-count').click();

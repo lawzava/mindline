@@ -54,7 +54,8 @@ one of them is a bug.
   still grants entry and history-by-sync to whoever holds it, history at
   rest on your device stays under a link-derived key, and peers stuck on
   the relay can't receive rotations (the UI says so).
-- **Rendezvous metadata exists.** The signaling server sees room IDs, device
+- **Rendezvous metadata exists.** The signaling server sees a key-derived room name (not
+  the ID in your link), device
   identifiers, IP addresses, and timing — not content, not names. Peers
   connect directly, so room members see each other's IP addresses; on the
   relay path the operator additionally sees the sending device id and the

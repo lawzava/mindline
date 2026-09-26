@@ -18,8 +18,8 @@
 	function rejoin(room: RecentRoom) {
 		if (editingId) return;
 		ensureUser();
-		// The key fragment is the room's read capability; carry it when we have
-		// it. Without it we still try — the on-device keystore may hold the keys.
+		// The on-device keystore opens the room; only entries from older
+		// versions (not yet migrated) still carry a fragment.
 		const fragment = room.key ? `#${room.key}` : '';
 		goto(`/${room.id}${fragment}`);
 	}
@@ -125,7 +125,7 @@
 					>
 						<span class="block truncate text-sm font-medium">{label(room)}</span>
 						<span class="block truncate text-xs text-muted-foreground">
-							{relativeTime(room.lastActive)}{room.key ? '' : ' · link needed'}
+							{relativeTime(room.lastActive)}
 						</span>
 					</button>
 					<button
