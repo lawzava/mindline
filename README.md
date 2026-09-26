@@ -37,7 +37,8 @@ end-to-end encrypted with a key that lives only in the invite link.
 - **History stays on devices.** Messages persist locally, encrypted at rest;
   new participants receive history from peers, encrypted. There is no server
   copy. Turn on disappearing messages and each device deletes them, media
-  included, after 5 minutes to a week.
+  included, after 5 minutes to a week. Lock Mindline with a passkey and no
+  room opens on that device without it.
 
 The full wire protocol, key schedule, and threat model live in
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md). If code and that document disagree,

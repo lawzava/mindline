@@ -67,6 +67,10 @@ detail: `docs/PROTOCOL.md` §6 and `docs/CLAIMS.md`.)
 - **History at rest is encrypted under a link-derived key (`k_storage`)** that
   does not ratchet; it is not forward-secret against later link disclosure.
   Rooms with a disappearing-messages timer keep only what has not expired.
+  With the optional passkey lock on, no room opens without the passkey,
+  except through a room link still in the browser's own history (links
+  opened before the lock, or from outside the app); metadata such as the
+  Recent rooms list stays readable.
 - **Disappearing messages rely on every member's device.** A member can keep
   what it saw (screenshots, an older or modified client). Deletion happens by
   each device's clock when Mindline runs on it (`docs/PROTOCOL.md` §4).
