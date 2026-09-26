@@ -3,12 +3,20 @@
 	import { cn } from '$lib/utils';
 
 	interface Props {
-		/** The full invite URL, key fragment included. */
+		/** The full invite URL, key fragment included (or any text to show). */
 		value: string;
+		/** Names the code for screen readers, never its contents. */
+		label?: string;
+		testid?: string;
 		class?: string;
 	}
 
-	let { value, class: className }: Props = $props();
+	let {
+		value,
+		label = 'QR code of the invite link',
+		testid = 'invite-qr',
+		class: className
+	}: Props = $props();
 
 	const qr = $derived(encodeQr(value));
 	const path = $derived(qrPath(qr.modules));
@@ -23,10 +31,10 @@
 <svg
 	viewBox="0 0 {qr.size} {qr.size}"
 	role="img"
-	aria-label="QR code of the invite link"
+	aria-label={label}
 	shape-rendering="crispEdges"
 	class={cn('block aspect-square w-60 max-w-full rounded-md', className)}
-	data-testid="invite-qr"
+	data-testid={testid}
 >
 	<rect width={qr.size} height={qr.size} class="fill-[oklch(0.995_0.002_262)]" />
 	<path d={path} class="fill-[oklch(0.215_0.015_262)]" />

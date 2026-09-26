@@ -157,7 +157,13 @@ to switch keys the user burns the room first.
   (the link alone proves membership, not identity). A person's verification
   is stored locally as `(deviceId → fingerprint, name)` and applies across
   rooms. The UI flags a verified device whose fingerprint changed, and a
-  different device presenting a verified device's name.
+  different device presenting a verified device's name. In person, one side
+  can show the number as a QR code (`MINDLINE-SAFETY:1:` + the 60 digits)
+  and the other scans it with the camera; the scanner compares it with its
+  own number, marks the device verified on a match, and warns on a
+  mismatch. Decoding stays on the device (the platform BarcodeDetector, or
+  jsQR loaded only when a scan starts). The code holds public-key-derived
+  digits only, nothing secret.
 
 **Quantum-signature posture (Phase-2 item 9, owner-decided 2026-06-12).**
 Signatures stay classical ECDSA P-256, deliberately. The reasoning, in
