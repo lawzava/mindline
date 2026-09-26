@@ -94,3 +94,19 @@ test('in a room on a phone, the reading control sits in the header without cover
 		await context.close();
 	}
 });
+
+test('a returning reader gets their text size before the app itself loads', async ({ page }) => {
+	await page.goto('/');
+	await page.evaluate(() =>
+		localStorage.setItem(
+			'mindline_reading',
+			JSON.stringify({ textSize: 'xlarge', highContrast: true })
+		)
+	);
+	// With the app's own code held back, only the pre-paint script can act.
+	await page.route('**/_app/**', (route) => route.abort());
+	await page.reload();
+	const root = page.locator('html');
+	await expect(root).toHaveAttribute('data-reading', 'xlarge');
+	await expect(root).toHaveAttribute('data-contrast', 'high');
+});

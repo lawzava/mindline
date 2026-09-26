@@ -168,8 +168,11 @@ Product:
 6. An accessibility RTT mode (large text, high contrast, screen-reader
    politeness settings), taken to deaf community organisations. The mode
    shipped (Reading settings: text size, high contrast, steady drafts, read
-   drafts aloud; DESIGN.md "Reading mode"). Still open: taking it to deaf
-   community organisations, and a flash-free first paint for returning readers.
+   drafts aloud; DESIGN.md "Reading mode"), and returning readers get their
+   text size and contrast before first paint. An outreach kit for deaf
+   community organisations is ready (docs/OUTREACH_RTT.md: who to approach,
+   a first message, a session script, questions). Still open: the owner
+   sending it and running the sessions.
 
 Do not build: public rooms or discovery (Jitsi removed anonymous room
 creation after abuse), groups beyond about 8, a server mailbox, stickers
