@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Bundle verification (docs/BUNDLE_VERIFICATION.md).
 //
-//   node scripts/bundle-digest.mjs --dir=.svelte-kit/cloudflare
-//     Digest of every file under _app/immutable/ in a local build.
+//   node scripts/bundle-digest.mjs --dir=.svelte-kit/cloudflare [--json=<version>]
+//     Digest of every file under _app/immutable/ in a local build. With
+//     --json, print {version, digest, files: {path: sha256}} instead: the list
+//     CI publishes for the in-browser check (src/lib/verify-build.ts).
 //
 //   node scripts/bundle-digest.mjs --url=https://mindline.chat [--dir=<build>]
 //     Crawl what the live site serves (entry HTML, then every bundle file it
@@ -83,6 +85,12 @@ async function main() {
 	}
 	if (!url) {
 		const files = await localBundle(dir);
+		const version = arg('json');
+		if (version) {
+			const hashes = Object.fromEntries(await fileHashes(files));
+			console.log(JSON.stringify({ version, digest: await bundleDigest(files), files: hashes }));
+			return;
+		}
 		console.log(`files   ${files.size}`);
 		console.log(`digest  ${await bundleDigest(files)}`);
 		return;

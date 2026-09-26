@@ -140,8 +140,11 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    messages exist (wire forward secrecy then matters more), or with an
    external protocol review; ship any version behind a per-room switch.
 7. **Code trust.** Shipped: reproducible builds, a public bundle check,
-   and a daily watchdog (docs/BUNDLE_VERIFICATION.md); a pinned verifier or
-   signed client remains.
+   a daily watchdog, per-commit digests published to the `bundle-digests`
+   branch, and an opt-in in-page check against them
+   (docs/BUNDLE_VERIFICATION.md). Remaining: a verifier outside the page
+   (a browser extension or signed client), which needs a store listing
+   under the owner's account.
 8. **Protect saved history.** The larger exposure once a device is taken.
    Shipped: disappearing messages (any member sets the room's timer; each
    message's lifetime is signed with it; every device deletes expired
@@ -162,9 +165,11 @@ Product:
    room) and who is online (it would mean probing the signaling server for
    rooms you are not in, which tells the operator you are watching them).
 4. ~~QR invite on the empty-room screen for phone-to-phone sharing.~~ Shipped.
-5. ~~Installable PWA.~~ Shipped as manifest, icons, and home-screen meta;
-   no service worker until the update-check model (security item 6) is
-   decided. Push "knock" is out of scope: it needs server-side
+5. ~~Installable PWA.~~ Shipped as manifest, icons, and home-screen meta,
+   and a service worker: the build's files from a per-version cache, pages
+   network-first with the last 20 kept for offline use (a room opens with
+   its saved history). Update model decided: no pinning, since the server
+   can replace the worker anyway; updates arrive on the next load. Push "knock" is out of scope: it needs server-side
    push subscriptions, which the product does not store (decided 2026-09-26).
 6. An accessibility RTT mode (large text, high contrast, screen-reader
    politeness settings), taken to deaf community organisations. The mode
