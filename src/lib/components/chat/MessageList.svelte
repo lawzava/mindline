@@ -5,7 +5,8 @@
 	import { userId, draftsList, peerCount } from '$lib/stores';
 	import InviteQr from '$lib/components/InviteQr.svelte';
 	import { inviteUrl, shareInvite } from '$lib/share';
-	import { ArrowDown } from 'lucide-svelte';
+	import { ArrowDown, Timer } from 'lucide-svelte';
+	import { timerEventText } from '$lib/disappearing';
 	import type { Message } from '$lib/types/message';
 
 	interface Props {
@@ -191,22 +192,39 @@
 							<span class="h-px flex-1 bg-border"></span>
 						</div>
 					{/if}
-					<MessageBubble
-						{message}
-						isMe={message.sender_id === $userId}
-						groupedAbove={sameGroup(messages[i - 1], message)}
-						groupedBelow={sameGroup(message, messages[i + 1])}
-						sameSenderAbove={i > 0 && messages[i - 1].sender_id === message.sender_id}
-						animate={message.local_timestamp > mountedAt}
-						settle={message.sender_id !== $userId &&
-							message.local_timestamp > mountedAt &&
-							latchesIn(message)}
-						{onEdit}
-						{onDelete}
-						{onReaction}
-						{onReply}
-						quoted={quoteOf(message.reply_to)}
-					/>
+					{#if typeof message.timer === 'number'}
+						<!-- A timer event is a room setting, shown as a line, not a bubble.
+						     An unsigned copy sets nothing (§4), so it shows nothing. -->
+						{#if !message.unsigned}
+							<p
+								class="my-3 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground"
+								data-testid="timer-event"
+							>
+								<Timer class="h-3 w-3 shrink-0" aria-hidden="true" />
+								{timerEventText(
+									message.sender_id === $userId ? 'You' : message.sender_name,
+									message.timer
+								)}
+							</p>
+						{/if}
+					{:else}
+						<MessageBubble
+							{message}
+							isMe={message.sender_id === $userId}
+							groupedAbove={sameGroup(messages[i - 1], message)}
+							groupedBelow={sameGroup(message, messages[i + 1])}
+							sameSenderAbove={i > 0 && messages[i - 1].sender_id === message.sender_id}
+							animate={message.local_timestamp > mountedAt}
+							settle={message.sender_id !== $userId &&
+								message.local_timestamp > mountedAt &&
+								latchesIn(message)}
+							{onEdit}
+							{onDelete}
+							{onReaction}
+							{onReply}
+							quoted={quoteOf(message.reply_to)}
+						/>
+					{/if}
 				{/each}
 				<!-- Live drafts land where the sent message will appear -->
 				<LiveDraft />

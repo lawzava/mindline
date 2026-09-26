@@ -33,6 +33,10 @@ export interface Message {
 	origin?: MessageOrigin;
 	/** Synced without a valid author signature: shown as an unverified copy. */
 	unsigned?: boolean;
+	/** Lifetime in ms: every device deletes it at timestamp + ttl (§4). Signed. */
+	ttl?: number;
+	/** Timer event: the room's new lifetime for messages, 0 = off (§4). Signed. */
+	timer?: number;
 	/** Media metadata when message_type is 'Media'; blob lives in IndexedDB. */
 	attachment?: MessageAttachment;
 }
