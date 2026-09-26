@@ -6,6 +6,9 @@ SIGNALING_HEALTH_URL="${SIGNALING_HEALTH_URL:-http://localhost:3000/health}"
 SKIP_SIGNALING_START="${SKIP_SIGNALING_START:-0}"
 SIGNALING_START_CMD="${SIGNALING_START_CMD:-pnpm run signaling}"
 ALLOW_LOCALHOST_REMOTE="${ALLOW_LOCALHOST_REMOTE:-0}"
+# Every browser in the suite connects from 127.0.0.1; the dev default of 30
+# connection attempts per minute throttles later tests into false failures.
+export RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE="${RATE_LIMIT_CONNECTION_ATTEMPTS_PER_MINUTE:-240}"
 
 SIGNALING_PID=''
 PLAYWRIGHT_ARGS=()

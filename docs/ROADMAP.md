@@ -91,7 +91,8 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
 
 1. **Safety numbers.** Shipped: per-pair 60-digit numbers in the peer list,
    locally stored verifications, and warnings for changed keys or a
-   borrowed verified name. A QR form comes with the QR invite work.
+   borrowed verified name. A scannable QR form of the safety number is not
+   built yet.
 2. **Signed history.** Shipped: authors sign each message state, history
    carries the signatures, forged copies are dropped, and unsigned copies
    from older clients show as "unverified copy". Media offers are signed on
@@ -123,8 +124,10 @@ Product:
    the quoted id.
 3. Recent rooms as the home screen for returning users: last message,
    unread dot, who is online.
-4. QR invite on the empty-room screen for phone-to-phone sharing.
-5. Installable PWA. Push "knock" is out of scope: it needs server-side
+4. ~~QR invite on the empty-room screen for phone-to-phone sharing.~~ Shipped.
+5. ~~Installable PWA.~~ Shipped as manifest, icons, and home-screen meta;
+   no service worker until the update-check model (security item 6) is
+   decided. Push "knock" is out of scope: it needs server-side
    push subscriptions, which the product does not store (decided 2026-09-26).
 6. An accessibility RTT mode (large text, high contrast, screen-reader
    politeness settings), taken to deaf community organisations.

@@ -3,7 +3,8 @@
 	import LiveDraft from './LiveDraft.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { userId, draftsList, peerCount } from '$lib/stores';
-	import { shareInvite } from '$lib/share';
+	import InviteQr from '$lib/components/InviteQr.svelte';
+	import { inviteUrl, shareInvite } from '$lib/share';
 	import { ArrowDown } from 'lucide-svelte';
 	import type { Message } from '$lib/types/message';
 
@@ -35,6 +36,20 @@
 	// Messages already present at mount render statically; only later
 	// arrivals get the one-shot entry animation.
 	const mountedAt = Date.now();
+
+	// Phone-to-phone invite: the QR carries the full link, key included.
+	// Read at reveal time and dropped from the DOM on hide; once someone
+	// joins it closes, so a peer leaving never re-shows the key unasked.
+	let qrInvite = $state<string | null>(null);
+	const alone = $derived(messages.length === 0 && $draftsList.length === 0 && $peerCount === 0);
+
+	function toggleQr() {
+		qrInvite = qrInvite ? null : inviteUrl();
+	}
+
+	$effect(() => {
+		if (!alone) qrInvite = null;
+	});
 
 	const GROUP_WINDOW_MS = 60_000;
 
@@ -126,14 +141,36 @@
 		aria-label="Messages"
 	>
 		{#if messages.length === 0 && $draftsList.length === 0}
-			<div class="flex h-full items-center justify-center p-6">
+			<!-- min-h, not h: with the QR open on a short phone screen the
+			     block must grow and scroll, not overflow above the fold. -->
+			<div class="flex min-h-full items-center justify-center p-6">
 				{#if $peerCount === 0}
 					<!-- The one-time accent spend that creates the second person. -->
 					<div class="flex max-w-xs flex-col items-center gap-4 text-center">
 						<p class="text-sm text-muted-foreground">You're the only one here.</p>
-						<Button onclick={shareInvite} class="h-11 px-6" data-testid="invite-btn">
-							Invite someone
-						</Button>
+						<div class="flex flex-col items-center gap-1">
+							<Button onclick={shareInvite} class="h-11 px-6" data-testid="invite-btn">
+								Invite someone
+							</Button>
+							<Button
+								variant="ghost"
+								onclick={toggleQr}
+								class="h-11 px-6 text-muted-foreground"
+								aria-expanded={qrInvite !== null}
+								aria-controls={qrInvite ? 'invite-qr' : undefined}
+								data-testid="invite-qr-toggle"
+							>
+								{qrInvite ? 'Hide QR code' : 'Show QR code'}
+							</Button>
+						</div>
+						{#if qrInvite}
+							<div id="invite-qr" class="flex flex-col items-center gap-2">
+								<InviteQr value={qrInvite} />
+								<p class="text-xs text-muted-foreground">
+									This code is the key. Show it only to the person joining.
+								</p>
+							</div>
+						{/if}
 						<p class="text-xs text-muted-foreground">
 							The link is the key. Anyone with it can join.
 						</p>
