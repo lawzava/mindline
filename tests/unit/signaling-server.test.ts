@@ -16,6 +16,7 @@ const FETCH_STUB = `data:text/javascript,globalThis.fetch=async()=>new Response(
 type Message = { type: string; [key: string]: unknown };
 
 let server: ChildProcess;
+let serverOutput = ''; // stdout + stderr, i.e. what an operator's logs hold
 let url = '';
 let nextIp = 1;
 const sockets: WebSocket[] = [];
@@ -90,6 +91,8 @@ beforeAll(async () => {
 		},
 		stdio: ['ignore', 'pipe', 'pipe']
 	});
+	server.stdout!.on('data', (chunk) => (serverOutput += String(chunk)));
+	server.stderr!.on('data', (chunk) => (serverOutput += String(chunk)));
 	await new Promise<void>((resolve, reject) => {
 		server.once('exit', (code) => reject(new Error(`signaling server exited: ${code}`)));
 		server.stdout!.on('data', (chunk) => {
@@ -203,5 +206,112 @@ describe('signaling server', () => {
 		await settle();
 		const errors = flooder.received.filter((m) => m.type === 'error');
 		expect(errors.some((m) => String(m.message).startsWith('Rate limit exceeded'))).toBe(true);
+	});
+
+	// The rendezvous id is the only thing a socket needs to join a signaling
+	// room, so a log reader holding it could watch presence and fill the
+	// member cap. Logs may say that a join happened, never which room.
+	test('joining never writes the room id to the logs', async () => {
+		const roomId = 'rv-7f3a9c2e5b1d4f60a8e2c9b7d3f1a5e4';
+		const member = connect();
+		member.send({ type: 'join', roomId });
+		await member.next('room-joined');
+		await settle();
+		expect(serverOutput).toContain('joined');
+		expect(serverOutput).not.toContain(roomId);
+		expect(serverOutput).not.toContain(roomId.slice(0, 12));
+	});
+
+	// The legacy XSS auditor it switches on is gone from current browsers and
+	// was itself a cross-site leak vector; CSP default-src 'none' covers this.
+	test('HTTP responses do not enable the legacy XSS auditor', async () => {
+		const response = await fetch(url.replace('ws://', 'http://').replace(/\/ws$/, '/health'));
+		expect(response.status).toBe(200);
+		expect(response.headers.get('x-xss-protection')).toBeNull();
+		expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
+	});
+});
+
+/**
+ * A second server as a production deploy that set nothing beyond
+ * NODE_ENV runs it. Resolves ready=false if it refuses to start.
+ */
+async function startBareProduction(extra: Record<string, string> = {}) {
+	const port = await freePort();
+	const env: NodeJS.ProcessEnv = { ...process.env, PORT: String(port), HOST: '127.0.0.1' };
+	for (const name of ['ALLOWED_ORIGINS', 'TRUSTED_PROXY_HEADER', 'TRUSTED_PROXY_CIDRS']) {
+		delete env[name];
+	}
+	Object.assign(
+		env,
+		{ NODE_ENV: 'production', CF_TURN_TOKEN_ID: '', CF_TURN_API_TOKEN: '' },
+		extra
+	);
+	const child = spawn(process.execPath, ['signaling-server.js'], {
+		cwd: path.resolve(__dirname, '../..'),
+		env,
+		stdio: ['ignore', 'pipe', 'pipe']
+	});
+	const ready = await new Promise<boolean>((resolve) => {
+		child.once('exit', () => resolve(false));
+		child.stdout!.on('data', (chunk) => {
+			if (String(chunk).includes('Ready for connections')) resolve(true);
+		});
+	});
+	return { child, ready, url: `ws://127.0.0.1:${port}/ws` };
+}
+
+/** Close code, or 'refused' when the upgrade itself is rejected. */
+function outcome(ws: WebSocket, windowMs = 400): Promise<number | 'open' | 'refused'> {
+	return new Promise((resolve) => {
+		ws.once('unexpected-response', () => resolve('refused'));
+		ws.once('error', () => resolve('refused'));
+		ws.once('close', (code) => resolve(code));
+		ws.once('open', () => setTimeout(() => resolve('open'), windowMs));
+	});
+}
+
+describe('signaling server, production with defaults', () => {
+	// OPEN (audit D56/H07): with ALLOWED_ORIGINS unset the allowlist falls
+	// back to localhost dev origins even under NODE_ENV=production. Flip to
+	// test() once production defaults to no origins or refuses to start.
+	test.fails('a localhost page cannot open a socket', async () => {
+		const prod = await startBareProduction({ ALLOWED_ORIGINS: '' });
+		try {
+			if (!prod.ready) return; // refusing to start is an acceptable fix
+			const ws = new WebSocket(prod.url, { headers: { origin: 'http://localhost:5173' } });
+			const result = await outcome(ws);
+			ws.terminate();
+			expect(result).toBe('refused');
+		} finally {
+			prod.child.kill();
+		}
+	});
+
+	// OPEN (audit D51/H11/P09): with no trusted-proxy settings the server
+	// believes cf-connecting-ip / x-forwarded-for from any peer, so one host
+	// that reaches the origin directly rotates a fake header per socket and
+	// never meets the per-IP cap. Flip to test() once production falls back
+	// to the socket address unless TRUSTED_PROXY_CIDRS is set.
+	test.fails('spoofed client-IP headers do not lift the per-IP cap', async () => {
+		const prod = await startBareProduction({
+			ALLOWED_ORIGINS: 'https://mindline.chat',
+			MAX_CONNECTIONS_PER_IP: '3'
+		});
+		const opened: WebSocket[] = [];
+		try {
+			if (!prod.ready) return;
+			const results = [];
+			for (let i = 1; i <= 4; i++) {
+				const ws = new WebSocket(prod.url, { headers: { 'cf-connecting-ip': `203.0.113.${i}` } });
+				opened.push(ws);
+				results.push(await outcome(ws));
+			}
+			expect(results.slice(0, 3)).toEqual(['open', 'open', 'open']);
+			expect(results[3]).toBe(1013);
+		} finally {
+			opened.forEach((ws) => ws.terminate());
+			prod.child.kill();
+		}
 	});
 });

@@ -525,7 +525,10 @@ wss.on('connection', (ws, req) => {
 							yourId: serverClientId
 						})
 					);
-					console.log(`Client ${serverClientId.slice(0, 8)}... joined room ${currentRoom}`);
+					// Never the room id: it is all a socket needs to join this room.
+					console.log(
+						`Client ${serverClientId.slice(0, 8)}... joined a room (${room.size} members)`
+					);
 					break;
 				}
 
@@ -695,7 +698,6 @@ server.on('request', (req, res) => {
 	res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 	res.setHeader('X-Content-Type-Options', 'nosniff');
 	res.setHeader('X-Frame-Options', 'DENY');
-	res.setHeader('X-XSS-Protection', '1; mode=block');
 	res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 	// This server returns only tiny text/JSON (e.g. /health), so lock the CSP
 	// all the way down — no scripts, frames, or base URI of any kind.

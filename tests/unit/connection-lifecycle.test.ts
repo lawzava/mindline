@@ -973,6 +973,22 @@ describe('P2P peer callback lifecycle', () => {
 		}
 	});
 
+	// OPEN (audit D14/D49): the server announces peer-left whenever a member's
+	// signaling socket drops, so the member's momentary signaling loss closes
+	// a healthy, verified DataChannel on every other peer, against
+	// PROTOCOL.md "Healthy DataChannels are never torn down by signaling
+	// loss". Flip to test() once peer-left spares open verified peers.
+	test.fails('peer-left for a verified peer with an open chat channel keeps it', async () => {
+		const pc = await join();
+		await verify(pc);
+		const disconnected = vi.fn();
+		connection.onPeerDisconnected(disconnected);
+		await socket.receive({ type: 'peer-left', clientId: 'remote' });
+		expect(pc.connectionState).toBe('connected');
+		expect(connection.getDirectPeers()).toEqual(['remote-device']);
+		expect(disconnected).not.toHaveBeenCalled();
+	});
+
 	test('outgoing candidate authentication cannot put ICE ahead of its local offer', async () => {
 		const pc = await join();
 		socket.send.mockClear();
