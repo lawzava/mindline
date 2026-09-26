@@ -96,3 +96,38 @@ what the deployment provides. Revisit at launch — Option 1 (reproducible
 build + per-release `bundle-manifest.json` digest) is the natural first
 step if/when a verifiable supply chain becomes a launch requirement. No
 infrastructure is built under this decision.
+
+## Shipped: reproducible build and a public check (2026-09-26)
+
+Option 1 is now in place, because the product is live and an install base
+now exists to protect.
+
+- **Reproducible build.** SvelteKit's version name is the commit hash
+  (`BUILD_VERSION`, else `CF_PAGES_COMMIT_SHA`, else `GITHUB_SHA`) instead of
+  the build time, so two builds of one commit are byte-identical. CI builds
+  every commit twice and fails if the bundle digests differ, and writes the
+  digest to the job summary.
+- **A check anyone can run.** `scripts/bundle-digest.mjs` crawls what a site
+  actually serves (the entry HTML, then every `/_app/immutable/` file it
+  references, transitively) and compares each file byte for byte with a
+  local build of the commit the site names in `/_app/version.json`:
+
+  ```bash
+  version=$(curl -fsS https://mindline.chat/_app/version.json | jq -r .version)
+  git checkout "$version" && pnpm install --frozen-lockfile
+  BUILD_VERSION="$version" ADAPTER=cloudflare pnpm build
+  node scripts/bundle-digest.mjs --url=https://mindline.chat --dir=.svelte-kit/cloudflare
+  ```
+
+- **A watchdog.** `.github/workflows/verify-live.yml` runs those steps daily
+  and on demand; anyone can run it from a fork.
+- **The build is named in the app.** The landing page shows the build's
+  commit and links here.
+
+What this does not change: a check proves what was served to the checker at
+that moment. A malicious origin can still serve the published bundle to
+checkers and something else to a target. That limit ends only with a pinned
+verifier or an installed, signed client (options 2 and 3), which remain
+unbuilt. A service worker that pins the first bundle it sees was considered
+and not shipped: it trusts that first load, and a bad update path can strand
+every client on a broken build.

@@ -116,8 +116,9 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    roster is a host-signed hash chain, and every removal rotates the room
    key. Remaining: letting members other than the host admit people
    (needs a conflict-free multi-writer roster).
-6. **Per-message forward secrecy** (sender-key chains) and a pinned,
-   reproducible build with a service-worker update check.
+6. **Per-message forward secrecy** (sender-key chains). Code trust shipped:
+   reproducible builds, a public bundle check, and a daily watchdog
+   (docs/BUNDLE_VERIFICATION.md); a pinned verifier or signed client remains.
 
 Product:
 
