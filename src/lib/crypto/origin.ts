@@ -23,6 +23,8 @@ export interface OriginFields {
 	body: string;
 	/** Edit time for an edited text message, else null. */
 	editedAt: number | null;
+	/** The message this one answers, or '' (a quote is part of what was said). */
+	replyTo: string;
 }
 
 /** The signed state of a stored message. */
@@ -42,7 +44,8 @@ export function originOf(roomId: string, msg: Message): OriginFields {
 		timestamp: msg.timestamp,
 		kind,
 		body,
-		editedAt: kind === 'text' && msg.edited ? (msg.edit_timestamp ?? null) : null
+		editedAt: kind === 'text' && msg.edited ? (msg.edit_timestamp ?? null) : null,
+		replyTo: kind === 'deleted' ? '' : (msg.reply_to ?? '')
 	};
 }
 
@@ -55,7 +58,8 @@ function originBytes(f: OriginFields): Uint8Array<ArrayBuffer> {
 		String(f.timestamp),
 		f.kind,
 		f.body,
-		f.editedAt === null ? '' : String(f.editedAt)
+		f.editedAt === null ? '' : String(f.editedAt),
+		f.replyTo
 	);
 }
 

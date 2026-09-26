@@ -734,10 +734,11 @@ readability, sync restores missed content.
 
 **Origin signatures.** Every message carries its author's signature over its
 current state: `ECDSA-P256(device key, lp("mindline/v1/origin", roomId, id,
-sender_device, timestamp, kind, body, editedAt))`, where `kind` is
+sender_device, timestamp, kind, body, editedAt, replyTo))`, where `kind` is
 `text | media | deleted`, `body` is the text, a media descriptor
 (`transferId\nname\nsize`), or empty for a deletion, and `editedAt` is set only
-for an edited text message. The message stores `{sig, spki}`; the SPKI must
+for an edited text message; `replyTo` is the quoted message id or empty
+(a deletion signs it empty). The message stores `{sig, spki}`; the SPKI must
 hash to `sender_device`. The author signs on send, edit, and delete, and the
 signature rides the live `chat`/`edit`/`delete` body; receivers keep it only
 if it verifies over the state they stored. History therefore carries the

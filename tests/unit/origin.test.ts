@@ -37,7 +37,7 @@ describe('message origin signatures', () => {
 		expect(await verifyOrigin(ROOM, { ...m, origin })).toBe(true);
 	});
 
-	test('any change to content, time, id, device, or room breaks it', async () => {
+	test('any change to content, time, id, device, quoted message, or room breaks it', async () => {
 		const me = await createDeviceIdentity();
 		const m = msg(me.deviceId);
 		const origin = await signOrigin(me, ROOM, m);
@@ -45,7 +45,8 @@ describe('message origin signatures', () => {
 			{ ...m, content: 'hullo' },
 			{ ...m, timestamp: 999 },
 			{ ...m, id: 'm2' },
-			{ ...m, edited: true, edit_timestamp: 5 }
+			{ ...m, edited: true, edit_timestamp: 5 },
+			{ ...m, reply_to: 'another-message' }
 		]) {
 			expect(await verifyOrigin(ROOM, { ...changed, origin })).toBe(false);
 		}
