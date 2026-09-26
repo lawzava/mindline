@@ -1,13 +1,28 @@
 import { toast } from 'svelte-sonner';
 import { recentRooms } from '$lib/stores/recent-rooms';
 
+// The open room's key fragment, loaded from the keystore on entry so that a
+// fragment-less rejoin can still share a working invite. Held in memory
+// (not fetched on click) because Safari only allows clipboard writes
+// inside the user gesture.
+let cachedInvite: { path: string; fragment: string } | null = null;
+
+export function rememberInvite(roomId: string, fragment: string): void {
+	cachedInvite = { path: `/${encodeURIComponent(roomId)}`, fragment };
+}
+
 function inviteUrl(): string {
 	const url = new URL(window.location.href);
+	url.search = '';
 	if (!url.hash) {
-		const room = recentRooms
-			.get()
-			.find((entry) => `/${encodeURIComponent(entry.id)}` === url.pathname);
-		if (room?.key) url.hash = room.key;
+		if (cachedInvite?.path === url.pathname) {
+			url.hash = cachedInvite.fragment;
+		} else {
+			const room = recentRooms
+				.get()
+				.find((entry) => `/${encodeURIComponent(entry.id)}` === url.pathname);
+			if (room?.key) url.hash = room.key;
+		}
 	}
 	return url.href;
 }

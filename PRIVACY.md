@@ -7,7 +7,8 @@
 Your messages are end-to-end encrypted with a key that exists only in your
 invite link. We cannot read them: not in transit, not at rest, not when our
 server relays them. What we unavoidably see is rendezvous metadata: which
-room IDs connect, when, and from which IP addresses.
+rooms connect (by a name derived from the link key, not the ID in your
+link), when, and from which IP addresses.
 
 ## What is encrypted, and with what
 
@@ -26,7 +27,9 @@ The complete protocol and threat model: [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 The signaling server introduces browsers to each other. It handles:
 
-- Room IDs (random identifiers; they grant no access without the link key)
+- Rendezvous names: a per-room value derived from the link key. The
+  signaling server never sees the room ID in your link, so it cannot
+  match a room to a URL someone saw.
 - Device identifiers (random per-device fingerprints, not names)
 - IP addresses and connection timing
 - The IP addresses inside the WebRTC connection offers it relays between
@@ -55,7 +58,7 @@ operator, contain at most the metadata listed above.
   handed out only once someone else is in your room.
 - **Cloudflare fronts both the app and the signaling server.** It sees the
   same connection metadata the signaling server does — IP addresses,
-  timing, which room IDs rendezvous — plus ordinary web logs for page
+  timing, which rendezvous names meet, the room ID in page URLs you load — plus ordinary web logs for page
   loads. It never sees message content or the link key.
 
 ## What stays on your device

@@ -56,8 +56,9 @@ detail: `docs/PROTOCOL.md` §6 and `docs/CLAIMS.md`.)
 - **The invite link is a bearer capability.** Anyone who obtains the full link
   (`#k=…`) can read and write the room, including history. Leaking the link is
   not a vulnerability in Mindline.
-- **Rendezvous metadata is visible to the operator.** The signaling server and
-  Cloudflare see room IDs, per-device identifiers, IP addresses, and timing —
+- **Rendezvous metadata is visible to the operator.** The signaling server sees a
+  key-derived rendezvous name; Cloudflare also sees room IDs in page URLs.
+  Both see per-device identifiers, IP addresses, and timing —
   and, on the last-resort relay path, the sending device id plus ciphertext
   size and timing. They never see content or the link key.
 - **Peers see each other's IP addresses** when connecting directly (no TURN).
