@@ -230,10 +230,13 @@ export function getDevConfig(): P2PConfig {
  * Use this when ?fastConnect=true is in the URL
  */
 export function getTestConfig(): Partial<P2PConfig> {
+	// ?rotateMs= shortens periodic key rotation for the rotation e2e test only.
+	const rotate = browser ? Number(new URLSearchParams(window.location.search).get('rotateMs')) : 0;
 	return {
 		fastConnect: true,
 		offerTimeout: 5000,
-		meshCheckInterval: 3000
+		meshCheckInterval: 3000,
+		...(rotate > 0 ? { rotationMaxAgeMs: rotate } : {})
 	};
 }
 

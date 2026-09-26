@@ -50,7 +50,8 @@ one of them is a bug.
   host to let each newcomer in, and the host can remove people; a room
   switched to open grants full access, including history, to anyone with
   the link.
-- **Forward secrecy is scoped, not absolute.** Room keys rotate on joins
+- **Forward secrecy is scoped, not absolute.** Room keys rotate every 15
+  minutes or 200 messages while a room is active, and on joins
   and leaves (fresh random generations, PROTOCOL.md §1.4), so ciphertext
   the signaling operator archived while relaying stays unreadable even if
   the link later leaks. What rotation does *not* change: the link itself

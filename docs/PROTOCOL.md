@@ -455,6 +455,14 @@ triggers: (a) a verified newcomer join; (b) an explicit member leave or
 burn-on-leave. The minter is the **lowest-deviceId verified direct peer
 that currently holds a grantable (non-reloaded) generation** — i.e. one
 that still has raw `rk_g`. Concurrent mints converge by `(g, gid)`.
+**Periodic rotation.** Joins and leaves are not the only triggers: an active
+generation is retired after 15 minutes or 200 chat messages, whichever comes
+first (idle generations are left alone), through the same debounced,
+minter-selected path. With retired keys destroyed two generations on, a
+device compromise opens at most the current and previous generations of
+captured traffic, about the last half hour of an active room. Per-message
+forward secrecy (sender-key chains) is not built; see ROADMAP.md.
+
 Join-triggered ratchets are debounced (one ratchet per burst of joins
 within a short window) so a churning room does not ratchet per-join.
 Raw generation secrets are **never persisted** — members persist only
