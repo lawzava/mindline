@@ -8,6 +8,8 @@
 	import { reading, applyReading } from '$lib/stores/reading';
 	import { saveInviteKey } from '$lib/crypto/keystore';
 	import { parseKeyFragment } from '$lib/crypto/keys';
+	import LockGate from '$lib/components/LockGate.svelte';
+	import { deviceLock, lockReady } from '$lib/stores/lock';
 
 	let { children } = $props();
 
@@ -21,6 +23,7 @@
 	});
 
 	onMount(() => {
+		void lockReady();
 		// Encrypt any pre-v3 plaintext history at rest (PROTOCOL.md §4).
 		migrateLegacyPlaintext().catch((error) => {
 			console.error('[storage] legacy history migration sweep failed:', error);
@@ -49,5 +52,10 @@
 
 <ModeWatcher />
 <AppShell>
-	{@render children()}
+	<!-- A locked device shows only the lock until the passkey opens it (§4). -->
+	{#if $deviceLock === 'locked'}
+		<LockGate />
+	{:else}
+		{@render children()}
+	{/if}
 </AppShell>

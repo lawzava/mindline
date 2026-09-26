@@ -4,10 +4,14 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import RecentRooms from '$lib/components/RecentRooms.svelte';
+	import DeviceLock from '$lib/components/DeviceLock.svelte';
 	import { user, recentRooms } from '$lib/stores';
 	import { cn } from '$lib/utils';
 	import { onMount } from 'svelte';
-	import { createRoomKey, toKeyFragment } from '$lib/crypto/keys';
+	import { createRoomKey, parseKeyFragment, toKeyFragment } from '$lib/crypto/keys';
+	import { handOffRoomKey } from '$lib/crypto/handoff';
+	import { deviceLock } from '$lib/stores/lock';
+	import { get } from 'svelte/store';
 	import { NEW_ROOM_KEY } from '$lib/p2p/admission';
 	import { founderRoomId } from '$lib/p2p/roster';
 	import { getOrCreateIdentity } from '$lib/crypto/keystore';
@@ -61,7 +65,14 @@
 		// key: joiners can check who founded it (PROTOCOL.md §3.8).
 		const { roomId: id, salt } = await founderRoomId((await getOrCreateIdentity()).spki);
 		sessionStorage.setItem(NEW_ROOM_KEY, JSON.stringify({ roomId: id, salt }));
-		await goto(`/${id}#${toKeyFragment(createRoomKey())}`);
+		const key = createRoomKey();
+		// A locked device keeps the key out of the address bar and history (§4).
+		if (get(deviceLock) === 'unlocked') {
+			handOffRoomKey(id, key);
+			await goto(`/${id}`);
+			return;
+		}
+		await goto(`/${id}#${toKeyFragment(key)}`);
 	}
 
 	async function joinRoom() {
@@ -76,6 +87,12 @@
 
 		ensureUser();
 		const fragment = extractKeyFragment(joinRoomId);
+		const key = fragment ? parseKeyFragment(fragment) : null;
+		if (key && get(deviceLock) === 'unlocked') {
+			handOffRoomKey(room, key);
+			await goto(`/${room}`);
+			return;
+		}
 		await goto(`/${room}${fragment}`);
 	}
 
@@ -223,6 +240,7 @@
 			Messages travel device to device, end-to-end encrypted. No accounts. Nothing is stored on a
 			server.
 		</p>
+		<DeviceLock />
 		<!-- The build is reproducible from this commit: anyone can check that the
 		     code served here is the code published (docs/BUNDLE_VERIFICATION.md). -->
 		<!-- eslint-disable svelte/no-navigation-without-resolve -->

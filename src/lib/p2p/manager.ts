@@ -8,6 +8,7 @@ import { CryptoSession } from './crypto-session';
 import { ROTATION, rotationDue, shouldMint } from './rekey-policy';
 import { RekeyScheduler } from './rekey-scheduler';
 import { parseKeyFragment } from '$lib/crypto/keys';
+import { takeRoomKey } from '$lib/crypto/handoff';
 import { getNetworkInfo } from './config';
 import {
 	routeP2PMessage,
@@ -199,8 +200,10 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 
 	// Room crypto: fragment key from the URL, or previously stored keys.
 	if (!cryptoSession || cryptoSession.roomId !== roomId) {
+		// From the address bar, or handed over in memory on a locked device.
 		const fragmentKey =
-			typeof window !== 'undefined' ? parseKeyFragment(window.location.hash) : null;
+			(typeof window !== 'undefined' ? parseKeyFragment(window.location.hash) : null) ??
+			takeRoomKey(roomId);
 		try {
 			cryptoSession = await CryptoSession.create(roomId, fragmentKey);
 		} catch (error) {
