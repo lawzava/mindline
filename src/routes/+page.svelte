@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { version } from '$app/environment';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import RecentRooms from '$lib/components/RecentRooms.svelte';
@@ -222,5 +223,18 @@
 			Messages travel device to device, end-to-end encrypted. No accounts. Nothing is stored on a
 			server.
 		</p>
+		<!-- The build is reproducible from this commit: anyone can check that the
+		     code served here is the code published (docs/BUNDLE_VERIFICATION.md). -->
+		<!-- eslint-disable svelte/no-navigation-without-resolve -->
+		<p class="px-1 text-xs text-muted-foreground" data-testid="build-version">
+			Build <span class="tabular-nums">{version.slice(0, 7)}</span> ·
+			<a
+				href="https://github.com/lawzava/mindline/blob/main/docs/BUNDLE_VERIFICATION.md"
+				target="_blank"
+				rel="noopener noreferrer"
+				class="underline underline-offset-2 hover:text-foreground">verify this code</a
+			>
+		</p>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</div>
 </div>

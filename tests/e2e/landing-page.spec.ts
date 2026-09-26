@@ -135,3 +135,13 @@ test.describe('Landing Page', () => {
 		await waitForConnectionStatus(page);
 	});
 });
+
+test('the landing page names its build and links to how to verify it', async ({ page }) => {
+	await page.goto('/');
+	const build = page.getByTestId('build-version');
+	await expect(build).toContainText('Build');
+	await expect(build.getByRole('link', { name: 'verify this code' })).toHaveAttribute(
+		'href',
+		/BUNDLE_VERIFICATION\.md$/
+	);
+});

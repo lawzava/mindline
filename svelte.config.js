@@ -16,6 +16,15 @@ const config = {
 	preprocess: vitePreprocess(),
 
 	kit: {
+		// A deterministic version so two builds of one commit are byte-identical
+		// (docs/BUNDLE_VERIFICATION.md). Kit's default is the build time.
+		version: {
+			name:
+				process.env.BUILD_VERSION ||
+				process.env.CF_PAGES_COMMIT_SHA ||
+				process.env.GITHUB_SHA ||
+				'dev'
+		},
 		// Default: adapter-node (emits ./build; `node build`), deployable on any
 		// Node host (Docker, VM, PaaS) — no platform lock-in. Cloudflare Pages
 		// sets ADAPTER=cloudflare to emit .svelte-kit/cloudflare instead.

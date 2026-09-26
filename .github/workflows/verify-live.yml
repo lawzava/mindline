@@ -1,0 +1,52 @@
+name: Verify live bundle
+
+# An independent watchdog: rebuild the commit the live site says it runs and
+# compare every served bundle file byte for byte (docs/BUNDLE_VERIFICATION.md).
+# Anyone can run the same steps from a fork.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: 'Site to verify'
+        default: 'https://mindline.chat'
+
+jobs:
+  verify:
+    if: github.repository == 'lawzava/mindline'
+    runs-on: ubuntu-latest
+    env:
+      ORIGIN: ${{ github.event.inputs.origin || 'https://mindline.chat' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find the commit the site claims
+        id: live
+        run: |
+          version=$(curl -fsS "$ORIGIN/_app/version.json" | jq -r .version)
+          echo "Live version: $version" >> "$GITHUB_STEP_SUMMARY"
+          git cat-file -e "$version^{commit}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - run: git checkout ${{ steps.live.outputs.version }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build that commit
+        env:
+          ADAPTER: cloudflare
+          BUILD_VERSION: ${{ steps.live.outputs.version }}
+        run: pnpm build
+
+      - name: Compare with what the site serves
+        run: node scripts/bundle-digest.mjs --url="$ORIGIN" --dir=.svelte-kit/cloudflare | tee -a "$GITHUB_STEP_SUMMARY"
