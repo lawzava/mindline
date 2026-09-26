@@ -123,6 +123,10 @@ export interface ChatMessage {
 	origin?: MessageOrigin;
 	/** Id of the message this one replies to. */
 	replyTo?: string;
+	/** Lifetime in ms (§4); signed in origin. */
+	ttl?: number;
+	/** Timer event: the room's new lifetime, 0 = off (§4); signed in origin. */
+	timer?: number;
 }
 
 /** Typing indicator showing what a peer is currently typing */

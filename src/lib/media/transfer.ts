@@ -32,6 +32,8 @@ export interface MediaOffer {
 	senderName: string;
 	roomId: string;
 	timestamp: number;
+	/** Lifetime in ms (§4). */
+	ttl?: number;
 }
 
 export interface MediaAccept {
@@ -157,6 +159,7 @@ export class MediaTransferEngine {
 			thumbMime?: string;
 			duration?: number;
 			waveform?: number[];
+			ttl?: number;
 		},
 		recipients: string[],
 		sender: { id: string; name: string },
@@ -187,7 +190,8 @@ export class MediaTransferEngine {
 			senderId: sender.id,
 			senderName: sender.name,
 			roomId: this.deps.roomId,
-			timestamp: Date.now()
+			timestamp: Date.now(),
+			...(meta.ttl ? { ttl: meta.ttl } : {})
 		};
 
 		// Persist locally so the sender can re-render their own media.

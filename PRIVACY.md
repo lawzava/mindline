@@ -20,6 +20,10 @@ link), when, and from which IP addresses.
   each other's messages, edits, or deletions.
 - Chat history and received media are also encrypted at rest in your
   browser's storage, using a key derived from the same link key.
+- Anyone in a room can turn on disappearing messages. Each device then
+  deletes every new message and its media when the chosen time is up.
+  People in the room can still keep what they saw, for example with a
+  screenshot.
 
 The complete protocol and threat model: [docs/PROTOCOL.md](docs/PROTOCOL.md).
 

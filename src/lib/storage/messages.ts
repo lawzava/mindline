@@ -12,12 +12,18 @@
  * first load. Rooms whose keys were never persisted cannot be encrypted;
  * the start-up sweep deletes their plaintext instead of leaving it
  * readable on disk.
+ *
+ * Disappearing messages (§4): every load and save drops expired messages
+ * and deletes their media. The save must filter too, or merging with the
+ * page on disk would bring back what the caller already dropped.
  */
 
 import { lp } from '$lib/crypto/lp';
 import { loadRoomKeys } from '$lib/crypto/keystore';
 import type { RoomKeys } from '$lib/crypto/keys';
 import type { Message } from '$lib/types/message';
+import { deleteBlob } from '$lib/media/blob-store';
+import { trimKeepingTimer, withoutExpired } from '$lib/disappearing';
 
 const DB_NAME = 'mindline-messages';
 const DB_VERSION = 1;
@@ -152,6 +158,18 @@ async function writePage(keys: RoomKeys, roomId: string, messages: Message[]): P
 	await withStore('readwrite', (s) => s.put(record, roomId));
 }
 
+/** Delete the stored media of expired messages; best-effort, like the page write. */
+async function deleteExpiredMedia(roomId: string, expired: Message[]): Promise<void> {
+	for (const msg of expired) {
+		if (!msg.attachment) continue;
+		try {
+			await deleteBlob(roomId, msg.attachment.transferId);
+		} catch {
+			console.warn(`[storage] could not delete expired media in ${roomId}`);
+		}
+	}
+}
+
 /** Primary wins on id conflict; secondary fills the gaps. */
 function merge(primary: Message[], secondary: Message[]): Message[] {
 	const byId = new Map<string, Message>();
@@ -206,7 +224,16 @@ export function loadRoomMessages(roomId: string): Promise<Message[]> {
 				console.warn(`[storage] history migration failed for ${roomId}; will retry`);
 			}
 		}
-		return [...stored].sort((a, b) => a.timestamp - b.timestamp);
+		const { kept, expired } = withoutExpired(stored);
+		if (expired.length > 0) {
+			try {
+				await writePage(keys, roomId, kept);
+			} catch {
+				/* retried on the next load or save */
+			}
+			await deleteExpiredMedia(roomId, expired);
+		}
+		return [...kept].sort((a, b) => a.timestamp - b.timestamp);
 	});
 }
 
@@ -216,14 +243,15 @@ export function saveRoomMessages(roomId: string, inMemory: Message[]): Promise<v
 		if (!keys) return; // no k_storage: nothing is ever persisted in plaintext
 
 		const existing = await readPage(keys, roomId);
-		const merged = merge(inMemory, existing)
-			.sort((a, b) => a.timestamp - b.timestamp)
-			.slice(-MAX_STORED_MESSAGES);
+		const { kept, expired } = withoutExpired(
+			merge(inMemory, existing).sort((a, b) => a.timestamp - b.timestamp)
+		);
 		try {
-			await writePage(keys, roomId, merged);
+			await writePage(keys, roomId, trimKeepingTimer(kept, MAX_STORED_MESSAGES));
 		} catch {
 			/* quota exceeded: history persistence is best-effort */
 		}
+		await deleteExpiredMedia(roomId, expired);
 	});
 }
 

@@ -18,6 +18,8 @@ import {
 } from './handlers';
 import { MediaTransferEngine, type MediaKind, type MediaOffer } from '$lib/media/transfer';
 import { saveRoomMessages } from '$lib/storage/messages';
+import { isExpired, roomTimer } from '$lib/disappearing';
+import { deleteBlob } from '$lib/media/blob-store';
 import type { Message, MessageOrigin } from '$lib/types/message';
 import {
 	connection,
@@ -342,7 +344,12 @@ export async function initializeP2P(roomId: string, config?: Partial<P2PConfig>)
 				// Use the session room, not the offer's self-asserted roomId.
 				const targetRoomId = roomId;
 				const existing = messages.getMessage(targetRoomId, offer.messageId);
-				if (existing?.attachment) {
+				// It disappeared while the bytes were still arriving (§4).
+				if (!existing || isExpired(existing, Date.now(), messages.getRoomMessages(targetRoomId))) {
+					void deleteBlob(targetRoomId, offer.transferId).catch(() => {});
+					return;
+				}
+				if (existing.attachment) {
 					messages.updateMessage(targetRoomId, offer.messageId, {
 						attachment: { ...existing.attachment, state: 'ready' }
 					});
@@ -580,7 +587,10 @@ export function broadcastChat(content: string, messageId: string): void {
 			timestamp: stored.timestamp,
 			roomId,
 			origin,
-			replyTo: stored.reply_to ?? undefined
+			replyTo: stored.reply_to ?? undefined,
+			// Signed with the rest (§4): receivers store exactly this.
+			...(stored.ttl ? { ttl: stored.ttl } : {}),
+			...(typeof stored.timer === 'number' ? { timer: stored.timer } : {})
 		};
 		p2pConnection?.broadcast(message);
 	});
@@ -912,9 +922,10 @@ export async function sendMediaMessage(
 	}
 
 	const messageId = crypto.randomUUID();
+	const ttl = roomTimer(messages.getRoomMessages(roomId)) || undefined;
 	const offer = await mediaEngine.offer(
 		data,
-		meta,
+		{ ...meta, ttl },
 		directPeers,
 		{ id: userState.id, name: userState.name },
 		messageId
@@ -926,7 +937,7 @@ export async function sendMediaMessage(
 		sender_name: userState.name,
 		message_type: 'Media',
 		content: meta.name,
-		timestamp: Date.now(),
+		timestamp: offer.timestamp, // receivers expire it from the offer time
 		room_id: roomId,
 		status: 'Sent',
 		edited: false,
@@ -939,6 +950,7 @@ export async function sendMediaMessage(
 		delivery_attempts: 0,
 		size_bytes: data.byteLength,
 		sender_device: cryptoSession?.deviceId,
+		...(ttl ? { ttl } : {}),
 		attachment: {
 			transferId: offer.transferId,
 			kind: meta.kind,

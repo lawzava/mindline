@@ -26,6 +26,7 @@ import { remotePeerOwnsMessage } from './ownership';
 import { applyReaction } from './reactions';
 import { verifyOrigin } from '$lib/crypto/origin';
 import { paginateSyncMessages } from './sync';
+import { isExpired, validTimer, validTtl, withoutExpired } from '$lib/disappearing';
 import type { Message } from '$lib/types/message';
 import type { MediaAbort, MediaAccept, MediaOffer } from '$lib/media/transfer';
 import { get } from 'svelte/store';
@@ -74,6 +75,32 @@ function sessionRoom(bodyRoomId: string | undefined): string | null {
 		return null;
 	}
 	return roomId;
+}
+
+/**
+ * Messages dated beyond this much clock skew are refused: pinned to the end
+ * of everyone's history, a timer event would also freeze the room's timer.
+ */
+const MAX_FUTURE_SKEW_MS = 10 * 60_000;
+
+/** A lifetime and timer setting a sender could have set (§4). */
+function lifetimeValid(m: { ttl?: unknown; timer?: unknown }): boolean {
+	if (m.ttl !== undefined && validTtl(m.ttl) === undefined) return false;
+	if (m.timer !== undefined && validTimer(m.timer) === undefined) return false;
+	// A timer event never expires: it dates every message after it.
+	return m.ttl === undefined || m.timer === undefined;
+}
+
+function readLifetime(
+	message: ChatMessage
+): { timer: number | undefined; fields: Pick<Message, 'ttl' | 'timer'> } | null {
+	if (!lifetimeValid(message)) return null;
+	const ttl = message.ttl === undefined ? undefined : validTtl(message.ttl);
+	const timer = message.timer === undefined ? undefined : validTimer(message.timer);
+	return {
+		timer,
+		fields: { ...(ttl ? { ttl } : {}), ...(timer !== undefined ? { timer } : {}) }
+	};
 }
 
 /**
@@ -140,6 +167,12 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 	}
 	const targetRoomId = sessionRoom(message.roomId);
 	if (!targetRoomId) return;
+	const lifetime = readLifetime(message);
+	if (!lifetime) return;
+	if (!Number.isSafeInteger(timestamp) || timestamp > Date.now() + MAX_FUTURE_SKEW_MS) return;
+	// A timer event is sent as it is made: one dated far back would re-date
+	// the history after it.
+	if (lifetime.timer !== undefined && timestamp < Date.now() - MAX_FUTURE_SKEW_MS) return;
 
 	// Update peer name mapping if we have a name
 	if (senderName) {
@@ -153,9 +186,9 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 		// self-asserted and would let a member render as anyone, even "you".
 		sender_id: peerId,
 		sender_name: senderName || peerId,
-		message_type: 'Text',
+		message_type: lifetime.timer === undefined ? 'Text' : 'Timer',
 		content,
-		timestamp: timestamp || Date.now(),
+		timestamp,
 		room_id: targetRoomId,
 		status: 'Sent',
 		edited: false,
@@ -169,8 +202,11 @@ function handleChatMessage(message: ChatMessage, peerId: string): void {
 		local_timestamp: Date.now(),
 		delivery_attempts: 0,
 		size_bytes: new TextEncoder().encode(content).length,
-		sender_device: peerId
+		sender_device: peerId,
+		...lifetime.fields
 	};
+	// Already gone on the author's side: never stored here.
+	if (isExpired(messageObj, Date.now(), messages.getRoomMessages(targetRoomId))) return;
 
 	messages.addMessage(targetRoomId, messageObj);
 	void saveRoomMessages(targetRoomId, messages.getRoomMessages(targetRoomId));
@@ -193,9 +229,14 @@ function handleMediaOffer(offer: MediaOffer, peerId: string): boolean {
 	// returning false makes the caller skip the transfer engine too.
 	const targetRoomId = sessionRoom(offer.roomId);
 	if (!targetRoomId) return false;
+	const ttl = offer.ttl === undefined ? undefined : validTtl(offer.ttl);
+	if (offer.ttl !== undefined && ttl === undefined) return false;
 	// Ids are sender-chosen: reusing one would swap the stored blob or the
 	// message of an existing attachment, including someone else's.
 	const existing = messages.getRoomMessages(targetRoomId);
+	if (!Number.isSafeInteger(offer.timestamp)) return false;
+	const dated = { id: offer.messageId, timestamp: offer.timestamp, ttl };
+	if (isExpired(dated, Date.now(), existing)) return false;
 	if (
 		existing.some((m) => m.id === offer.messageId || m.attachment?.transferId === offer.transferId)
 	) {
@@ -212,7 +253,7 @@ function handleMediaOffer(offer: MediaOffer, peerId: string): boolean {
 		sender_name: offer.senderName || peerId,
 		message_type: 'Media',
 		content: offer.name,
-		timestamp: offer.timestamp || Date.now(),
+		timestamp: offer.timestamp,
 		room_id: targetRoomId,
 		status: 'Sent',
 		edited: false,
@@ -225,6 +266,7 @@ function handleMediaOffer(offer: MediaOffer, peerId: string): boolean {
 		delivery_attempts: 0,
 		size_bytes: offer.size,
 		sender_device: peerId,
+		...(ttl ? { ttl } : {}),
 		attachment: {
 			transferId: offer.transferId,
 			kind: offer.kind,
@@ -273,7 +315,8 @@ async function handleSyncRequest(message: SyncRequestMessage, peerId: string): P
 	if (!roomId) return;
 
 	try {
-		const roomMessages = messages.getRoomMessages(roomId);
+		// Expired messages are gone even if the sweep has not run yet.
+		const roomMessages = withoutExpired(messages.getRoomMessages(roomId)).kept;
 		// Keep this room's connection while awaiting pages; a room switch may
 		// replace the global callback before the previous history finishes.
 		const send = sendToPeerFn;
@@ -296,9 +339,6 @@ async function handleSyncRequest(message: SyncRequestMessage, peerId: string): P
 /**
  * Handle sync response from peer
  */
-/** Synced messages dated beyond this much clock skew are refused. */
-const MAX_FUTURE_SKEW_MS = 10 * 60_000;
-
 const isDeletedState = (m: Message) =>
 	m.message_type === 'Deleted' || m.content === '[Message deleted]';
 
@@ -321,16 +361,31 @@ async function handleSyncResponse(message: SyncResponseMessage, peerId: string):
 	let processedCount = 0;
 	const selfIds = new Set([get(user).id, selfDeviceFn()].filter(Boolean));
 
+	// Signed timer events in this page date the messages served with them,
+	// so a copy with its lifetime stripped still expires (§4).
+	const pageTimers: Message[] = [];
+	for (const msg of syncedMessages) {
+		if (typeof msg?.timer !== 'number' || !lifetimeValid(msg) || !msg.origin) continue;
+		if (await verifyOrigin(targetRoomId, msg)) pageTimers.push({ ...msg, unsigned: false });
+	}
+
 	for (const msg of syncedMessages) {
 		processedCount++;
-		if (!msg || typeof msg.id !== 'string' || typeof msg.timestamp !== 'number') continue;
+		if (!msg || typeof msg.id !== 'string' || !Number.isSafeInteger(msg.timestamp)) continue;
 		// A member cannot pin its messages to the end of everyone's history.
 		if (msg.timestamp > Date.now() + MAX_FUTURE_SKEW_MS) continue;
+		// Expired, or a lifetime no sender would set: not taken in (§4).
+		if (!lifetimeValid(msg)) continue;
 
 		// History is served by a member, not its authors (§3.5). A copy that
 		// carries an author signature must verify; a broken one is a forgery.
 		const signed = !!msg.origin && (await verifyOrigin(targetRoomId, msg));
 		if (msg.origin && !signed) continue;
+		// An unsigned timer event sets nothing and is never shown (§4).
+		if (!signed && msg.timer !== undefined) continue;
+		// Only an unsigned copy is dated by the room's timer events (§4).
+		const context = [...messages.getRoomMessages(targetRoomId), ...pageTimers];
+		if (isExpired({ ...msg, unsigned: !signed }, Date.now(), context)) continue;
 
 		const existingMsg = messages.getMessage(targetRoomId, msg.id);
 		if (!existingMsg) {

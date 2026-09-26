@@ -14,6 +14,8 @@ import {
 	type RoomKeys
 } from '$lib/crypto/keys';
 import { saveRoomKeys } from '$lib/crypto/keystore';
+import { getBlob, putBlob } from '$lib/media/blob-store';
+import { lp } from '$lib/crypto/lp';
 import type { Message } from '$lib/types/message';
 
 function makeMessage(overrides: Partial<Message> = {}): Message {
@@ -352,5 +354,58 @@ describe('plaintext migration', () => {
 		await migrateLegacyPlaintext();
 		expect(localStorage.getItem('mindline_currentRoomId')).toBe('room-x');
 		expect(localStorage.getItem('theme')).toBe('dark');
+	});
+});
+
+describe('disappearing messages at rest', () => {
+	const HOUR = 3_600_000;
+
+	test('a save never writes an expired message, even one only on disk', async () => {
+		const roomId = uniqueRoom();
+		await seedKeys(roomId);
+		const soon = makeMessage({ room_id: roomId, timestamp: Date.now() - HOUR + 50, ttl: HOUR });
+		const keep = makeMessage({ room_id: roomId });
+		await saveRoomMessages(roomId, [soon, keep]);
+		await new Promise((r) => setTimeout(r, 80));
+		// The caller no longer holds the expired message; the disk copy must
+		// not be merged back in.
+		await saveRoomMessages(roomId, [keep]);
+		expect((await loadRoomMessages(roomId)).map((m) => m.id)).toEqual([keep.id]);
+	});
+
+	test('a load drops expired messages from disk and deletes their media', async () => {
+		const roomId = uniqueRoom();
+		const keys = await seedKeys(roomId);
+		await putBlob(keys, roomId, 't-gone', new Uint8Array([1, 2, 3]), 'image/png');
+		await putBlob(keys, roomId, 't-kept', new Uint8Array([4]), 'image/png');
+		const media = (transferId: string, extra: Partial<Message>) =>
+			makeMessage({
+				room_id: roomId,
+				message_type: 'Media',
+				attachment: {
+					transferId,
+					kind: 'image',
+					name: 'a.png',
+					mime: 'image/png',
+					size: 3,
+					state: 'ready'
+				},
+				...extra
+			});
+		const gone = media('t-gone', { timestamp: Date.now() - HOUR + 50, ttl: HOUR });
+		const kept = media('t-kept', {});
+		await saveRoomMessages(roomId, [gone, kept]);
+		await new Promise((r) => setTimeout(r, 80));
+		expect((await loadRoomMessages(roomId)).map((m) => m.id)).toEqual([kept.id]);
+		expect(await getBlob(keys, roomId, 't-gone')).toBeNull();
+		expect(await getBlob(keys, roomId, 't-kept')).not.toBeNull();
+		// The page itself was rewritten without it, not just filtered on read.
+		const record = await rawPage(roomId);
+		const plain = await crypto.subtle.decrypt(
+			{ name: 'AES-GCM', iv: record!.nonce, additionalData: lp(roomId, 'storage', '0') },
+			keys.storage,
+			record!.data
+		);
+		expect(new TextDecoder().decode(plain)).not.toContain(gone.id);
 	});
 });

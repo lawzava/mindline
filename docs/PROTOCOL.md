@@ -752,6 +752,14 @@ signature rides the live `chat`/`edit`/`delete` body; receivers keep it only
 if it verifies over the state they stored. History therefore carries the
 author's signature whichever member serves it.
 
+A message with a lifetime (`ttl`) or a timer event (`timer`, §4) is signed
+over `lp("mindline/v2/origin", <the eight v1 fields>, ttl, timer)`, each
+empty when absent. Messages with neither keep the v1 form, which older
+clients verify. Because the label differs, a served copy that keeps its
+signature but has its lifetime stripped, stretched, or added verifies under
+neither form and is dropped. A copy with the signature removed too is only
+an unverified copy, and §4 dates it by the timer in force when it was sent.
+
 On receipt of a sync page: a copy that carries a signature must verify or it
 is dropped; a copy without one (older clients) is kept but marked unsigned
 and shown as an "unverified copy"; copies dated more than 10 minutes in the
@@ -907,6 +915,38 @@ request list.
   messages + blobs.
 - Quota: `navigator.storage.estimate()` before accepting media; refuse at
   <2× incoming size headroom. `persist()` requested at key creation (§1.2).
+- **Disappearing messages.** Any member sets the room's timer (off, 5
+  minutes, 1 hour, 1 day, 1 week) by sending a timer event: a `chat` body
+  whose `timer` field is the new lifetime in ms (0 = off), shown as a line
+  in the stream. Only trusted timer events count: signed ones, or live ones
+  from the verified author. Sync refuses an unsigned timer event, and one
+  already held is not shown and expires like any unsigned copy. The room's timer is the latest by `(timestamp, id)`; a new
+  event is dated after the one it replaces, messages dated more than 10
+  minutes ahead are refused live as in sync (so a future-dated event cannot
+  freeze the setting), and a live timer event dated more than 10 minutes
+  back is refused. Timestamps must be integers. Timer events never expire
+  (one carrying `ttl` is refused), so a newcomer learns the setting through
+  sync; trimming history to its 500-message cap keeps the event in force
+  where the kept history starts. While the timer is on, every message and
+  media offer carries `ttl` (30 s to 90 days; anything else is refused, not
+  kept). An **unsigned** copy without `ttl` takes the timer in force at its
+  timestamp: a member serving history can strip `ttl` and the signature
+  with it, and the signed timer events still date the copy. A signed or
+  live message without `ttl` is its author's word and is never shortened,
+  so a backdated timer event cannot delete what others said. Every device
+  deletes a message at `timestamp + lifetime` by its own clock: the room view drops
+  it when due (waking at least hourly), every history load and save drops
+  expired messages and deletes their media blobs (the save must filter, or
+  merging with the page on disk would bring the message back), media that
+  finishes arriving after its message went is deleted on arrival, sync
+  never serves an expired message, and a receiver refuses one that is
+  already expired. `ttl` and `timer` are covered by the origin signature
+  (§3.5). Limits: a member can keep what it saw (screenshots, a modified or
+  older client that ignores `ttl`); a copy backdated to before the timer
+  was turned on is kept, as an unverified copy; the browser may keep
+  overwritten IndexedDB bytes on disk until it compacts its files; a device
+  that never reopens Mindline deletes nothing until it does (opening the
+  start page purges recent rooms).
 - `k_storage` is link-static and does **not** ratchet with §1.4: at-rest
   protection targets device theft/forensics, and the §1.4 forward-secrecy
   claim explicitly excludes it (a leaked link plus a copy of a member
@@ -1036,7 +1076,7 @@ AAD   = lp(transferId, str(chunkIndex))
 | Link-holder (intended or leaked) | Entry + history-by-sync, as a visible peer (§1.1, §1.4). Passive + later leak: captured grant ciphertext — relay-archived (never happens), endpoint-captured, or future-quantum-recovered from recorded DTLS — stays unreadable: `rk_g` is hybrid-wrapped (X-Wing) to the recipient device's KEM key (§1.4 v4); only compromise of that device's key store opens it |
 | Past participant           | Keeps everything already synced, and the link (can rejoin visibly). Loses passive read of post-departure traffic once the leave-triggered ratchet lands (§1.4) |
 | Room member (malicious)    | Can spoof drafts/presence of others (eph unsigned); cannot forge, edit, delete, or react as others (signatures + §3.7 authorization); can misrepresent history it serves to a syncing device (§3.5); can grief the ratchet — fork a joiner, mint-flood, grind low gids to re-root lines (§1.4) — an availability nuisance, never a read of traffic it was not granted |
-| Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB |
+| Device thief / forensics   | Needs the device profile; at-rest data is AES-GCM, keys non-extractable in IndexedDB. In a room with a disappearing-messages timer, gets only what has not expired yet (§4) |
 | XSS / malicious extension  | Game over (can use keys in place). Mitigation: strict CSP — `connect-src` pinned to self + the signaling origin (no any-host WebSocket exfil), zero third-party runtime origins, self-hosted fonts |
 
 Platform residuals, documented user-facing: Safari evicts IndexedDB after
