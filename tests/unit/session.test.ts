@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { CryptoSession, RoomKeyMismatchError } from '$lib/p2p/crypto-session';
+import { ChainMissingError, CryptoSession, RoomKeyMismatchError } from '$lib/p2p/crypto-session';
 import { MAX_CHAIN } from '$lib/p2p/ratchet';
 import { createRoomKey, deriveRoomKeys, importRoomKeyMaterial } from '$lib/crypto/keys';
 import { createDeviceIdentity } from '$lib/crypto/identity';
@@ -518,5 +518,150 @@ describe('session epoch (PROTOCOL.md §2 — monotonic device high-water)', () =
 		);
 
 		expect(e2).toBeGreaterThan(e1);
+	});
+});
+
+describe('sender-key chains (PROTOCOL.md §1.5)', () => {
+	async function isolatedDevice(roomId: string, key: Uint8Array) {
+		indexedDB = new IDBFactory();
+		return (await CryptoSession.create(roomId, key))!;
+	}
+
+	/** Verified both ways, each holding the other's in-memory chain key. */
+	async function link(x: CryptoSession, y: CryptoSession) {
+		await x.acceptHello(await y.makeHello('peer', bind('bind')), bind('bind'));
+		await y.acceptHello(await x.makeHello('peer', bind('bind')), bind('bind'));
+		await x.handleChainKey(
+			(await x.openMessage(JSON.parse(await y.chainKeyWire()))) as never,
+			y.deviceId
+		);
+		await y.handleChainKey(
+			(await y.openMessage(JSON.parse(await x.chainKeyWire()))) as never,
+			x.deviceId
+		);
+	}
+
+	async function trio(roomId = 'room-chain') {
+		const key = createRoomKey();
+		const a = await isolatedDevice(roomId, key);
+		const b = await isolatedDevice(roomId, key);
+		const c = await isolatedDevice(roomId, key);
+		await link(a, b);
+		await link(a, c);
+		await link(b, c);
+		return { a, b, c, key };
+	}
+
+	/** a grants its current chain to r; returns the chain id and the opened grant. */
+	async function grant(a: CryptoSession, r: CryptoSession) {
+		const made = await a.chainGrantWireFor(r.deviceId);
+		const envelope = JSON.parse(made!.wire);
+		const body = await r.openMessage(envelope);
+		return { chainId: made!.chainId, body, g: envelope.g as number };
+	}
+
+	test('a granted peer opens chained messages; each message uses a new key', async () => {
+		const { a, b } = await trio();
+		const { chainId, body, g } = await grant(a, b);
+		await b.handleChainGrant(body as never, a.deviceId, g);
+		const e1 = JSON.parse(
+			(await a.sealChained({ type: 'chat', content: 'one', messageId: 'm1' }, chainId))!
+		);
+		const e2 = JSON.parse(
+			(await a.sealChained({ type: 'chat', content: 'two', messageId: 'm2' }, chainId))!
+		);
+		expect([e1.k, e1.i, e2.i]).toEqual([chainId, 0, 1]);
+		expect(await b.openMessage(e1)).toMatchObject({ content: 'one' });
+		expect(await b.openMessage(e2)).toMatchObject({ content: 'two' });
+		await expect(b.openMessage(e2)).rejects.toThrow();
+	});
+
+	test('no grant goes to a peer that has not sent its in-memory chain key', async () => {
+		const key = createRoomKey();
+		const a = await isolatedDevice('room-nokey', key);
+		const b = await isolatedDevice('room-nokey', key);
+		await a.acceptHello(await b.makeHello('B', bind('bind')), bind('bind'));
+		await b.acceptHello(await a.makeHello('A', bind('bind')), bind('bind'));
+		expect(await a.chainGrantWireFor(b.deviceId)).toBeNull();
+	});
+
+	test("a recorded grant stays sealed to anyone who later reads the recipient's storage", async () => {
+		const { a, b, key } = await trio('room-read-later');
+		const made = await a.chainGrantWireFor(b.deviceId);
+		const envelope = JSON.parse(made!.wire);
+		const body = await b.openMessage(envelope);
+		await b.handleChainGrant(body as never, a.deviceId, envelope.g);
+		// The same device reloaded from its stored keys: new memory, same storage.
+		const reloaded = (await CryptoSession.create('room-read-later', key))!;
+		await reloaded.acceptHello(await a.makeHello('A', bind('bind')), bind('bind'));
+		await expect(
+			reloaded.handleChainGrant(body as never, a.deviceId, envelope.g)
+		).rejects.toThrow();
+	});
+
+	test('without a grant the receiver asks; a grant cannot be re-attributed or moved to another generation', async () => {
+		const { a, b, c } = await trio();
+		const { chainId, body, g } = await grant(a, b);
+		await b.handleChainGrant(body as never, a.deviceId, g);
+		const wire = await a.sealChained({ type: 'chat', content: 'secret', messageId: 'm1' }, chainId);
+		await expect(c.openMessage(JSON.parse(wire!))).rejects.toBeInstanceOf(ChainMissingError);
+		const forC = await grant(a, c);
+		await expect(c.handleChainGrant(forC.body as never, b.deviceId, forC.g)).rejects.toThrow();
+		await expect(c.handleChainGrant(forC.body as never, a.deviceId, forC.g + 1)).rejects.toThrow();
+		await c.handleChainGrant(forC.body as never, a.deviceId, forC.g);
+	});
+
+	test('a grant given later opens only what comes after it', async () => {
+		const { a, c } = await trio();
+		const chainId = a.currentChainId();
+		const early = await a.sealChained(
+			{ type: 'chat', content: 'before', messageId: 'm1' },
+			chainId
+		);
+		const late = await grant(a, c);
+		await c.handleChainGrant(late.body as never, a.deviceId, late.g);
+		const after = await a.sealChained({ type: 'chat', content: 'after', messageId: 'm2' }, chainId);
+		await expect(c.openMessage(JSON.parse(early!))).rejects.toThrow();
+		expect(await c.openMessage(JSON.parse(after!))).toMatchObject({ content: 'after' });
+	});
+
+	test('a message too far ahead asks for a fresh grant instead of stalling', async () => {
+		const { a, b } = await trio();
+		const { chainId, body, g } = await grant(a, b);
+		await b.handleChainGrant(body as never, a.deviceId, g);
+		let last: string | null = null;
+		for (let n = 0; n < 2003; n++) {
+			last = await a.sealChained({ type: 'chat', content: String(n), messageId: `m${n}` }, chainId);
+		}
+		await expect(b.openMessage(JSON.parse(last!))).rejects.toBeInstanceOf(ChainMissingError);
+	}, 60_000);
+
+	test('a new generation starts a new chain; the old one seals and grants nothing more', async () => {
+		const { a, b } = await trio();
+		const before = a.currentChainId();
+		await a.mintGeneration();
+		expect(a.currentChainId()).not.toBe(before);
+		expect(await a.sealChained({ type: 'chat', content: 'x', messageId: 'm' }, before)).toBeNull();
+		expect(await a.chainGrantWireFor(b.deviceId, before)).toBeNull();
+	});
+
+	test("a member's new connection drops its old chain key until the new one arrives", async () => {
+		const { a, b } = await trio('room-reconnect');
+		expect(await a.chainGrantWireFor(b.deviceId)).not.toBeNull();
+		// b reconnects (a reload: new tab, new hello).
+		await a.acceptHello(await b.makeHello('B', bind('bind2')), bind('bind2'));
+		expect(await a.chainGrantWireFor(b.deviceId)).toBeNull();
+	});
+
+	test('concurrent sends never reuse an index', async () => {
+		const { a } = await trio();
+		const chainId = a.currentChainId();
+		const wires = await Promise.all(
+			Array.from({ length: 6 }, (_, n) =>
+				a.sealChained({ type: 'chat', content: String(n), messageId: `m${n}` }, chainId)
+			)
+		);
+		const indexes = wires.map((w) => JSON.parse(w!).i).sort((x: number, y: number) => x - y);
+		expect(indexes).toEqual([0, 1, 2, 3, 4, 5]);
 	});
 });
