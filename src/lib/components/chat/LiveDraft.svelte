@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { draftsList } from '$lib/stores';
+	import { reading } from '$lib/stores/reading';
+	import { createDraftAnnouncer } from '$lib/reading-aloud';
 	import { fade } from 'svelte/transition';
+	import { prefersReducedMotion } from 'svelte/motion';
 	import { cn } from '$lib/utils';
 
 	// The reason this product exists, staged as a first-class entry in the
@@ -52,25 +55,56 @@
 		return 'Several people are typing';
 	});
 
+	// Reading mode: "Show drafts steadily" (on by itself under reduced
+	// motion) holds the draft at full strength: no breath, no ink-in, no
+	// idle dimming. The forming text is the thing being read; it never fades.
+	const steady = $derived($reading.steadyDrafts || prefersReducedMotion.current);
+
+	// Read drafts aloud (opt-in): the peer's words, a phrase at a time.
+	// Each phrase replaces the region's node, so a repeat is still heard.
+	// The counter is plain, not state: the announcer can fire inside the
+	// effect below, and reading state there would make it self-triggering.
+	let phraseSeq = 0;
+	let phrase = $state({ seq: 0, text: '' });
+	const announcer = createDraftAnnouncer((text) => {
+		phrase = { seq: ++phraseSeq, text };
+	});
+
+	$effect(() => {
+		if (!$reading.readDraftsAloud) {
+			announcer.dispose();
+			return;
+		}
+		for (const draft of $draftsList)
+			announcer.update(draft.peerId, draft.senderName, draft.content);
+		announcer.retain(new Set($draftsList.map((d) => d.peerId)));
+	});
+
 	onDestroy(() => {
 		for (const timer of Object.values(timers)) clearTimeout(timer);
+		announcer.dispose();
 	});
 </script>
 
 <!-- Screen readers hear that someone is typing, once, not every keystroke.
      This region's text changes only when the set of typists does. -->
 <p class="sr-only" aria-live="polite" aria-atomic="true">{typingAnnouncement}</p>
+<!-- Present whenever the draft is, so it is registered before it speaks. -->
+<p class="sr-only" aria-live="polite" aria-atomic="true" data-testid="draft-reader">
+	{#if $reading.readDraftsAloud}{#key phrase.seq}<span>{phrase.text}</span>{/key}{/if}
+</p>
 
 {#each $draftsList as draft (draft.peerId)}
-	{@const breathing = !active[draft.peerId] && !draft.isFading}
+	{@const breathing = !steady && !active[draft.peerId] && !draft.isFading}
 	<!-- aria-live="off" opts the forming text out of the message list's live
 	     region; it stays readable on demand, it just is not announced. -->
 	<div
 		class={cn(
-			'mt-4 flex min-w-0 max-w-[min(78%,36rem)] flex-col items-start gap-1 transition-opacity duration-500',
-			draft.isFading && 'opacity-85'
+			'mt-4 flex min-w-0 max-w-[min(78%,36rem)] flex-col items-start gap-1',
+			!steady && 'transition-opacity duration-500',
+			!steady && draft.isFading && 'opacity-85'
 		)}
-		transition:fade={{ duration: 150 }}
+		transition:fade={{ duration: steady ? 0 : 150 }}
 		data-testid="draft-indicator"
 		aria-live="off"
 	>
@@ -81,7 +115,7 @@
 		<div class="min-w-0 max-w-full rounded-[1.125rem] bg-wash-draft px-3.5 py-2.5">
 			{#if draft.content.trim()}
 				<p class="whitespace-pre-wrap text-base leading-[1.45] text-draft [overflow-wrap:anywhere]">
-					{draft.content.slice(0, -1)}{#key draft.content}<span class="ink-in"
+					{draft.content.slice(0, -1)}{#key draft.content}<span class={cn(!steady && 'ink-in')}
 							>{draft.content.slice(-1)}</span
 						>{/key}<span
 						class={cn(

@@ -2,6 +2,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Sun, Moon } from 'lucide-svelte';
 	import { toggleMode, mode } from 'mode-watcher';
+	import ReadingSettings from '$lib/components/ReadingSettings.svelte';
 </script>
 
 <header class="elevate-bar border-b border-border bg-background">
@@ -16,18 +17,21 @@
 			<span class="text-base font-semibold tracking-tight">Mindline</span>
 		</a>
 
-		<Button
-			variant="ghost"
-			size="icon"
-			onclick={toggleMode}
-			class="h-10 w-10 text-muted-foreground"
-		>
-			{#if mode.current === 'dark'}
-				<Sun class="h-4 w-4" />
-			{:else}
-				<Moon class="h-4 w-4" />
-			{/if}
-			<span class="sr-only">Toggle theme</span>
-		</Button>
+		<div class="flex items-center gap-1">
+			<ReadingSettings />
+			<Button
+				variant="ghost"
+				size="icon"
+				onclick={toggleMode}
+				class="h-10 w-10 text-muted-foreground"
+			>
+				{#if mode.current === 'dark'}
+					<Sun class="h-4 w-4" />
+				{:else}
+					<Moon class="h-4 w-4" />
+				{/if}
+				<span class="sr-only">Toggle theme</span>
+			</Button>
+		</div>
 	</div>
 </header>
