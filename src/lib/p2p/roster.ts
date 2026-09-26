@@ -38,6 +38,9 @@ export type RosterAction = 'admit' | 'remove' | 'host' | 'approve' | 'open';
  */
 export const DELEGATE = '*members';
 
+/** The pseudo-device whose admission turns on sender-key chains (§1.5), same form. */
+export const CHAINS = '*chains';
+
 export interface RosterLink {
 	/** Position in the chain; 0 is the founding operation. */
 	seq: number;
@@ -171,6 +174,8 @@ interface State {
 	removed: Set<string>;
 	/** Members may let people in with vouchers. */
 	membersAdmit: boolean;
+	/** Direct messages are sealed under sender-key chains (§1.5). */
+	chains: boolean;
 	/**
 	 * Vouchers name this: the seq of the op that last turned member
 	 * admission on or closed the room again. Either voids older vouchers.
@@ -186,6 +191,7 @@ const emptyState = (): State => ({
 	members: new Set(),
 	removed: new Set(),
 	membersAdmit: false,
+	chains: false,
 	delegateEpoch: -1,
 	basis: new Map()
 });
@@ -293,6 +299,11 @@ export class Roster {
 	}
 
 	/** The host lets members let people in. */
+	/** The host turned sender-key chains on (§1.5). */
+	get chains(): boolean {
+		return this.anchored && this.state.chains;
+	}
+
 	get membersAdmit(): boolean {
 		return this.anchored && this.state.membersAdmit;
 	}
@@ -477,7 +488,7 @@ export class Roster {
 		if (op.salt !== undefined || op.by !== this.state.host) return false;
 		// '*' names the room, DELEGATE the member-admission switch; nothing else.
 		if (op.device !== MODE && op.device.startsWith('*')) {
-			if (op.device !== DELEGATE || op.action === 'host') return false;
+			if ((op.device !== DELEGATE && op.device !== CHAINS) || op.action === 'host') return false;
 		}
 		// The host hands the role on before leaving; it cannot orphan the room.
 		if (op.action === 'remove' && op.device === this.state.host) return false;
@@ -503,6 +514,10 @@ export class Roster {
 				s.mode = 'open';
 				break;
 			case 'admit':
+				if (op.device === CHAINS) {
+					s.chains = true;
+					break;
+				}
 				if (op.device === DELEGATE) {
 					s.membersAdmit = true;
 					s.delegateEpoch = op.seq;
@@ -513,6 +528,10 @@ export class Roster {
 				s.basis.set(op.device, op.seq);
 				break;
 			case 'remove':
+				if (op.device === CHAINS) {
+					s.chains = false;
+					break;
+				}
 				if (op.device === DELEGATE) {
 					s.membersAdmit = false;
 					break;

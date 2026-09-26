@@ -7,7 +7,13 @@
  */
 
 import { fromB64url, toB64url } from '$lib/crypto/b64';
-import { ENVELOPE_VERSION, openEnvelope, sealEnvelope, type Envelope } from '$lib/crypto/envelope';
+import {
+	ENVELOPE_VERSION,
+	envelopeSignatureValid,
+	openEnvelope,
+	sealEnvelope,
+	type Envelope
+} from '$lib/crypto/envelope';
 import { lp } from '$lib/crypto/lp';
 import { deviceFingerprint, safetyNumber, toHex } from '$lib/crypto/safety';
 import { signOrigin } from '$lib/crypto/origin';
@@ -26,7 +32,13 @@ import {
 	type DeviceIdentity,
 	type KemIdentity
 } from '$lib/crypto/identity';
-import { isUsableKemPublicKey, unwrapSecret, wrapSecret } from '$lib/crypto/kem';
+import {
+	generateKemSeed,
+	isUsableKemPublicKey,
+	kemKeypair,
+	unwrapSecret,
+	wrapSecret
+} from '$lib/crypto/kem';
 import {
 	deriveGenerationKeys,
 	deriveMediaKey,
@@ -46,6 +58,7 @@ import {
 	saveRoomKeys
 } from '$lib/crypto/keystore';
 import { ReplayGuard } from '$lib/crypto/replay';
+import { ChainStore, sendKey, startChain, type Chain } from '$lib/crypto/chain';
 import {
 	certOf,
 	GenerationRatchet,
@@ -57,6 +70,27 @@ import {
 	type RekeyRequestBody,
 	type WrappedGrant
 } from './ratchet';
+
+/** A chained message arrived for a chain this device was never granted (§1.5). */
+export class ChainMissingError extends Error {
+	constructor(
+		readonly sender: string,
+		readonly g: number,
+		readonly chainId: string
+	) {
+		super('no grant for this sender-key chain');
+		this.name = 'ChainMissingError';
+	}
+}
+
+/** A sender's chain position, X-Wing wrapped for one member (§1.5). */
+export interface ChainGrantBody {
+	type: 'chain-grant';
+	g: number;
+	k: string;
+	i: number;
+	wrap: { ct: string; n: string; wrapped: string };
+}
 
 interface HelloBody {
 	type: 'hello';
@@ -144,6 +178,16 @@ export class CryptoSession {
 	private seq = 0;
 	private persistTimer: ReturnType<typeof setTimeout> | null = null;
 	private generationCb: ((g: number, gid: string) => void) | null = null;
+	/** This tab's sender-key chain for the current generation (§1.5), memory only. */
+	private sendChain: Chain | null = null;
+	/** Serializes chain use: no two messages or grants race on one index. */
+	private chainLock: Promise<unknown> = Promise.resolve();
+	/** Chains other members granted this device. */
+	private readonly receivedChains = new ChainStore();
+	/** This tab's in-memory X-Wing pair for receiving chain grants. */
+	private chainKem: { seed: Uint8Array; publicKey: Uint8Array } | null = null;
+	/** Members' in-memory chain keys, from their signed chain-key bodies. */
+	private readonly peerChainKeys = new Map<string, Uint8Array>();
 
 	private constructor(
 		roomId: string,
@@ -410,6 +454,9 @@ export class CryptoSession {
 				kem: body.kem,
 				name: body.name
 			});
+			// A new connection may be a new tab with a new chain key (§1.5):
+			// wait for it instead of wrapping grants to the old one.
+			this.peerChainKeys.delete(body.deviceId);
 			return { deviceId: body.deviceId, name: body.name, g: body.g, gid: body.gid };
 		} catch {
 			return null;
@@ -449,6 +496,165 @@ export class CryptoSession {
 			g: this.ratchet.g
 		});
 		return JSON.stringify(envelope);
+	}
+
+	// ============ sender-key chains (§1.5) ============
+
+	private currentSendChain(): Chain {
+		if (!this.sendChain || this.sendChain.g !== this.ratchet.g) {
+			this.sendChain?.key.fill(0);
+			this.sendChain = startChain(this.ratchet.g);
+		}
+		return this.sendChain;
+	}
+
+	private withChain<T>(fn: () => Promise<T>): Promise<T> {
+		const run = this.chainLock.then(fn, fn);
+		this.chainLock = run.catch(() => {});
+		return run;
+	}
+
+	/** The chain the next chained message uses; a new generation starts a new one. */
+	currentChainId(): string {
+		return this.currentSendChain().id;
+	}
+
+	/**
+	 * Seal a reliable body under the next key of chain `chainId`, or null when
+	 * that chain is no longer current (the generation moved): the caller then
+	 * grants the new chain before sealing again.
+	 */
+	sealChained(body: Record<string, unknown>, chainId: string): Promise<string | null> {
+		return this.withChain(async () => {
+			const chain = this.currentSendChain();
+			if (chain.id !== chainId) return null;
+			const { index, key } = await sendKey(chain);
+			const stamped = { ...body, epoch: this.epoch, seq: ++this.seq };
+			const envelope = await sealEnvelope(stamped, {
+				key,
+				roomId: this.roomId,
+				identity: this.identity,
+				klass: 'msg',
+				g: chain.g,
+				chain: { id: chain.id, index }
+			});
+			return JSON.stringify(envelope);
+		});
+	}
+
+	/**
+	 * This tab's own key pair for receiving chain grants (§1.5): X-Wing, drawn
+	 * fresh and held in memory only, so a grant recorded on the wire cannot be
+	 * unwrapped by anyone who later reads this device's storage.
+	 */
+	private chainKemPair(): { seed: Uint8Array; publicKey: Uint8Array } {
+		if (!this.chainKem) {
+			const seed = generateKemSeed();
+			this.chainKem = { seed, publicKey: kemKeypair(seed).publicKey };
+		}
+		return this.chainKem;
+	}
+
+	/** Tell a member where to wrap chain grants for this tab (a signed msg). */
+	async chainKeyWire(): Promise<string> {
+		const body = { type: 'chain-key', pub: toB64url(this.chainKemPair().publicKey) };
+		return this.sealMessage(body);
+	}
+
+	/** A member's in-memory chain key, from the verified device that sent it. */
+	async handleChainKey(body: { pub?: unknown }, from: string): Promise<void> {
+		if (!this.peers.has(from)) throw new Error('chain key from an unverified device');
+		const pub = typeof body?.pub === 'string' ? fromB64url(body.pub) : null;
+		if (!pub || !isUsableKemPublicKey(pub)) throw new Error('malformed chain key');
+		this.peerChainKeys.set(from, pub);
+	}
+
+	/** Whether this member has sent the key its chain grants are wrapped to. */
+	hasChainKeyFor(deviceId: string): boolean {
+		return this.peerChainKeys.has(deviceId);
+	}
+
+	/**
+	 * A grant of this tab's current chain position for one verified member,
+	 * wrapped to that member's in-memory chain key and bound to room,
+	 * generation, sender, chain, index, and recipient. Null when the member
+	 * has not sent its chain key yet, or when `chainId` is no longer current.
+	 */
+	chainGrantWireFor(
+		recipientDeviceId: string,
+		chainId?: string
+	): Promise<{ wire: string; chainId: string; g: number; gid: string } | null> {
+		return this.withChain(async () => {
+			if (!this.peers.has(recipientDeviceId)) {
+				throw new Error(`unverified recipient ${recipientDeviceId}`);
+			}
+			const recipientKem = this.peerChainKeys.get(recipientDeviceId);
+			if (!recipientKem) return null;
+			const chain = this.currentSendChain();
+			if (chainId !== undefined && chain.id !== chainId) return null;
+			const index = chain.index;
+			const secret = chain.key.slice();
+			try {
+				const wrap = await wrapSecret(recipientKem, secret, {
+					roomId: this.roomId,
+					g: chain.g,
+					gid: `${this.deviceId}/${chain.id}/${index}`,
+					recipientDeviceId,
+					purpose: 'chain-wrap'
+				});
+				const body: ChainGrantBody = {
+					type: 'chain-grant',
+					g: chain.g,
+					k: chain.id,
+					i: index,
+					wrap: { ct: toB64url(wrap.ct), n: toB64url(wrap.n), wrapped: toB64url(wrap.wrapped) }
+				};
+				// Sealed at the chain's generation, which the caller has granted.
+				const wire = await this.sealMessage(body as unknown as Record<string, unknown>);
+				// The generation the grant was sealed at, captured under the lock.
+				return { wire, chainId: chain.id, g: chain.g, gid: this.ratchet.gid };
+			} finally {
+				secret.fill(0);
+			}
+		});
+	}
+
+	/**
+	 * Take a chain grant from `from` (the verified device the envelope came
+	 * from), sealed at generation `envelopeG`. Fail-closed: a grant wrapped
+	 * for another device or another tab, re-sent by a member as its own, or
+	 * naming another generation, yields nothing.
+	 */
+	async handleChainGrant(body: ChainGrantBody, from: string, envelopeG: number): Promise<void> {
+		const { g, k, i, wrap } = body ?? ({} as ChainGrantBody);
+		if (!Number.isSafeInteger(g) || g < 0 || !Number.isSafeInteger(i) || i < 0) {
+			throw new Error('malformed chain grant');
+		}
+		if (typeof k !== 'string' || k.length === 0 || k.length > 64) {
+			throw new Error('malformed chain grant');
+		}
+		if (g !== envelopeG || this.ratchet.keysFor(g).length === 0) {
+			throw new Error('chain grant for a generation this device does not hold');
+		}
+		if (!this.peers.has(from)) throw new Error('chain grant from an unverified device');
+		if (!this.chainKem) throw new Error('no chain key to unwrap with');
+		const ct = wrap && fromB64url(wrap.ct);
+		const n = wrap && fromB64url(wrap.n);
+		const wrapped = wrap && fromB64url(wrap.wrapped);
+		if (!ct || !n || !wrapped) throw new Error('malformed chain grant');
+		const secret = await unwrapSecret(
+			this.chainKem.seed,
+			{ ct, n, wrapped },
+			{
+				roomId: this.roomId,
+				g,
+				gid: `${from}/${k}/${i}`,
+				recipientDeviceId: this.deviceId,
+				purpose: 'chain-wrap'
+			}
+		);
+		if (!secret || secret.length !== 32) throw new Error('chain grant unwrap failed');
+		this.receivedChains.accept(from, g, k, i, secret);
 	}
 
 	/** Seal a draft/presence body ('eph' class, unsigned). */
@@ -500,10 +706,32 @@ export class CryptoSession {
 			senderPublicKey = peer.publicKey;
 		}
 
-		// Candidate keys: static k_hs, or trial-decrypt across the retained
-		// generation instances at the envelope's g (§1.4).
+		// Candidate keys: static k_hs, the granted chain's message key (§1.5),
+		// or trial-decrypt across the retained generation instances (§1.4).
 		let candidates: CryptoKey[];
-		if (envelope.t === 'hs') {
+		let chainStep: { commit(): void } | null = null;
+		if (envelope.k !== undefined || envelope.i !== undefined) {
+			if (envelope.t !== 'msg' || typeof envelope.k !== 'string') {
+				throw new Error('malformed chain position');
+			}
+			// Signature first: deriving up to MAX_SKIP chain steps is work a
+			// forger must not be able to make us do.
+			if (
+				!senderPublicKey ||
+				!(await envelopeSignatureValid(envelope, this.roomId, senderPublicKey))
+			) {
+				throw new Error('invalid signature');
+			}
+			const prepared = await this.receivedChains.prepare(
+				envelope.s,
+				envelope.g,
+				envelope.k,
+				Number(envelope.i)
+			);
+			if (!prepared) throw new ChainMissingError(envelope.s, envelope.g, envelope.k);
+			chainStep = prepared;
+			candidates = [prepared.key];
+		} else if (envelope.t === 'hs') {
 			candidates = [this.keys.hs];
 		} else {
 			const generations = this.ratchet.keysFor(envelope.g);
@@ -542,6 +770,8 @@ export class CryptoSession {
 		if (!this.guard.check(envelope.s, replayClass, epoch, seq)) {
 			throw new Error(`replayed envelope from ${envelope.s} (${epoch}:${seq})`);
 		}
+		// The chain moves past this message only once it has fully verified.
+		chainStep?.commit();
 		this.schedulePersist();
 
 		return body;
@@ -551,6 +781,8 @@ export class CryptoSession {
 
 	/** Persist + announce a generation change. */
 	private async ratchetChanged(): Promise<void> {
+		// Chains of generations no longer held are forgotten with them.
+		this.receivedChains.prune((g) => this.ratchet.keysFor(g).length > 0);
 		await saveRatchetState(this.roomId, this.ratchet.state());
 		this.generationCb?.(this.ratchet.g, this.ratchet.gid);
 	}
