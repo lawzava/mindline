@@ -14,10 +14,9 @@
 	let { children } = $props();
 
 	// Reading settings (text size, contrast) live as attributes on <html>.
-	// Applied at hydration, before the app mounts, and on every change.
-	// Returning readers with a non-default setting see one brief frame of
-	// the defaults: the server cannot know a localStorage value, and an
-	// inline pre-paint script would need its own CSP hash.
+	// static/js/reading-boot.js sets them before first paint (the server
+	// cannot know a localStorage value); this keeps them in step at
+	// hydration and on every change.
 	$effect.pre(() => {
 		applyReading($reading, document.documentElement);
 	});
