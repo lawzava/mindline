@@ -92,8 +92,10 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
 1. **Safety numbers.** Shipped: per-pair 60-digit numbers in the peer list,
    locally stored verifications, and warnings for changed keys or a
    borrowed verified name. A QR form comes with the QR invite work.
-2. **Signed history.** Sign each message at origin and carry the signature
-   through sync, so served history is verifiable (closes the §3.5 caveat).
+2. **Signed history.** Shipped: authors sign each message state, history
+   carries the signatures, forged copies are dropped, and unsigned copies
+   from older clients show as "unverified copy". Media offers are signed on
+   the author's stored copy only; reaction maps stay unsigned.
 3. **Signaling hardening.** Done: client-IP headers honored only from
    configured proxies (`TRUSTED_PROXY_*`), per-IP connection and per-room
    member caps, TURN credentials delivered only once a peer is present.

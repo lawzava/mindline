@@ -732,15 +732,29 @@ member re-encrypted at the present generation, which is why catching up
 never requires old generation keys (§1.4): grants restore live
 readability, sync restores missed content.
 
-Synced messages are **not individually signed**: content, timestamp, and
-attribution are the serving member's assertion. Two limits apply on
-receipt. A synced message claiming the receiving user (by user id or
-device id) is dropped unless it is already held, so no member can put words
-in your mouth through history; the cost is that your own messages do not
-come back to you after a burn. Every synced message is filed under the
-session room and marked as synced, so it never counts as a new arrival for
-unread counts or notifications. Per-message origin signatures are the
-planned fix (§6).
+**Origin signatures.** Every message carries its author's signature over its
+current state: `ECDSA-P256(device key, lp("mindline/v1/origin", roomId, id,
+sender_device, timestamp, kind, body, editedAt, replyTo))`, where `kind` is
+`text | media | deleted`, `body` is the text, a media descriptor
+(`transferId\nname\nsize`), or empty for a deletion, and `editedAt` is set only
+for an edited text message; `replyTo` is the quoted message id or empty
+(a deletion signs it empty). The message stores `{sig, spki}`; the SPKI must
+hash to `sender_device`. The author signs on send, edit, and delete, and the
+signature rides the live `chat`/`edit`/`delete` body; receivers keep it only
+if it verifies over the state they stored. History therefore carries the
+author's signature whichever member serves it.
+
+On receipt of a sync page: a copy that carries a signature must verify or it
+is dropped; a copy without one (older clients) is kept but marked unsigned
+and shown as an "unverified copy"; copies dated more than 10 minutes in the
+future are refused. Deletions and edits of a message this device already
+holds apply through sync only when signed by the same device that authored
+it. A synced message claiming the receiving user (by user id or device id) is
+dropped unless already held, so no member can put words in your mouth; the
+cost is that your own messages do not come back to you after a burn. Every
+synced message is filed under the session room and marked as synced, so it
+never counts as a new arrival for unread counts or notifications. Reaction
+maps remain unsigned (§3.7).
 
 ### 3.6 Relay of last resort
 
@@ -780,9 +794,9 @@ already in the room (that would swap a stored blob), and only the
 transfer's counterparty may abort it.
 
 Reaction state arriving via sync (§3.5) is the serving member's asserted
-full map: a malicious member can misrepresent past reaction state (and
-deleted-state) to a device that syncs from it — the same trust extended
-to all served history.
+full map: a malicious member can misrepresent past reaction state to a
+device that syncs from it. Deleted-state and edits through sync require the
+author's origin signature (§3.5).
 
 Delivery receipts count only acknowledgments from the original, deduplicated
 recipient set. Disconnecting does not remove an intended recipient or prove

@@ -2,7 +2,7 @@
  * P2P Types
  */
 
-import type { Message } from '$lib/types/message';
+import type { Message, MessageOrigin } from '$lib/types/message';
 import type { MediaAbort, MediaAccept, MediaOffer } from '$lib/media/transfer';
 
 // ============================================
@@ -117,6 +117,8 @@ export interface ChatMessage {
 	messageId: string;
 	timestamp: number;
 	roomId: string;
+	/** Author signature over the message state (PROTOCOL.md §3.5). */
+	origin?: MessageOrigin;
 }
 
 /** Typing indicator showing what a peer is currently typing */
@@ -161,6 +163,7 @@ export interface EditMessage {
 	newContent: string;
 	senderId: string;
 	timestamp: number;
+	origin?: MessageOrigin;
 }
 
 /** Delete an existing message */
@@ -170,6 +173,7 @@ export interface DeleteMessage {
 	roomId: string;
 	senderId: string;
 	timestamp: number;
+	origin?: MessageOrigin;
 }
 
 /** Add or remove a reaction to a message */

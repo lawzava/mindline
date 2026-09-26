@@ -190,7 +190,7 @@
 	// The meta row always shows on the last message of a group; mid-group it
 	// appears only when it carries information (edited/failed) or on tap.
 	const showMeta = $derived(
-		!groupedBelow || message.edited || message.status === 'Failed' || revealed
+		!groupedBelow || message.edited || message.unsigned || message.status === 'Failed' || revealed
 	);
 
 	// Tap-to-reveal only applies to plain text bubbles: while editing or on
@@ -342,6 +342,13 @@
 			{formatTime(message.timestamp)}
 			{#if message.edited}
 				<span>(edited)</span>
+			{/if}
+			{#if message.unsigned && !isMe}
+				<!-- History served by another member without its author's signature. -->
+				<span
+					title="This copy came from another member's history without its author's signature, so it cannot be confirmed as theirs."
+					data-testid="unverified-copy">unverified copy</span
+				>
 			{/if}
 			{#if message.status === 'Failed'}
 				<span class="text-destructive">(failed)</span>
