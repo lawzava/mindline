@@ -15,6 +15,15 @@ import { clearRoomMessages } from './messages';
 import { markBurned } from './tombstone';
 import { forgetRoster } from '$lib/p2p/admission';
 
+/** The service worker keeps visited pages for offline use (src/service-worker.js). */
+export async function forgetOfflinePage(roomId: string): Promise<void> {
+	if (typeof caches === 'undefined') return;
+	const key = new URL(`/${roomId}`, location.origin).href;
+	for (const name of await caches.keys()) {
+		if (name.startsWith('mindline-pages-')) await (await caches.open(name)).delete(key);
+	}
+}
+
 /**
  * tombstone: false removes the room without marking it burned, for rooms
  * cleared by the passkey lock rather than by the person (§4).
@@ -32,7 +41,8 @@ export async function burnRoomData(
 		...(tombstone
 			? [['tombstone', () => markBurned(roomId)] as [string, () => Promise<void>]]
 			: []),
-		['roster', async () => forgetRoster(roomId)]
+		['roster', async () => forgetRoster(roomId)],
+		['offline page', () => forgetOfflinePage(roomId)]
 	];
 	for (const [name, step] of steps) {
 		try {

@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import RecentRooms from '$lib/components/RecentRooms.svelte';
+	import CodeCheck from '$lib/components/CodeCheck.svelte';
 	import DeviceLock from '$lib/components/DeviceLock.svelte';
 	import { user, recentRooms } from '$lib/stores';
 	import { cn } from '$lib/utils';
@@ -252,6 +253,9 @@
 				rel="noopener noreferrer"
 				class="underline underline-offset-2 hover:text-foreground">verify this code</a
 			>
+			{#if /^[0-9a-f]{40}$/.test(version)}
+				or <CodeCheck />
+			{/if}
 		</p>
 		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</div>

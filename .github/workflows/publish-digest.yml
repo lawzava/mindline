@@ -1,0 +1,89 @@
+name: Publish bundle digest
+
+# For the in-browser code check (docs/BUNDLE_VERIFICATION.md): build each
+# main commit exactly as Cloudflare Pages does and publish its per-file
+# SHA-256 list to the bundle-digests branch as <commit>.json. The site's
+# "check it now" link compares what it is served against that list.
+#
+# The build runs with a read-only token that is not kept on disk, so no
+# dependency's install or build script can push anything. Only the
+# publish job, which installs nothing, can write, and only that branch.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'lawzava/mindline'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build this commit as the site does
+        env:
+          ADAPTER: cloudflare
+          BUILD_VERSION: ${{ github.sha }}
+        run: pnpm build
+
+      - name: Digest
+        run: node scripts/bundle-digest.mjs --dir=.svelte-kit/cloudflare --json=${{ github.sha }} > digest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest
+          path: digest.json
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: digest
+
+      - name: Publish to bundle-digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          git init -q site && cd site
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          # Each commit writes its own file, so concurrent runs only need a
+          # rebase before pushing; a rerun with the same digest is a no-op.
+          for attempt in 1 2 3 4 5; do
+            if git fetch -q origin bundle-digests; then
+              git checkout -q -B bundle-digests FETCH_HEAD
+            else
+              git checkout -q --orphan bundle-digests
+            fi
+            cp ../digest.json "${SHA}.json"
+            git add "${SHA}.json"
+            if git diff --cached --quiet; then
+              echo "digest already published"
+              exit 0
+            fi
+            git commit -q -m "digest for ${SHA}"
+            if git push -q origin bundle-digests; then exit 0; fi
+            sleep $((attempt * 5))
+          done
+          echo "could not publish the digest" >&2
+          exit 1

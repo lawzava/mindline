@@ -1,4 +1,5 @@
 import type { Handle } from '@sveltejs/kit';
+import { version } from '$app/environment';
 
 // Security and cache headers. The Content-Security-Policy itself is emitted by
 // SvelteKit (see svelte.config.js `kit.csp`); these are the complementary
@@ -22,6 +23,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 	for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
 		response.headers.set(name, value);
 	}
+	// The service worker keeps a page offline only when it is from its own
+	// build (src/service-worker.js); a newer page would name uncached files.
+	response.headers.set('x-mindline-build', version);
 
 	// Cache-Control: no-store is load-bearing. A stale, edge-cached HTML document
 	// once referenced hashed chunks that no longer existed after a deploy, taking

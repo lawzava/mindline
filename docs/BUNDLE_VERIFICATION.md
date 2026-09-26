@@ -131,3 +131,37 @@ verifier or an installed, signed client (options 2 and 3), which remain
 unbuilt. A service worker that pins the first bundle it sees was considered
 and not shipped: it trusts that first load, and a bad update path can strand
 every client on a broken build.
+
+## Shipped: published digests and an in-page check
+
+- **Published digests.** `.github/workflows/publish-digest.yml` builds every
+  main commit as the site does and publishes its per-file SHA-256 list to
+  the `bundle-digests` branch as `<commit>.json`
+  (`node scripts/bundle-digest.mjs --dir=<build> --json=<commit>`). Any
+  verifier, including one outside the page, can compare against it without
+  building.
+- **"Check it now".** The start page's build line can run the same crawl in
+  the browser (`src/lib/verify-build.ts`, sharing
+  `scripts/bundle-digest-lib.mjs`) and compare every served file with the
+  published list for the commit the site names. It runs only when asked:
+  fetching the list from `raw.githubusercontent.com` tells GitHub this
+  address uses Mindline (PRIVACY.md), and the CSP allows that one origin
+  for it.
+- **What it proves, and what not.** A page cannot vouch for itself: a
+  tampered build could show "match" regardless. The in-page check catches a
+  swapped or corrupted file when the page's own code is honest (a bad edge
+  cache, a partial deploy, a changed chunk the checker does not load), and
+  makes the published list easy to reach. It covers the `/_app/immutable/`
+  bundle only, as the command does: not the entry HTML's inline scripts,
+  `/js/env-config.js` (rewritten at deploy), `/js/reading-boot.js`, or
+  `/service-worker.js`. With the service worker installed, it reads the
+  bundle files this device runs, from the worker's cache. The independent
+  check stays the command above and the watchdog.
+- **Offline and updates.** The service worker serves the build's files from
+  a per-version cache and fetches pages from the network first, keeping the
+  last 20 visited pages only as an offline fallback. It pins nothing, so
+  updates arrive as they would without it (PROTOCOL.md §4).
+
+Remaining: a verifier outside the page (a browser extension that checks
+each loaded file against the published list, or an installed, signed
+client). Distributing one needs a store listing under the owner's account.
