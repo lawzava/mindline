@@ -142,3 +142,33 @@ describe('burnRoomData (PROTOCOL.md §4, PRIVACY.md)', () => {
 		}
 	});
 });
+
+describe('burn and the offline page', () => {
+	test("burning a room deletes its page from the worker's offline cache", async () => {
+		const stores = new Map<string, Map<string, string>>([
+			[
+				'mindline-pages-v1',
+				new Map([
+					['https://m.example/room-9', '<html>'],
+					['https://m.example/room-8', '<html>']
+				])
+			],
+			['mindline-v1', new Map([['https://m.example/room-9', 'not a page cache']])]
+		]);
+		const fakeCaches = {
+			keys: async () => [...stores.keys()],
+			open: async (name: string) => ({
+				delete: async (key: string) => stores.get(name)!.delete(key)
+			})
+		};
+		const saved = { caches: globalThis.caches, location: globalThis.location };
+		Object.assign(globalThis, { caches: fakeCaches, location: { origin: 'https://m.example' } });
+		try {
+			await burnRoomData('room-9');
+		} finally {
+			Object.assign(globalThis, saved);
+		}
+		expect([...stores.get('mindline-pages-v1')!.keys()]).toEqual(['https://m.example/room-8']);
+		expect(stores.get('mindline-v1')!.size).toBe(1);
+	});
+});

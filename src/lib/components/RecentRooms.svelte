@@ -6,6 +6,7 @@
 	import { Pencil, X, Check, CornerUpLeft } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { loadRoomMessages } from '$lib/storage/messages';
+	import { forgetOfflinePage } from '$lib/storage/burn';
 	import { previewOf } from '$lib/preview';
 	import { nextExpiry } from '$lib/disappearing';
 
@@ -84,6 +85,8 @@
 		event.stopPropagation();
 		if (editingId === id) editingId = null;
 		recentRooms.remove(id);
+		// Its page, kept for offline use, would still name the room.
+		void forgetOfflinePage(id).catch(() => {});
 	}
 
 	function label(room: RecentRoom): string {
