@@ -45,6 +45,7 @@
 		denyPeer,
 		setRoomApproval,
 		setMembersAdmit,
+		setChains,
 		sendMediaMessage,
 		acceptMediaTransfer,
 		declineMediaTransfer
@@ -68,6 +69,7 @@
 		Flame,
 		DoorClosed,
 		Users,
+		KeyRound,
 		Timer
 	} from 'lucide-svelte';
 	import {
@@ -917,6 +919,19 @@
 										<span class="flex-1 text-left">Members can let people in</span>
 										<span class="text-xs text-muted-foreground"
 											>{$admission.membersAdmit ? 'On' : 'Off'}</span
+										>
+									</button>
+									<button
+										onclick={() => admissionAction(setChains(!$admission.chains))}
+										aria-pressed={$admission.chains}
+										title="Each message gets its own key, forgotten once used. Direct connections only; everyone needs the current version."
+										class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+										data-testid="chains-toggle"
+									>
+										<KeyRound class="h-4 w-4 text-muted-foreground" />
+										<span class="flex-1 text-left">New key for every message</span>
+										<span class="text-xs text-muted-foreground"
+											>{$admission.chains ? 'On' : 'Off'}</span
 										>
 									</button>
 								{/if}

@@ -120,25 +120,20 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    the host confirms vouchers into the chain when it next sees them.
 6. **Forward secrecy within a generation.** Shipped: periodic rotation
    (every 15 minutes or 200 messages while active), which bounds a device
-   compromise to about the last half hour of captured traffic. Not built:
-   per-message sender-key chains. Design for a protocol review before any
-   code: at each generation, every sender draws a random chain key and
-   grants it to each member through the existing X-Wing wrap; message i
-   uses HKDF(ck_i, "msg") and ck_{i+1} = HKDF(ck_i, "chain"), with the old
-   key deleted and a bounded store of skipped keys for out-of-order
-   delivery; the envelope AAD carries i. It rewrites the sealing path that
-   the generation ratchet depends on, so it needs its own review and a
-   staged rollout.
+   compromise to about the last half hour of captured traffic, and
+   per-message sender-key chains behind a per-room switch the host
+   controls ("New key for every message", PROTOCOL.md §1.5, off by
+   default). Each sender tab draws a chain key per generation and grants it
+   to each member through the X-Wing wrap; every message has its own key,
+   forgotten once used. Chains run on direct paths only, since grants never
+   relay; relayed traffic keeps the generation key.
 
-   **Owner decision (2026-09-26): not now.** A stolen device already opens
-   all saved history (at rest it sits under the link-derived `k_storage`,
-   which never rotates), so sender keys would protect only captured wire
-   traffic the device did not keep. Direct paths are DTLS; the capturable
-   traffic is mostly the server relay of last resort. That small gain does
-   not justify rewriting the most fragile part of the protocol for every
-   user. Revisit when relay use turns out to be common, when disappearing
-   messages exist (wire forward secrecy then matters more), or with an
-   external protocol review; ship any version behind a per-room switch.
+   **Owner decisions (2026-09-26).** First "not now": sender keys protect
+   only captured wire traffic the device did not keep, and direct paths are
+   DTLS. Then, the same day, the owner asked for the rest of the roadmap
+   built, so chains shipped as designed but switched off unless the host
+   turns them on, with the limits stated in §1.5 (direct paths only; older
+   versions cannot read chained messages).
 7. **Code trust.** Shipped: reproducible builds, a public bundle check,
    a daily watchdog, per-commit digests published to the `bundle-digests`
    branch, and an opt-in in-page check against them

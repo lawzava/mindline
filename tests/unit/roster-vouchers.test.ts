@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { createDeviceIdentity, type DeviceIdentity } from '$lib/crypto/identity';
 import {
 	ADMIT_LIMIT,
+	CHAINS,
 	DELEGATE,
 	Roster,
 	founderRoomId,
@@ -192,5 +193,34 @@ describe('members letting people in (PROTOCOL.md §3.8)', () => {
 		);
 		await roster.addVouchers(many);
 		expect(roster.vouchers().length).toBeLessThanOrEqual(32);
+	});
+});
+
+describe('the sender-key chain switch (PROTOCOL.md §1.5)', () => {
+	test('the host turns chains on and off with the *chains pseudo-device', async () => {
+		const { roster, alice } = await roomWithBob();
+		expect(roster.chains).toBe(false);
+		await step(roster, alice, CHAINS, 'admit');
+		expect(roster.chains).toBe(true);
+		expect(roster.isAdmitted(CHAINS)).toBe(false);
+		await step(roster, alice, CHAINS, 'remove');
+		expect(roster.chains).toBe(false);
+	});
+
+	test('nobody else can flip it, and it cannot be made host', async () => {
+		const { roster, alice, bob } = await roomWithBob();
+		const byBob = await signRosterOp(bob, roster.roomId, {
+			...roster.nextLink(),
+			device: CHAINS,
+			action: 'admit'
+		});
+		expect(await roster.add([byBob])).toBe(false);
+		const asHost = await signRosterOp(alice, roster.roomId, {
+			...roster.nextLink(),
+			device: CHAINS,
+			action: 'host'
+		});
+		expect(await roster.add([asHost])).toBe(false);
+		expect(roster.chains).toBe(false);
 	});
 });

@@ -55,6 +55,14 @@ interface Peer {
 	chatQueueBytes: number;
 	chatDraining: boolean;
 	grantedGeneration: { g: number; gid: string } | null;
+	/** The sender-key chain of ours this peer holds a grant for (§1.5). */
+	grantedChain: string | null;
+	/** Chains we asked this peer to grant again: how often and when (§1.5). */
+	askedChains?: Map<string, { count: number; at: number }>;
+	/** Our in-memory chain key went to this peer on this connection. */
+	sentChainKey?: boolean;
+	/** When we last answered this peer's chain-request. */
+	lastChainAnswer?: number;
 }
 
 const CHAT_CHANNEL_ID = 0;
@@ -88,9 +96,26 @@ const RELAY_FORBIDDEN_TYPES = new Set([
 	// not bandwidth. (Defence in depth: these ride 'hs' envelopes, which
 	// the relay paths already refuse wholesale.)
 	'rekey-grant',
-	'rekey-request'
+	'rekey-request',
+	// Chain grants follow generation grants: direct paths only (§1.5).
+	'chain-key',
+	'chain-grant',
+	'chain-request'
 ]);
 export const MAX_RELAY_WIRE_BYTES = 14 * 1024;
+
+/** At most one chain grant per peer this often, and at most this many asks per chain (§1.5). */
+const CHAIN_ANSWER_GAP_MS = 5000;
+const CHAIN_ASKS = 3;
+
+/** A chained envelope never falls back to the relay (§1.5). */
+function isChainedWire(wire: string): boolean {
+	try {
+		return (JSON.parse(wire) as { k?: unknown }).k !== undefined;
+	} catch {
+		return false;
+	}
+}
 
 export function relayEligible(type: string, wireBytes: number): boolean {
 	return !RELAY_FORBIDDEN_TYPES.has(type) && wireBytes <= MAX_RELAY_WIRE_BYTES;
@@ -293,6 +318,13 @@ export class P2PConnection {
 		this.isAdmitted = predicate;
 	}
 
+	/** Whether the room seals direct messages under sender-key chains (§1.5). */
+	private chainsOn: () => boolean = () => false;
+
+	setChains(enabled: () => boolean): void {
+		this.chainsOn = enabled;
+	}
+
 	/**
 	 * Tell a device about its admission (pending, admitted, denied, removed).
 	 * Sealed on the handshake class under the link-static key, so it needs no
@@ -432,6 +464,7 @@ export class P2PConnection {
 		}
 		if (
 			clientId &&
+			!isChainedWire(wire) &&
 			this.relayPeers.get(clientId)?.verified &&
 			relayEligible(message.type, new TextEncoder().encode(wire).length)
 		) {
@@ -445,30 +478,130 @@ export class P2PConnection {
 
 	/** A newly adopted or minted generation must reach this peer before its messages. */
 	private async sealForPeer(peer: Peer, message: TypedP2PMessage): Promise<string | null> {
+		// Set when the peer has not sent its chain key: this message goes under
+		// the generation key, as it would with chains off.
+		let unchained = false;
 		while (this.isCurrentPeer(peer) && peer.chat.readyState === 'open') {
+			// A peer removed mid-send gets nothing, and the loop must not spin.
+			if (!peer.deviceId || !this.isAdmitted(peer.deviceId)) return null;
 			const current = this.session.generation;
 			if (
-				current.g === 0 ||
-				(peer.grantedGeneration?.g === current.g && peer.grantedGeneration.gid === current.gid)
+				current.g !== 0 &&
+				!(peer.grantedGeneration?.g === current.g && peer.grantedGeneration.gid === current.gid)
 			) {
+				if (!(await this.sendCurrentGrant(peer))) return null;
+				continue;
+			}
+			if (!this.chainsOn() || unchained) {
 				// No await between checking the generation and sealMessage capturing
 				// its key: another peer can adopt a grant while crypto is pending.
 				return this.session.sealMessage(message as unknown as Record<string, unknown>);
 			}
-			await this.sendCurrentGrant(peer);
+			// Sender-key chains (§1.5). Our chain key first, so the peer can grant
+			// us its chain; then our chain's grant before the first chained message.
+			if (!peer.sentChainKey) {
+				await this.sendChainKey(peer);
+				continue;
+			}
+			const chainId = this.session.currentChainId();
+			if (peer.grantedChain !== chainId) {
+				const outcome = await this.sendChainGrant(peer, chainId);
+				if (outcome === 'failed') return null;
+				if (outcome === 'no-key') unchained = true;
+				continue;
+			}
+			// sealChained refuses a chain the generation has moved past.
+			const wire = await this.session.sealChained(
+				message as unknown as Record<string, unknown>,
+				chainId
+			);
+			if (wire !== null) return wire;
 		}
 		return null;
 	}
 
-	/** Must run inside queueReliableSend, so the grant's seq cannot be overtaken. */
-	private async sendCurrentGrant(peer: Peer, peerG = 0, peerGid?: string): Promise<void> {
+	/** Send this tab's in-memory chain key to a member (§1.5), once per connection. */
+	private async sendChainKey(peer: Peer): Promise<void> {
+		// Marked first: a send that cannot happen must not be retried in a loop.
+		peer.sentChainKey = true;
 		if (!this.isCurrentPeer(peer) || !peer.deviceId || peer.chat.readyState !== 'open') return;
 		if (!this.isAdmitted(peer.deviceId)) return;
-		const generation = this.session.generation;
-		const wire = await this.session.grantWireFor(peer.deviceId, peerG, peerGid);
+		const wire = await this.session.chainKeyWire();
 		if (!this.isCurrentPeer(peer) || peer.chat.readyState !== 'open') return;
 		peer.chat.send(wire);
+	}
+
+	/**
+	 * Must run inside queueReliableSend, so the grant reaches the peer before
+	 * chained messages. The grant is sealed at the generation the peer holds;
+	 * one that would be sealed at a newer generation is not sent ('stale').
+	 */
+	private async sendChainGrant(
+		peer: Peer,
+		chainId: string
+	): Promise<'sent' | 'no-key' | 'stale' | 'failed'> {
+		if (!this.isCurrentPeer(peer) || !peer.deviceId || peer.chat.readyState !== 'open') {
+			return 'failed';
+		}
+		if (!this.isAdmitted(peer.deviceId)) return 'failed';
+		const generation = this.session.generation;
+		if (
+			generation.g !== 0 &&
+			!(peer.grantedGeneration?.g === generation.g && peer.grantedGeneration.gid === generation.gid)
+		) {
+			return 'stale';
+		}
+		const made = await this.session.chainGrantWireFor(peer.deviceId, chainId);
+		if (!made) return this.session.hasChainKeyFor(peer.deviceId) ? 'stale' : 'no-key';
+		// Sealed at exactly the generation the peer holds (a sibling at the same
+		// g would not do either).
+		if (made.g !== generation.g || (generation.g !== 0 && made.gid !== generation.gid)) {
+			return 'stale';
+		}
+		if (!this.isCurrentPeer(peer) || peer.chat.readyState !== 'open') return 'failed';
+		peer.chat.send(made.wire);
+		peer.grantedChain = made.chainId;
+		return 'sent';
+	}
+
+	/** A member lost our chain (a reload): grant the current one again, gated. */
+	private answerChainRequest(peer: Peer, body: { k?: unknown }): void {
+		// Only for the chain in use: a request cannot make us wrap anything else.
+		if (body.k !== this.session.currentChainId()) return;
+		const now = Date.now();
+		if (peer.lastChainAnswer !== undefined && now - peer.lastChainAnswer < CHAIN_ANSWER_GAP_MS) {
+			return;
+		}
+		peer.lastChainAnswer = now;
+		peer.grantedChain = null;
+		void this.queueReliableSend(async () => {
+			for (let attempt = 0; attempt < 4; attempt++) {
+				if (!this.isCurrentPeer(peer) || !peer.deviceId || !this.isAdmitted(peer.deviceId)) return;
+				const current = this.session.generation;
+				if (
+					current.g !== 0 &&
+					!(peer.grantedGeneration?.g === current.g && peer.grantedGeneration.gid === current.gid)
+				) {
+					if (!(await this.sendCurrentGrant(peer))) return;
+					continue;
+				}
+				const outcome = await this.sendChainGrant(peer, this.session.currentChainId());
+				if (outcome !== 'stale') return;
+			}
+		}).catch(() => {});
+	}
+
+	/** Must run inside queueReliableSend, so the grant's seq cannot be overtaken. */
+	private async sendCurrentGrant(peer: Peer, peerG = 0, peerGid?: string): Promise<boolean> {
+		if (!this.isCurrentPeer(peer) || !peer.deviceId || peer.chat.readyState !== 'open')
+			return false;
+		if (!this.isAdmitted(peer.deviceId)) return false;
+		const generation = this.session.generation;
+		const wire = await this.session.grantWireFor(peer.deviceId, peerG, peerGid);
+		if (!this.isCurrentPeer(peer) || peer.chat.readyState !== 'open') return false;
+		peer.chat.send(wire);
 		peer.grantedGeneration = generation;
+		return true;
 	}
 
 	// ============ signaling ============
@@ -689,7 +822,8 @@ export class P2PConnection {
 			chatQueue: [],
 			chatQueueBytes: 0,
 			chatDraining: false,
-			grantedGeneration: null
+			grantedGeneration: null,
+			grantedChain: null
 		};
 		this.peers.set(clientId, peer);
 		this.armIceAttemptDeadline(peer);
@@ -1032,6 +1166,22 @@ export class P2PConnection {
 				}
 				return;
 			}
+			if (type === 'chain-key' || type === 'chain-grant' || type === 'chain-request') {
+				// Chains are members' business, and only over a direct path (§1.5).
+				if (!peer.deviceId || !this.isAdmitted(peer.deviceId)) return;
+				if (type === 'chain-key') {
+					await this.session.handleChainKey(body as never, peer.deviceId);
+					// Answer with ours, so each side can grant the other its chain.
+					if (!peer.sentChainKey) {
+						void this.queueReliableSend(() => this.sendChainKey(peer)).catch(() => {});
+					}
+				} else if (type === 'chain-grant') {
+					await this.session.handleChainGrant(body as never, peer.deviceId, envelope.g);
+				} else {
+					this.answerChainRequest(peer, body as unknown as { k?: unknown });
+				}
+				return;
+			}
 			if (type === 'rekey-grant' || type === 'rekey-request') {
 				// A waiting device could mint a generation and read what follows.
 				if (!peer.deviceId || !this.isAdmitted(peer.deviceId)) return;
@@ -1042,6 +1192,28 @@ export class P2PConnection {
 		} catch (error) {
 			if (!this.isCurrentPeer(peer)) return;
 			console.warn('[P2P] dropping envelope:', error);
+			// A chain we hold no usable grant for (§1.5): ask its sender, a few
+			// times at most, spaced out.
+			const missing = error as { name?: string; chainId?: string; g?: number };
+			if (missing?.name === 'ChainMissingError' && missing.chainId) {
+				peer.askedChains ??= new Map();
+				const now = Date.now();
+				const asked = peer.askedChains.get(missing.chainId);
+				const due = !asked || (asked.count < CHAIN_ASKS && now - asked.at >= CHAIN_ANSWER_GAP_MS);
+				if (due) {
+					// A bounded log: the oldest chain asked about makes room.
+					if (!asked && peer.askedChains.size >= 64) {
+						peer.askedChains.delete(peer.askedChains.keys().next().value!);
+					}
+					peer.askedChains.set(missing.chainId, { count: (asked?.count ?? 0) + 1, at: now });
+					void this.sendToPeer(peer.deviceId ?? '', {
+						type: 'chain-request',
+						g: missing.g,
+						k: missing.chainId
+					} as unknown as TypedP2PMessage);
+				}
+				return;
+			}
 			// A verified peer sealed something we cannot read at its stated
 			// generation: ask for the generation, rate-limited (§1.4).
 			if (envelope.t !== 'hs') void this.requestGenerationFrom(peer, envelope.g);
@@ -1081,7 +1253,9 @@ export class P2PConnection {
 				// encapsulation per hello. Shared gate caps total grant-serving
 				// per peer across both triggers; the first hello always passes.
 				if (!this.rekeyRespondGate.allow(peer.deviceId)) return;
-				await this.queueReliableSend(() => this.sendCurrentGrant(peer, peerG, peerGid));
+				await this.queueReliableSend(async () => {
+					await this.sendCurrentGrant(peer, peerG, peerGid);
+				});
 				if (!this.isCurrentPeer(peer)) return;
 				// A peer still at the link generation is a newcomer (§1.4
 				// trigger a): grant it the current generation for immediate
@@ -1177,7 +1351,9 @@ export class P2PConnection {
 			// already-converged sender drops the reply as 'stale'.
 			if (peer.chat.readyState === 'open' && this.forkReplyGate.allow(peer.deviceId)) {
 				try {
-					await this.queueReliableSend(() => this.sendCurrentGrant(peer));
+					await this.queueReliableSend(async () => {
+						await this.sendCurrentGrant(peer);
+					});
 				} catch (error) {
 					console.warn('[P2P] fork-heal reply failed:', error);
 				}

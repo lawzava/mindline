@@ -75,7 +75,8 @@ export {
 	removeMember,
 	makeHost,
 	setRoomApproval,
-	setMembersAdmit
+	setMembersAdmit,
+	setChains
 } from './manager';
 export { admission, NEW_ROOM_KEY, forgetRoster } from './admission';
 
