@@ -3,7 +3,8 @@
  *
  * Non-extractable CryptoKeys are structured-cloned into IndexedDB so a
  * device can reopen /{roomId} without the fragment. The raw fragment key
- * is never persisted.
+ * is persisted only AES-GCM-wrapped inside its room's record (for copying
+ * the invite after a fragment-less rejoin), never in plain form.
  */
 
 import type { DeviceIdentity, KemIdentity } from './identity';
@@ -110,18 +111,86 @@ async function withStore<T>(
 	}
 }
 
-export async function saveRoomKeys(roomId: string, keys: RoomKeys): Promise<void> {
-	await withStore(ROOMS, 'readwrite', (s) =>
-		s.put(
-			{
-				storage: keys.storage,
-				auth: keys.auth,
-				hs: keys.hs,
-				mediaBase: keys.mediaBase
-			},
-			roomId
+/** Bytes wrapped under a non-extractable AES-GCM key stored beside them. */
+interface SealedBytes {
+	wrapKey: CryptoKey;
+	wrapped: Uint8Array;
+	nonce: Uint8Array;
+}
+
+async function sealBytes(bytes: Uint8Array, aad: Uint8Array): Promise<SealedBytes> {
+	const wrapKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+		'encrypt',
+		'decrypt'
+	]);
+	const nonce = crypto.getRandomValues(new Uint8Array(12));
+	const wrapped = new Uint8Array(
+		await crypto.subtle.encrypt(
+			{ name: 'AES-GCM', iv: nonce, additionalData: aad as BufferSource },
+			wrapKey,
+			bytes as BufferSource
 		)
 	);
+	return { wrapKey, wrapped, nonce };
+}
+
+async function openBytes(sealed: SealedBytes, aad: Uint8Array): Promise<Uint8Array> {
+	return new Uint8Array(
+		await crypto.subtle.decrypt(
+			{ name: 'AES-GCM', iv: sealed.nonce as BufferSource, additionalData: aad as BufferSource },
+			sealed.wrapKey,
+			sealed.wrapped as BufferSource
+		)
+	);
+}
+
+interface StoredRoom extends RoomKeys {
+	/** The link key, wrapped: lets a fragment-less rejoin still copy the invite. */
+	invite?: SealedBytes;
+}
+
+const inviteAad = (roomId: string) => lp('invite-key', roomId);
+
+/**
+ * inviteKey: the raw link key to keep (wrapped) for re-sharing. Burn deletes
+ * the whole record, invite included.
+ */
+export async function saveRoomKeys(
+	roomId: string,
+	keys: RoomKeys,
+	inviteKey?: Uint8Array
+): Promise<void> {
+	const record: StoredRoom = {
+		storage: keys.storage,
+		auth: keys.auth,
+		hs: keys.hs,
+		mediaBase: keys.mediaBase
+	};
+	if (inviteKey) record.invite = await sealBytes(inviteKey, inviteAad(roomId));
+	await withStore(ROOMS, 'readwrite', (s) => s.put(record, roomId));
+}
+
+/** The room's link key, if this device kept it (see saveRoomKeys). */
+export async function loadInviteKey(roomId: string): Promise<Uint8Array | null> {
+	const stored = await withStore<StoredRoom | undefined>(ROOMS, 'readonly', (s) => s.get(roomId));
+	if (!stored?.invite) return null;
+	try {
+		return await openBytes(stored.invite, inviteAad(roomId));
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Attach a link key to a room this device already holds (legacy migration
+ * from plaintext storage). Returns false when there is no such room.
+ */
+export async function saveInviteKey(roomId: string, inviteKey: Uint8Array): Promise<boolean> {
+	const stored = await withStore<StoredRoom | undefined>(ROOMS, 'readonly', (s) => s.get(roomId));
+	if (!stored) return false;
+	const invite = await sealBytes(inviteKey, inviteAad(roomId));
+	await withStore(ROOMS, 'readwrite', (s) => s.put({ ...stored, invite }, roomId));
+	return true;
 }
 
 /**
@@ -163,8 +232,10 @@ export async function loadRatchetState(roomId: string): Promise<PersistedRatchet
 }
 
 export async function loadRoomKeys(roomId: string): Promise<RoomKeys | null> {
-	const stored = await withStore<RoomKeys | undefined>(ROOMS, 'readonly', (s) => s.get(roomId));
-	return stored ?? null;
+	const stored = await withStore<StoredRoom | undefined>(ROOMS, 'readonly', (s) => s.get(roomId));
+	if (!stored) return null;
+	const { storage, auth, hs, mediaBase } = stored;
+	return { storage, auth, hs, mediaBase };
 }
 
 export async function saveIdentity(identity: DeviceIdentity): Promise<void> {

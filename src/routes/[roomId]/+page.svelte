@@ -61,7 +61,10 @@
 		BellOff,
 		Flame
 	} from 'lucide-svelte';
-	import { copyInvite, shareInvite } from '$lib/share';
+	import { copyInvite, rememberInvite, shareInvite } from '$lib/share';
+	import { loadInviteKey } from '$lib/crypto/keystore';
+	import { parseKeyFragment, toKeyFragment } from '$lib/crypto/keys';
+	import { clearBurned, isBurned } from '$lib/storage/tombstone';
 	import { toggleMode, mode } from 'mode-watcher';
 	import { claimRoomTab, takeOverRoomTab, type RoomTab } from '$lib/tab-lock';
 	import {
@@ -80,6 +83,8 @@
 	let isKeyMismatch = $state(false);
 	// Another tab of this browser holds the room (see $lib/tab-lock).
 	let isOtherTab = $state(false);
+	// This device burned the room; the URL still carries its old key.
+	let isBurnedHere = $state(false);
 	let roomTab: RoomTab | null = null;
 	// Each entry into the room gets a number; stepping back ends the current
 	// one, so an entry still awaiting keys or signaling cannot go live later.
@@ -132,6 +137,16 @@
 		}
 
 		const id = roomId;
+		if (parseKeyFragment(window.location.hash) && (await isBurned(id))) {
+			isBurnedHere = true;
+			isLoading = false;
+			return;
+		}
+		await claimAndEnter(id);
+	});
+
+	/** Take the room's tab lock if free, then enter; otherwise wait politely. */
+	async function claimAndEnter(id: string) {
 		roomTab = await claimRoomTab(id, stepBack);
 		if (destroyed) {
 			roomTab?.release();
@@ -143,7 +158,16 @@
 			return;
 		}
 		await enterRoom(id);
-	});
+	}
+
+	async function openBurnedAgain() {
+		if (!roomId) return;
+		const id = roomId;
+		await clearBurned(id);
+		isBurnedHere = false;
+		isLoading = true;
+		await claimAndEnter(id);
+	}
 
 	/** Load history and connect. Runs only while this tab holds the room. */
 	async function enterRoom(id: string) {
@@ -218,9 +242,8 @@
 			// we're actually in it — never for the knocking state, where we have no
 			// key and never entered. The key fragment is stored so rejoin is one tap.
 			if (current() && !isKnocking && !isKeyMismatch) {
-				const hash = typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : '';
-				const key = /^k=[A-Za-z0-9_-]+$/.test(hash) ? hash : '';
-				recentRooms.record(id, key, Date.now());
+				recentRooms.record(id, Date.now());
+				void loadInviteKey(id).then((raw) => raw && rememberInvite(id, toKeyFragment(raw)));
 			}
 		}
 	}
@@ -543,6 +566,20 @@
 				it ends with <code>#k=...</code> and never reaches our servers.
 			</p>
 			<Button variant="outline" onclick={() => goto('/')}>Back to start</Button>
+		</div>
+	</div>
+{:else if isBurnedHere}
+	<div class="flex flex-1 items-center justify-center p-4" data-testid="burned-state">
+		<div class="flex max-w-sm flex-col items-center gap-3 text-center">
+			<p class="text-lg font-medium">You burned this room on this device</p>
+			<p class="text-sm text-muted-foreground">
+				This link still works. Opening it again joins the room fresh, and anyone still in it can
+				send you its history again.
+			</p>
+			<div class="flex gap-2">
+				<Button onclick={openBurnedAgain}>Open it again</Button>
+				<Button variant="outline" onclick={() => goto('/')}>Back to start</Button>
+			</div>
 		</div>
 	</div>
 {:else if isOtherTab}

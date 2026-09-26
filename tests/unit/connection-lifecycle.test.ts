@@ -132,6 +132,18 @@ describe('P2P peer callback lifecycle', () => {
 		expect(urls.some((u) => u.includes('google'))).toBe(false);
 	});
 
+	test('the signaling join uses the key-derived rendezvous id, not the room id', async () => {
+		connection.disconnect();
+		const withRendezvous = { ...makeSession(), rendezvousId: 'rv-derived-id' };
+		connection = new P2PConnection(withRendezvous as unknown as CryptoSession, {}, () => 'Local');
+		const connecting = connection.connect();
+		FakeSocket.instance.onopen?.();
+		await connecting;
+		const frames = FakeSocket.instance.send.mock.calls.map(([f]) => JSON.parse(f as string));
+		expect(frames).toContainEqual({ type: 'join', roomId: 'rv-derived-id' });
+		expect(frames.some((f) => f.roomId === 'room')).toBe(false);
+	});
+
 	test('a newly created connection gets a deadline without any state-change event', async () => {
 		vi.stubGlobal(
 			'RTCPeerConnection',

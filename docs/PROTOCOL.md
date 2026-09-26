@@ -56,7 +56,14 @@ fragment key and never rotate — they are what "holding the link" means
 the current generation secret `rk_g` (§1.4) and rotate with it. The raw
 fragment key is imported once as HKDF material (salt:
 `utf8("mindline-v2")`, info strings below), the static subkeys derived,
-and the material then dropped — it is never persisted.
+and the material then dropped. The raw key is persisted only
+AES-256-GCM-wrapped inside the room's keystore record (same protection
+class as the KEM seed, §1.3), so a fragment-less rejoin can still copy the
+invite; burn deletes it with the record. It is not kept in localStorage.
+The fragment stays in the address bar by design: people copy invites from
+it, and a keyless URL would lock the recipient out. After a burn, the device
+keeps a hashed tombstone of the room ID so that going Back into the old URL
+asks before re-creating the room.
 
 Link-static (from the fragment key):
 
@@ -594,7 +601,11 @@ keeping only `{type, data, fromId}` — so authentication fields ride
 client sends carries `auth: { deviceId, hmac: HMAC(k_auth, lp(deviceId,
 clientId_sender, roomId)) }`. Peers ignore signaling whose HMAC fails (the
 operator still sees metadata; it can no longer inject offers/ICE as a fake
-member). `join` carries no client auth (the server strips it anyway);
+member). `join` names the room by its **rendezvous id**,
+`base64url(HMAC(k_auth, lp("mindline/v2/rendezvous", roomId))[0..24))`,
+never the path roomId: the operator, and anyone who saw only the URL
+path, cannot find or watch the room. `join` carries no client auth (the
+server strips it anyway);
 deviceId↔clientId binding is established by the first authenticated
 offer/answer or relay broadcast, including after signaling reconnects.
 Healthy DataChannels are never torn down by signaling loss.

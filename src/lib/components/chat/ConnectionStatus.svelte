@@ -119,6 +119,9 @@
 	});
 
 	let dialogPeer = $state<string | null>(null);
+	// The dialog replaces the peer list: a popover left open behind it keeps
+	// focus trapped, and Enter in the composer would not send.
+	let peerListOpen = $state(false);
 	let dialogOpen = $state(false);
 
 	function markVerified() {
@@ -162,7 +165,7 @@
 <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
 	{#if $connectionStatus === 'connected'}
 		<!-- The subtitle doubles as the peer list trigger -->
-		<Popover.Root>
+		<Popover.Root bind:open={peerListOpen}>
 			<Popover.Trigger
 				class="flex min-w-0 items-center gap-1.5 rounded-sm outline-ring/50 hover:text-foreground"
 				data-testid="peer-count"
@@ -191,6 +194,7 @@
 										<button
 											onclick={() => {
 												dialogPeer = peerId;
+												peerListOpen = false;
 												dialogOpen = true;
 											}}
 											class={cn(
