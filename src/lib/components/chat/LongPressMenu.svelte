@@ -2,7 +2,7 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Button } from '$lib/components/ui/button';
-	import { Copy, MoreHorizontal, Pencil, Trash2 } from 'lucide-svelte';
+	import { Copy, CornerUpLeft, MoreHorizontal, Pencil, Trash2 } from 'lucide-svelte';
 	import { cn } from '$lib/utils';
 	import { toast } from 'svelte-sonner';
 
@@ -17,6 +17,7 @@
 		onDelete?: () => void;
 		/** Text to copy; absent for media and deleted messages. */
 		copyText?: string;
+		onReply?: () => void;
 		onReaction?: (emoji: string) => void;
 	}
 
@@ -30,6 +31,7 @@
 		onEdit,
 		onDelete,
 		copyText,
+		onReply,
 		onReaction
 	}: Props = $props();
 
@@ -38,7 +40,14 @@
 	// Edit/delete belong to your own messages only; copy works on anyone's.
 	const showOwnActions = $derived(isMe && !isDeleted && !isEditing);
 	const canCopy = $derived(!!copyText && !isDeleted && !isEditing);
-	const showActions = $derived(showOwnActions || canCopy);
+	const canReply = $derived(!!onReply && !isDeleted && !isEditing);
+	const showActions = $derived(showOwnActions || canCopy || canReply);
+
+	function handleReply() {
+		open = false;
+		onOpenChange?.(false);
+		onReply?.();
+	}
 
 	async function handleCopy() {
 		open = false;
@@ -123,6 +132,12 @@
 			<!-- Actions row (only for own messages) -->
 			{#if showActions}
 				<div class="flex gap-2">
+					{#if canReply}
+						<Button variant="ghost" size="sm" onclick={handleReply} class="gap-2">
+							<CornerUpLeft class="h-4 w-4" />
+							Reply
+						</Button>
+					{/if}
 					{#if canCopy}
 						<Button variant="ghost" size="sm" onclick={handleCopy} class="gap-2">
 							<Copy class="h-4 w-4" />

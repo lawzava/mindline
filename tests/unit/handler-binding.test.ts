@@ -218,3 +218,25 @@ describe('media offers cannot replace existing attachments', () => {
 		expect(messages.getRoomMessages(SESSION_ROOM)).toEqual([photo]);
 	});
 });
+
+describe('replies', () => {
+	test('a chat that answers another message keeps the pointer; junk is ignored', () => {
+		const chat = (messageId: string, replyTo: unknown) =>
+			({
+				type: 'chat',
+				roomId: SESSION_ROOM,
+				content: 'answer',
+				messageId,
+				senderId: 'x',
+				senderName: 'X',
+				timestamp: 7,
+				replyTo
+			}) as TypedP2PMessage;
+		routeP2PMessage(chat('r1', 'question-id'), PEER);
+		routeP2PMessage(chat('r2', { evil: true }), PEER);
+		routeP2PMessage(chat('r3', 'x'.repeat(500)), PEER);
+		expect(messages.getMessage(SESSION_ROOM, 'r1')?.reply_to).toBe('question-id');
+		expect(messages.getMessage(SESSION_ROOM, 'r2')?.reply_to).toBeNull();
+		expect(messages.getMessage(SESSION_ROOM, 'r3')?.reply_to).toBeNull();
+	});
+});

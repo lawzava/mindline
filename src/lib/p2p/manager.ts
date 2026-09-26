@@ -515,7 +515,8 @@ export function broadcastChat(content: string, messageId: string): void {
 			// The stored time, so the signature covers what receivers store.
 			timestamp: stored.timestamp,
 			roomId,
-			origin
+			origin,
+			replyTo: stored.reply_to ?? undefined
 		};
 		p2pConnection?.broadcast(message);
 	});
