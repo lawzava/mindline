@@ -68,7 +68,8 @@ export {
 	setupPageLifecycleHandlers,
 	cleanupPageLifecycleHandlers,
 	NoRoomKeyError,
-	announceName
+	announceName,
+	getPeerSafety
 } from './manager';
 
 // Crypto session
