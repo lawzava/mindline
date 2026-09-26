@@ -118,7 +118,9 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
 Product:
 
 1. ~~Name on first join, and the peer's name in the header.~~ Shipped.
-2. Replies. (Copy text and jump-to-latest shipped.)
+2. ~~Replies, copy text, and jump-to-latest.~~ Shipped: replies quote from
+   local history, the quote jumps to the original, and the signature covers
+   the quoted id.
 3. Recent rooms as the home screen for returning users: last message,
    unread dot, who is online.
 4. QR invite on the empty-room screen for phone-to-phone sharing.
