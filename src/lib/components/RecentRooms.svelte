@@ -7,6 +7,7 @@
 	import { onMount } from 'svelte';
 	import { loadRoomMessages } from '$lib/storage/messages';
 	import { previewOf } from '$lib/preview';
+	import { nextExpiry } from '$lib/disappearing';
 
 	// The last line said in each of the most recent rooms, decrypted from this
 	// device's history for display only (never stored).
@@ -14,18 +15,33 @@
 	let previews = $state<Record<string, string>>({});
 	onMount(() => {
 		let cancelled = false;
-		void (async () => {
+		let wake: ReturnType<typeof setTimeout> | undefined;
+		const refresh = async () => {
+			let soonest: number | null = null;
+			const next: Record<string, string> = {};
 			for (const room of $recentRooms.slice(0, PREVIEWED)) {
 				try {
-					const line = previewOf(await loadRoomMessages(room.id), $user.id);
+					const list = await loadRoomMessages(room.id);
 					if (cancelled) return;
-					if (line) previews = { ...previews, [room.id]: line };
+					const line = previewOf(list, $user.id);
+					if (line) next[room.id] = line;
+					const due = nextExpiry(list);
+					if (due !== null && (soonest === null || due < soonest)) soonest = due;
 				} catch {
 					/* no keys or history on this device: show the time only */
 				}
+				previews = { ...next };
 			}
-		})();
-		return () => (cancelled = true);
+			// A disappearing message must not linger here as the last line said.
+			if (soonest !== null) {
+				wake = setTimeout(() => void refresh(), Math.min(soonest - Date.now(), 3_600_000));
+			}
+		};
+		void refresh();
+		return () => {
+			cancelled = true;
+			clearTimeout(wake);
+		};
 	});
 
 	let editingId = $state<string | null>(null);

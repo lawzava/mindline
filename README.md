@@ -36,7 +36,8 @@ end-to-end encrypted with a key that lives only in the invite link.
   with receiver consent. Nothing transits a server.
 - **History stays on devices.** Messages persist locally, encrypted at rest;
   new participants receive history from peers, encrypted. There is no server
-  copy.
+  copy. Turn on disappearing messages and each device deletes them, media
+  included, after 5 minutes to a week.
 
 The full wire protocol, key schedule, and threat model live in
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md). If code and that document disagree,
