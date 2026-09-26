@@ -136,8 +136,7 @@ to switch keys the user burns the room first.
   reloads; names remain self-asserted and bind to deviceId via TOFU.
 - Per-device **X-Wing KEM keypair** (X25519 + ML-KEM-768,
   draft-connolly-cfrg-xwing-kem-10; implementation `@noble/post-quantum`
-  0.6.1, exact-pinned, pure JS — **not independently audited**, the caveat
-  is named in CLAIMS.md). It receives the hybrid grant wraps of §1.4. The
+  0.6.1, exact-pinned, pure JS — **not independently audited**). It receives the hybrid grant wraps of §1.4. The
   keypair is deterministic from a 32-byte seed; because no native WebCrypto
   PQC exists, the seed cannot be a non-extractable CryptoKey — it is
   persisted only AES-256-GCM-wrapped under a non-extractable wrapping key
@@ -197,7 +196,7 @@ full, because it bounds what a quantum adversary gets:
   budget, and put an unaudited PQC implementation on the *integrity*
   path, where a bug forges rather than merely fails to add protection.
 
-**Named residual** (CLAIMS.md): a link-holding adversary with a live
+**Named residual**: a link-holding adversary with a live
 CRQC could impersonate existing members and minters until rotation —
 an attribution break, not a confidentiality one.
 
@@ -217,7 +216,7 @@ minted by the ratcheting member — deliberately *not* an HKDF chain from
 leaked link derive every future generation, which is precisely the
 property being removed. `k_msg(g)`/`k_eph(g)` derive from `rk_g` (§1.2).
 
-**What this buys (exact claim — CLAIMS.md must not exceed it).** Wire
+**What this buys (the exact claim).** Wire
 ciphertext a **passive** adversary captured — in practice the signaling
 operator archiving relay frames, the only party that ever sees envelope
 ciphertext (§3.6; direct paths are DTLS) — becomes undecryptable with a
@@ -225,7 +224,7 @@ later-leaked link for every generation `g ≥ 1`, because `rk_g` never
 derives from the link and never transits a relay. Once members destroy a
 generation's keys (retention policy below), it is gone on their side too.
 
-**What it does not buy** (each a named CLAIMS residual). (1) A leaked
+**What it does not buy** (each a named residual). (1) A leaked
 link still grants *entry* — join, then history-by-sync. That is the
 capability-URL membership model, unchanged and visible: a joiner appears
 as a peer, runs §3.4, and is TOFU-pinned. (2) At-rest history stays
@@ -467,7 +466,7 @@ first (idle generations are left alone), through the same debounced,
 minter-selected path. With retired keys destroyed two generations on, a
 device compromise opens at most the current and previous generations of
 captured traffic, about the last half hour of an active room. Per-message
-forward secrecy (sender-key chains) is not built; see ROADMAP.md.
+forward secrecy within a generation is the optional sender-key chains of §1.5.
 
 Join-triggered ratchets are debounced (one ratchet per burst of joins
 within a short window) so a churning room does not ratchet per-join.
@@ -507,8 +506,8 @@ recipient's KEM key. Content keys themselves remain symmetric-only
 quantum-adequate (Grover → ~128-bit effective, §6). The PQC
 implementation choice (pure JS, unaudited — no independently audited
 pure-JS PQC exists as of 2026-06; WASM alternatives are likewise
-unaudited and would loosen CSP) is an accepted, stated
-caveat. ECDSA signatures remain classical.
+unaudited and would loosen CSP) is an accepted, stated caveat. ECDSA
+signatures remain classical (§1.3 posture).
 
 ### 1.5 Sender-key chains (per-room, host's switch)
 
@@ -1112,7 +1111,7 @@ request list.
 - `k_storage` is link-static and does **not** ratchet with §1.4: at-rest
   protection targets device theft/forensics, and the §1.4 forward-secrecy
   claim explicitly excludes it (a leaked link plus a copy of a member
-  device's IndexedDB pages still decrypts them). Named in CLAIMS.md.
+  device's IndexedDB pages still decrypts them).
   **At-rest generation re-keying is not done, by design.** The only adversary any re-keying would defeat is
   one who captured the `mindline-messages` page ciphertext but **not** the
   `mindline-keys` key records, while also holding the link — because today
@@ -1138,8 +1137,7 @@ request list.
   a near-fictional read-path by forfeiting a real recovery-path fails the
   project's honesty bar. **Revisit triggers:** at-rest pages moving out of
   same-origin IndexedDB into a separately-capturable store, or a platform
-  shipping per-database isolation worth defending. CLAIMS.md's
-  forward-secrecy at-rest exclusion stands unchanged.
+  shipping per-database isolation worth defending.
 
 ## 5. Media transfer
 

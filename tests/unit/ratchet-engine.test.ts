@@ -157,7 +157,7 @@ describe('GenerationRatchet — chained convergence (§1.4 F1/F3)', () => {
 	});
 });
 
-describe('GenerationRatchet — same-g siblings (§1.4 review #3)', () => {
+describe('GenerationRatchet — same-g siblings (§1.4)', () => {
 	/** Two members mint concurrently from the same parent generation. */
 	async function siblings() {
 		const a = await freshEngine();
@@ -197,7 +197,7 @@ describe('GenerationRatchet — same-g siblings (§1.4 review #3)', () => {
 		expect(d.gid).toBe(high.gid);
 	});
 
-	it('a reload does not re-open the sibling window (P2.0 review F2)', async () => {
+	it('a reload does not re-open the sibling window', async () => {
 		// The window runs from first OBSERVING g (§1.4); a revived engine
 		// observed its g before the reload. Re-stamping at construction
 		// would hand a malicious member a fresh 30 s window after every
@@ -394,7 +394,7 @@ describe('GenerationRatchet — fork heal (§1.4 partitions)', () => {
 		clock += 120_000;
 		if (a2.gid < b2.gid) {
 			// b's longer line loses at the fork, but a's tip IS the fork — a
-			// lone post-window sibling, rejected (review #3 flood bound)…
+			// lone post-window sibling, rejected (flood bound)…
 			expect(await b.adopt(a.currentGrant()!, a.chainTail(1))).toBe('rejected');
 			// …until a's side extends past the fork; then b heals onto it.
 			await a.mintNext(alice);

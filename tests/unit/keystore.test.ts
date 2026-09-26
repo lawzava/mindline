@@ -180,7 +180,7 @@ describe('keystore', () => {
 
 	test('concurrent first-launch sessions converge on one KEM identity (atomic get-or-create)', async () => {
 		// Two tabs racing the v4 upgrade (identity present, kem absent) must
-		// not diverge to different seeds under the same deviceId (review F1).
+		// not diverge to different seeds under the same deviceId.
 		const [k1, k2] = await Promise.all([getOrCreateKemIdentity(), getOrCreateKemIdentity()]);
 		expect(Buffer.from(k1.publicKey).equals(Buffer.from(k2.publicKey))).toBe(true);
 		expect(Buffer.from(k1.seed).equals(Buffer.from(k2.seed))).toBe(true);

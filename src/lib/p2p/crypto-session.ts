@@ -368,7 +368,7 @@ export class CryptoSession {
 	/** Key-confirmation hello (§3.4), serialized for the wire. */
 	async makeHello(name: string, binding: HelloBinding): Promise<string> {
 		// Names are display hints (§3.7); the clamp bounds the hello so the
-		// relay variant always fits the §3.6 frame budget (review V4-PQ-03).
+		// relay variant always fits the §3.6 frame budget.
 		name = name.slice(0, HELLO_NAME_MAX);
 		const kemB64 = toB64url(this.kem.publicKey);
 		// The proof covers the KEM key: a stripped or substituted key fails
@@ -838,7 +838,7 @@ export class CryptoSession {
 		}
 		// The tip cert already rides as `grant`; serving it again in the
 		// chain would waste one of the MAX_CHAIN slots and push the fork
-		// cert out at exactly the spec's boundary depth (P2.0 review F3).
+		// cert out at exactly the spec's boundary depth.
 		const chain =
 			grant.g - fromG > MAX_CHAIN
 				? // Deep gap (§1.4 segmented catch-up): serve the FIRST MAX_CHAIN

@@ -106,7 +106,7 @@
 	}
 
 	// Follow the stream only when the reader is already at the bottom
-	// (audit fix: no more force-scroll while reading history). Drafts
+	// (no force-scroll while reading history). Drafts
 	// growing also keep the view pinned. Instant, not smooth: drafts
 	// update per keystroke, and overlapping smooth scrolls animate
 	// continuously — a main jank source on phones. Your own new message
