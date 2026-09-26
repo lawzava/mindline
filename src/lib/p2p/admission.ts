@@ -10,7 +10,15 @@
  */
 
 import { writable } from 'svelte/store';
-import { Roster, type RosterAction, type RosterLink, type RosterOp } from './roster';
+import {
+	ADMIT_LIMIT,
+	DELEGATE,
+	Roster,
+	type RosterAction,
+	type RosterLink,
+	type RosterOp,
+	type Voucher
+} from './roster';
 import type { PeerTransport, TypedP2PMessage } from './types';
 
 export interface WaitingPeer {
@@ -25,6 +33,10 @@ export interface AdmissionState {
 	anchored: boolean;
 	/** This device is the room's host: it lets people in and removes them. */
 	host: boolean;
+	/** The host lets members let people in (§3.8 vouchers). */
+	membersAdmit: boolean;
+	/** This device may answer join requests: the host, or a member when allowed. */
+	canAdmit: boolean;
 	/** Join requests shown to the host (a few at a time). */
 	pending: Map<string, WaitingPeer>;
 	/** This device: in, waiting to be let in, turned away, or removed. */
@@ -37,6 +49,8 @@ const initial = (): AdmissionState => ({
 	approving: false,
 	anchored: false,
 	host: false,
+	membersAdmit: false,
+	canAdmit: false,
 	pending: new Map(),
 	self: 'in',
 	forked: false
@@ -53,11 +67,15 @@ const MAX_WAITING = 20;
 /** Roster messages a peer may send per window before being ignored. */
 const NOTICE_BUDGET = 8;
 const NOTICE_WINDOW_MS = 10_000;
+/** Vouchers per member the host confirms into the chain each session. */
+const CONFIRM_BUDGET = 8;
 const rosterKey = (roomId: string) => `mindline_roster:${roomId}`;
+const vouchersKey = (roomId: string) => `mindline_vouchers:${roomId}`;
 
 export function forgetRoster(roomId: string): void {
 	try {
 		localStorage.removeItem(rosterKey(roomId));
+		localStorage.removeItem(vouchersKey(roomId));
 	} catch {
 		/* storage blocked */
 	}
@@ -69,6 +87,8 @@ interface AdmissionDeps {
 	roomId: string;
 	deviceId: string;
 	sign: (fields: SignFields) => Promise<RosterOp>;
+	/** Sign a voucher for a waiting device as this member (§3.8). */
+	vouch: (fields: { device: string; basis: number; epoch: number }) => Promise<Voucher>;
 	conn: {
 		sendAdmission(deviceId: string, body: Record<string, unknown>): Promise<void>;
 		sendToPeer(deviceId: string, message: TypedP2PMessage): Promise<void>;
@@ -96,6 +116,8 @@ export class AdmissionController {
 	private deniedHere = false;
 	/** Per-peer notice budget: verifying a chain costs signatures (§3.8). */
 	private readonly budget = new Map<string, { start: number; used: number }>();
+	/** Vouchers confirmed into the chain this session, per signer. */
+	private readonly confirmedFor = new Map<string, number>();
 
 	constructor(private readonly deps: AdmissionDeps) {
 		this.roster = new Roster(deps.roomId);
@@ -106,6 +128,9 @@ export class AdmissionController {
 		if (this.roster.anchored) {
 			try {
 				await this.roster.add(JSON.parse(localStorage.getItem(rosterKey(roomId)) ?? '[]'));
+				await this.roster.addVouchers(
+					JSON.parse(localStorage.getItem(vouchersKey(roomId)) ?? '[]')
+				);
 			} catch {
 				/* unreadable: start from what peers send */
 			}
@@ -140,6 +165,29 @@ export class AdmissionController {
 		return this.roster.host === this.deps.deviceId && this.amMember;
 	}
 
+	/** Vouching needs a chain membership to name (§3.8), not a voucher of one's own. */
+	private get canVouch(): boolean {
+		return (
+			this.amMember &&
+			this.roster.approving &&
+			this.roster.membersAdmit &&
+			!this.roster.forked &&
+			this.roster.basisOf(this.deps.deviceId) !== null
+		);
+	}
+
+	private get canAdmit(): boolean {
+		return this.amHost || this.canVouch;
+	}
+
+	private rosterMessage(): TypedP2PMessage {
+		return {
+			type: 'roster',
+			ops: this.roster.ops(),
+			vouchers: this.roster.vouchers()
+		} as TypedP2PMessage;
+	}
+
 	/**
 	 * A peer passed the hello. Returns true when it is a member and the usual
 	 * welcome should run. In a founder-anchored room it is always told where
@@ -153,10 +201,7 @@ export class AdmissionController {
 			// Members get the chain over any transport (relay included), so a
 			// member that was offline learns of removals from whoever it meets.
 			if (this.roster.known) {
-				void this.deps.conn.sendToPeer(deviceId, {
-					type: 'roster',
-					ops: this.roster.ops()
-				} as TypedP2PMessage);
+				void this.deps.conn.sendToPeer(deviceId, this.rosterMessage());
 			}
 			return true;
 		}
@@ -171,8 +216,24 @@ export class AdmissionController {
 	}
 
 	async admit(deviceId: string): Promise<void> {
-		if (!(await this.change(deviceId, 'admit')) || !this.isAdmitted(deviceId)) {
-			throw new Error('only the host can let people in');
+		if (this.amHost) {
+			if (!(await this.change(deviceId, 'admit')) || !this.isAdmitted(deviceId)) {
+				throw new Error('only the host can let people in');
+			}
+		} else {
+			// A member, when the host allows it: a voucher beside the chain.
+			const basis = this.roster.basisOf(this.deps.deviceId);
+			if (!this.canVouch || basis === null) throw new Error('only the host can let people in');
+			const voucher = await this.deps.vouch({
+				device: deviceId,
+				basis,
+				epoch: this.roster.delegateEpoch
+			});
+			if (!(await this.roster.addVouchers([voucher])) || !this.isAdmitted(deviceId)) {
+				throw new Error('could not let them in');
+			}
+			this.persist();
+			this.deps.conn.broadcast(this.rosterMessage());
 		}
 		await this.welcomeNewMembers();
 		await this.notify(deviceId, 'admitted');
@@ -187,6 +248,8 @@ export class AdmissionController {
 	}
 
 	async remove(deviceId: string): Promise<void> {
+		// Keep the people this member let in: confirm them before it goes.
+		await this.confirmVouched();
 		if (!(await this.change(deviceId, 'remove')) || this.isAdmitted(deviceId)) {
 			throw new Error('only the host can remove people');
 		}
@@ -208,16 +271,55 @@ export class AdmissionController {
 		if (on) this.deps.rekey();
 	}
 
+	/** Let members let people in (§3.8), or stop them. Host only. */
+	async setMembersAdmit(on: boolean): Promise<void> {
+		if (!this.roster.anchored || on === this.roster.membersAdmit) return;
+		// Admissions the host has seen stay; unseen ones end with the switch.
+		if (!on) await this.confirmVouched();
+		if (!(await this.change(DELEGATE, on ? 'admit' : 'remove'))) {
+			throw new Error('only the host can change who may let people in');
+		}
+		if (!on) this.deps.rekey();
+	}
+
+	/**
+	 * The host writes devices let in by a voucher alone into the chain, but
+	 * only ones actually here (waiting at its door or connected): a member
+	 * vouching for made-up ids must not fill the roster. Each member's
+	 * vouchers are confirmed at most CONFIRM_BUDGET times a session (throwaway
+	 * devices are cheap); beyond that they stay vouchers, which end with the
+	 * member. Nor does the host confirm anyone it turned away this session.
+	 */
+	private async confirmVouched(alsoHere: Iterable<string> = []): Promise<void> {
+		if (!this.amHost || this.roster.forked) return;
+		const present = new Set([
+			...alsoHere,
+			...this.waiting.keys(),
+			...this.deps.conn.getConnectedPeers()
+		]);
+		const pending = new Set(this.roster.vouchedOnly());
+		for (const voucher of this.roster.vouchers()) {
+			const { device, by } = voucher;
+			if (!pending.has(device) || !present.has(device) || this.dismissed.has(device)) continue;
+			const spent = this.confirmedFor.get(by) ?? 0;
+			if (spent >= CONFIRM_BUDGET) continue;
+			if (this.roster.length >= ADMIT_LIMIT) return;
+			await this.change(device, 'admit');
+			this.confirmedFor.set(by, spent + 1);
+			pending.delete(device);
+		}
+	}
+
 	/** Admission notices (handshake class) and roster changes from anyone. */
 	async handleMessage(body: Record<string, unknown>, from: string): Promise<void> {
 		if (!this.roster.anchored || this.throttle(from)) return;
 		if (body.type === 'admission') await this.onNotice(body, from);
-		else if (body.type === 'roster') await this.merge(body.ops);
+		else if (body.type === 'roster') await this.merge(body.ops, body.vouchers);
 	}
 
 	private async onNotice(body: Record<string, unknown>, from: string): Promise<void> {
 		const wasIn = this.amMember;
-		await this.merge(body.roster);
+		await this.merge(body.roster, body.vouchers);
 		// Only the host decides, so only the host's refusal counts.
 		if (body.state === 'denied' && this.roster.known && this.roster.host === from) {
 			this.deniedHere = true;
@@ -248,16 +350,27 @@ export class AdmissionController {
 	}
 
 	/** Merge a chain; react to what actually changed. */
-	private async merge(ops: unknown): Promise<void> {
+	private async merge(ops: unknown, vouchers?: unknown): Promise<void> {
 		const known = this.roster.ops();
-		if (!(await this.roster.add(ops))) return;
+		const chainChanged = await this.roster.add(ops);
+		const vouchersChanged = await this.roster.addVouchers(vouchers);
+		if (!chainChanged && !vouchersChanged) return;
 		this.persist();
+		// Welcoming takes a device off the waiting list; it was still here.
+		const wasWaiting = [...this.waiting.keys()];
 		await this.welcomeNewMembers();
 		// Only host-signed chain operations get this far, so a mint here is
-		// bounded by real removals (or a re-closed room), never by message count.
+		// bounded by real removals (or a re-closed room, or member admission
+		// ending), never by message count.
 		const fresh = this.roster.ops().filter((op, i) => known[i]?.sig !== op.sig);
 		if (fresh.some((op) => op.action === 'remove' || (op.action === 'approve' && op.seq > 0))) {
 			this.deps.rekey();
+		}
+		// The host confirms what members let in, so it outlasts them.
+		try {
+			await this.confirmVouched(wasWaiting);
+		} catch (error) {
+			console.warn('[admission] could not confirm a voucher:', error);
 		}
 		this.publish();
 	}
@@ -279,13 +392,16 @@ export class AdmissionController {
 				'The host signed conflicting changes; start a new room to be sure who is in.'
 			);
 		}
-		if (this.roster.length >= 512) {
+		if (
+			this.roster.length >= 512 ||
+			(action === 'admit' && device !== DELEGATE && this.roster.length >= ADMIT_LIMIT)
+		) {
 			throw new Error("This room's member history is full. Start a new room.");
 		}
 		const op = await this.deps.sign({ ...this.roster.nextLink(), device, action });
 		if (!(await this.roster.add([op]))) return false;
 		this.persist();
-		this.deps.conn.broadcast({ type: 'roster', ops: this.roster.ops() } as TypedP2PMessage);
+		this.deps.conn.broadcast(this.rosterMessage());
 		this.publish();
 		return true;
 	}
@@ -294,13 +410,15 @@ export class AdmissionController {
 		await this.deps.conn.sendAdmission(deviceId, {
 			type: 'admission',
 			state,
-			roster: this.roster.ops()
+			roster: this.roster.ops(),
+			vouchers: this.roster.vouchers()
 		});
 	}
 
 	private persist(): void {
 		try {
 			localStorage.setItem(rosterKey(this.deps.roomId), JSON.stringify(this.roster.ops()));
+			localStorage.setItem(vouchersKey(this.deps.roomId), JSON.stringify(this.roster.vouchers()));
 		} catch {
 			/* storage blocked: admission still holds for this session */
 		}
@@ -314,7 +432,7 @@ export class AdmissionController {
 		}
 		// The host sees the oldest few requests; the rest wait their turn.
 		const pending = new Map<string, WaitingPeer>();
-		if (this.amHost && this.roster.approving) {
+		if (this.canAdmit && this.roster.approving) {
 			for (const [id, waiting] of this.waiting) {
 				if (pending.size >= MAX_PROMPTS) break;
 				if (!this.dismissed.has(id)) pending.set(id, waiting);
@@ -324,6 +442,8 @@ export class AdmissionController {
 			approving: this.roster.approving,
 			anchored: this.roster.anchored,
 			host: this.amHost,
+			membersAdmit: this.roster.membersAdmit,
+			canAdmit: this.canAdmit,
 			pending,
 			self,
 			forked: this.roster.forked

@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { createDeviceIdentity, type DeviceIdentity } from '$lib/crypto/identity';
-import { founderRoomId, signRosterOp, type RosterAction, type RosterLink } from '$lib/p2p/roster';
+import {
+	founderRoomId,
+	signRosterOp,
+	signVoucher,
+	type RosterAction,
+	type RosterLink
+} from '$lib/p2p/roster';
 import { AdmissionController, admission, NEW_ROOM_KEY } from '$lib/p2p/admission';
 
 vi.mock('$app/environment', () => ({ browser: true }));
@@ -39,6 +45,8 @@ function controller(self: DeviceIdentity, connected: string[] = []) {
 		deviceId: self.deviceId,
 		sign: (fields: RosterLink & { device: string; action: RosterAction; salt?: string }) =>
 			signRosterOp(self, roomId, fields),
+		vouch: (fields: { device: string; basis: number; epoch: number }) =>
+			signVoucher(self, roomId, fields),
 		conn,
 		...hooks
 	});
@@ -64,6 +72,89 @@ async function foundedByFounder() {
 	await made.ctl.load();
 	return made;
 }
+
+type RosterMessage = { type: 'roster'; ops: unknown[]; vouchers?: unknown[] };
+const lastRoster = (conn: { broadcast: { mock: { calls: unknown[][] } } }) =>
+	conn.broadcast.mock.calls.at(-1)![0] as RosterMessage;
+
+/** The founder hosts, Bob is a member, and members may let people in. */
+async function roomWhereMembersAdmit() {
+	const host = await foundedByFounder();
+	await host.ctl.onVerifiedPeer(bob.deviceId, 'Bob', 'direct');
+	await host.ctl.admit(bob.deviceId);
+	await host.ctl.setMembersAdmit(true);
+	const hostChain = lastRoster(host.conn);
+	memory.clear(); // Bob is another device with its own storage
+	const member = controller(bob);
+	await member.ctl.load();
+	await member.ctl.handleMessage(hostChain, founder.deviceId);
+	return { host, member };
+}
+
+describe('members letting people in', () => {
+	test('a member lets a waiting device in, and the host confirms it into the roster', async () => {
+		const { host, member } = await roomWhereMembersAdmit();
+		const carol = await createDeviceIdentity();
+		expect(await member.ctl.onVerifiedPeer(carol.deviceId, 'Carol', 'direct')).toBe(false);
+		expect(get(admission).pending.has(carol.deviceId)).toBe(true);
+
+		await member.ctl.admit(carol.deviceId);
+		expect(member.ctl.isAdmitted(carol.deviceId)).toBe(true);
+		expect(lastNotice(member.conn)[1].state).toBe('admitted');
+		expect(member.hooks.rekey).toHaveBeenCalled();
+		const vouched = lastRoster(member.conn);
+		expect(vouched.vouchers).toHaveLength(1);
+
+		// Carol reaches the host too; the host hears of the voucher and writes
+		// her into the chain itself.
+		await host.ctl.onVerifiedPeer(carol.deviceId, 'Carol', 'direct');
+		await host.ctl.handleMessage(vouched, bob.deviceId);
+		expect(host.ctl.isAdmitted(carol.deviceId)).toBe(true);
+		const confirmed = lastRoster(host.conn).ops as { device: string; action: string }[];
+		expect(confirmed.at(-1)).toMatchObject({ device: carol.deviceId, action: 'admit' });
+	});
+
+	test('the host confirms only devices that are actually here, not made-up ids', async () => {
+		const { host, member } = await roomWhereMembersAdmit();
+		const ghost = await createDeviceIdentity();
+		await member.ctl.onVerifiedPeer(ghost.deviceId, 'Ghost', 'direct');
+		await member.ctl.admit(ghost.deviceId);
+		const before = lastRoster(host.conn).ops.length;
+		// The host has never seen this device: it stays a voucher, not a chain entry.
+		await host.ctl.handleMessage(lastRoster(member.conn), bob.deviceId);
+		expect(host.ctl.isAdmitted(ghost.deviceId)).toBe(true);
+		expect(lastRoster(host.conn).ops.length).toBe(before);
+	});
+
+	test('without the host allowing it, a member cannot let anyone in', async () => {
+		const host = await foundedByFounder();
+		await host.ctl.onVerifiedPeer(bob.deviceId, 'Bob', 'direct');
+		await host.ctl.admit(bob.deviceId);
+		const chain = lastRoster(host.conn);
+		memory.clear();
+		const member = controller(bob);
+		await member.ctl.load();
+		await member.ctl.handleMessage(chain, founder.deviceId);
+		const carol = await createDeviceIdentity();
+		await member.ctl.onVerifiedPeer(carol.deviceId, 'Carol', 'direct');
+		expect(get(admission).pending.has(carol.deviceId)).toBe(false);
+		await expect(member.ctl.admit(carol.deviceId)).rejects.toThrow();
+		expect(member.ctl.isAdmitted(carol.deviceId)).toBe(false);
+	});
+
+	test('when the host turns it off, unconfirmed admissions end and keys rotate', async () => {
+		const { host, member } = await roomWhereMembersAdmit();
+		const carol = await createDeviceIdentity();
+		await member.ctl.onVerifiedPeer(carol.deviceId, 'Carol', 'direct');
+		await member.ctl.admit(carol.deviceId);
+		member.hooks.rekey.mockClear();
+		// The host never saw the voucher before turning member admission off.
+		await host.ctl.setMembersAdmit(false);
+		await member.ctl.handleMessage(lastRoster(host.conn), founder.deviceId);
+		expect(member.ctl.isAdmitted(carol.deviceId)).toBe(false);
+		expect(member.hooks.rekey).toHaveBeenCalled();
+	});
+});
 
 describe('admission controller', () => {
 	test('a room this device created starts approving with it as the only member', async () => {

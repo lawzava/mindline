@@ -74,7 +74,8 @@ export {
 	denyPeer,
 	removeMember,
 	makeHost,
-	setRoomApproval
+	setRoomApproval,
+	setMembersAdmit
 } from './manager';
 export { admission, NEW_ROOM_KEY, forgetRoster } from './admission';
 
