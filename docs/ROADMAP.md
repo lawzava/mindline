@@ -116,9 +116,20 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    roster is a host-signed hash chain, and every removal rotates the room
    key. Remaining: letting members other than the host admit people
    (needs a conflict-free multi-writer roster).
-6. **Per-message forward secrecy** (sender-key chains). Code trust shipped:
-   reproducible builds, a public bundle check, and a daily watchdog
-   (docs/BUNDLE_VERIFICATION.md); a pinned verifier or signed client remains.
+6. **Forward secrecy within a generation.** Shipped: periodic rotation
+   (every 15 minutes or 200 messages while active), which bounds a device
+   compromise to about the last half hour of captured traffic. Not built:
+   per-message sender-key chains. Design for a protocol review before any
+   code: at each generation, every sender draws a random chain key and
+   grants it to each member through the existing X-Wing wrap; message i
+   uses HKDF(ck_i, "msg") and ck_{i+1} = HKDF(ck_i, "chain"), with the old
+   key deleted and a bounded store of skipped keys for out-of-order
+   delivery; the envelope AAD carries i. It rewrites the sealing path that
+   the generation ratchet depends on, so it needs its own review and a
+   staged rollout.
+7. **Code trust.** Shipped: reproducible builds, a public bundle check,
+   and a daily watchdog (docs/BUNDLE_VERIFICATION.md); a pinned verifier or
+   signed client remains.
 
 Product:
 
