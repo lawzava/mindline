@@ -12,9 +12,22 @@
 		onEdit?: (messageId: string, newContent: string) => void;
 		onDelete?: (messageId: string) => void;
 		onReaction?: (messageId: string, emoji: string) => void;
+		onReply?: (message: Message) => void;
 	}
 
-	let { messages, onEdit, onDelete, onReaction }: Props = $props();
+	let { messages, onEdit, onDelete, onReaction, onReply }: Props = $props();
+
+	// Quotes render from local history; the wire only carries the id.
+	const byId = $derived(new Map(messages.map((m) => [m.id, m])));
+	function quoteOf(id: string | null) {
+		if (!id) return undefined;
+		const m = byId.get(id);
+		if (!m || m.message_type === 'Deleted') return null;
+		return {
+			name: m.sender_id === $userId ? 'You' : m.sender_name,
+			text: m.attachment ? m.attachment.name : m.content
+		};
+	}
 	let scrollRef = $state<HTMLDivElement | null>(null);
 	let atBottom = $state(true);
 	let contentRef = $state<HTMLDivElement | null>(null);
@@ -154,6 +167,8 @@
 						{onEdit}
 						{onDelete}
 						{onReaction}
+						{onReply}
+						quoted={quoteOf(message.reply_to)}
 					/>
 				{/each}
 				<!-- Live drafts land where the sent message will appear -->

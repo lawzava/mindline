@@ -338,6 +338,17 @@
 		}
 	}
 
+	// The message being answered, if any (M5 replies).
+	let replyTarget = $state<{ id: string; name: string; text: string } | null>(null);
+
+	function startReply(message: Message) {
+		replyTarget = {
+			id: message.id,
+			name: message.sender_id === $user.id ? 'yourself' : message.sender_name,
+			text: message.attachment ? message.attachment.name : message.content
+		};
+	}
+
 	async function handleSend(content: string) {
 		if (!roomId || isSending) return;
 
@@ -358,7 +369,7 @@
 				edited: false,
 				edit_timestamp: null,
 				original_content: null,
-				reply_to: null,
+				reply_to: replyTarget?.id ?? null,
 				reactions: {},
 				mentions: [],
 				local_timestamp: Date.now(),
@@ -368,6 +379,7 @@
 			};
 
 			messages.addMessage(roomId, message);
+			replyTarget = null;
 			void saveRoomMessages(roomId, messages.getRoomMessages(roomId));
 
 			// Broadcast via P2P
@@ -751,6 +763,7 @@
 			onEdit={handleEdit}
 			onDelete={handleDelete}
 			onReaction={handleReaction}
+			onReply={startReply}
 		/>
 
 		<!-- Large-transfer consent prompts -->
@@ -805,6 +818,8 @@
 			onSendMedia={handleSendMedia}
 			onTyping={handleTyping}
 			{isSending}
+			replyTo={replyTarget}
+			onCancelReply={() => (replyTarget = null)}
 		/>
 	</div>
 

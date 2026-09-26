@@ -9,7 +9,7 @@
 	import MessageActions from './MessageActions.svelte';
 	import LongPressMenu from './LongPressMenu.svelte';
 	import { longPress } from '$lib/hooks';
-	import { Check, CheckCheck, X } from 'lucide-svelte';
+	import { Check, CheckCheck, CornerUpLeft, X } from 'lucide-svelte';
 	import { delivery } from '$lib/stores';
 	import MediaAttachment from './MediaAttachment.svelte';
 	import { linkify } from '$lib/linkify';
@@ -30,6 +30,9 @@
 		onEdit?: (messageId: string, newContent: string) => void;
 		onDelete?: (messageId: string) => void;
 		onReaction?: (messageId: string, emoji: string) => void;
+		onReply?: (message: Message) => void;
+		/** The message this one answers; null when it is not in local history. */
+		quoted?: { name: string; text: string } | null;
 	}
 
 	let {
@@ -42,8 +45,20 @@
 		animate = false,
 		onEdit,
 		onDelete,
-		onReaction
+		onReaction,
+		onReply,
+		quoted
 	}: Props = $props();
+
+	// Bring the quoted message into view and mark it briefly.
+	function jumpToQuoted(event: Event) {
+		event.stopPropagation();
+		const target = message.reply_to && document.getElementById(`msg-${message.reply_to}`);
+		if (!target) return;
+		target.scrollIntoView({ block: 'center' });
+		target.classList.add('reply-target');
+		setTimeout(() => target.classList.remove('reply-target'), 1200);
+	}
 
 	let isEditing = $state(false);
 	let editContent = $state('');
@@ -210,6 +225,7 @@
 		groupedAbove ? 'mt-0.5' : sameSenderAbove ? 'mt-3' : 'mt-4'
 	)}
 	style={!isMe ? `--u-hue:${hue}` : undefined}
+	id={`msg-${message.id}`}
 	data-testid="message-bubble"
 >
 	<!-- Byline (others only, first message of a group) -->
@@ -251,6 +267,19 @@
 				isDeleted && 'text-muted-foreground'
 			)}
 		>
+			{#if message.reply_to && !isDeleted && !isEditing}
+				<button
+					type="button"
+					onclick={jumpToQuoted}
+					class="mb-1.5 block w-full min-w-0 rounded-md border-l-2 border-current/30 bg-background/50 px-2 py-1 text-left outline-ring/50"
+					data-testid="reply-quote"
+				>
+					<span class="block truncate text-xs font-semibold">{quoted?.name ?? 'Reply'}</span>
+					<span class="block truncate text-sm text-muted-foreground">
+						{quoted?.text ?? 'Original message not on this device'}
+					</span>
+				</button>
+			{/if}
 			{#if isEditing}
 				<div class="flex min-w-0 items-center gap-2">
 					<Input
@@ -307,6 +336,17 @@
 				<MessageActions onEdit={startEdit} onDelete={handleDelete} />
 			{/if}
 
+			{#if !isDeleted && !isEditing && onReply}
+				<Button
+					variant="ghost"
+					size="icon"
+					onclick={() => onReply?.(message)}
+					class="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+					aria-label="Reply"
+				>
+					<CornerUpLeft class="h-4 w-4" />
+				</Button>
+			{/if}
 			{#if !isDeleted && !isEditing}
 				<EmojiPicker onSelectEmoji={handleReaction} />
 			{/if}
@@ -321,6 +361,7 @@
 			onEdit={message.attachment ? undefined : startEdit}
 			onDelete={handleDelete}
 			copyText={message.attachment ? undefined : message.content}
+			onReply={onReply ? () => onReply?.(message) : undefined}
 			onReaction={handleReaction}
 		/>
 	</div>
