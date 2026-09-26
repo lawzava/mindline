@@ -59,3 +59,9 @@ vite.config.ts.timestamp-*
 test-results/
 playwright-report/
 dist/
+
+# Build, log, and editor leftovers that once reached history carrying local
+# paths (wasm-pack output, test logs, *.backup copies)
+pkg/
+*.log
+*.backup

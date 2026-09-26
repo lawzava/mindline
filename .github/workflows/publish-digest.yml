@@ -39,6 +39,15 @@ jobs:
           BUILD_VERSION: ${{ github.sha }}
         run: pnpm build
 
+      # Never publish a digest for a bundle that embeds a local path.
+      - name: No local paths in built artifacts
+        run: |
+          set +e
+          grep -rlaE '/Users/|/home/' .svelte-kit/cloudflare
+          status=$?
+          set -e
+          test "$status" -eq 1
+
       - name: Digest
         run: node scripts/bundle-digest.mjs --dir=.svelte-kit/cloudflare --json=${{ github.sha }} > digest.json
 

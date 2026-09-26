@@ -48,6 +48,18 @@ jobs:
           echo "Bundle digest for ${{ github.sha }}: $first" >> "$GITHUB_STEP_SUMMARY"
           test -n "$first" && test "$first" = "$second"
 
+      # A build that embeds the builder's home directory leaks who built it
+      # and differs between machines, so it could never match the published
+      # digest. Covers both adapters (build/ from verify:web).
+      - name: No local paths in built artifacts
+        run: |
+          set +e
+          grep -rlaE '/Users/|/home/' build .svelte-kit/cloudflare
+          status=$?
+          set -e
+          # grep: 0 = a file matched (listed above), 2 = a directory is missing
+          test "$status" -eq 1
+
       - name: Run required E2E suite (blocking)
         id: required_e2e
         env:
