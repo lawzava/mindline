@@ -33,6 +33,21 @@ jobs:
       - name: Verify web build
         run: pnpm run verify:web
 
+      # Two builds of one commit must be byte-identical, so anyone can check
+      # the live bundle against a build of the commit it claims
+      # (docs/BUNDLE_VERIFICATION.md).
+      - name: Bundle is reproducible
+        env:
+          ADAPTER: cloudflare
+          BUILD_VERSION: ${{ github.sha }}
+        run: |
+          pnpm build > /dev/null
+          first=$(node scripts/bundle-digest.mjs --dir=.svelte-kit/cloudflare | awk '/digest/ {print $2}')
+          pnpm build > /dev/null
+          second=$(node scripts/bundle-digest.mjs --dir=.svelte-kit/cloudflare | awk '/digest/ {print $2}')
+          echo "Bundle digest for ${{ github.sha }}: $first" >> "$GITHUB_STEP_SUMMARY"
+          test -n "$first" && test "$first" = "$second"
+
       - name: Run required E2E suite (blocking)
         id: required_e2e
         env:
