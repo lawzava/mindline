@@ -127,9 +127,22 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    delivery; the envelope AAD carries i. It rewrites the sealing path that
    the generation ratchet depends on, so it needs its own review and a
    staged rollout.
+
+   **Owner decision (2026-09-26): not now.** A stolen device already opens
+   all saved history (at rest it sits under the link-derived `k_storage`,
+   which never rotates), so sender keys would protect only captured wire
+   traffic the device did not keep. Direct paths are DTLS; the capturable
+   traffic is mostly the server relay of last resort. That small gain does
+   not justify rewriting the most fragile part of the protocol for every
+   user. Revisit when relay use turns out to be common, when disappearing
+   messages exist (wire forward secrecy then matters more), or with an
+   external protocol review; ship any version behind a per-room switch.
 7. **Code trust.** Shipped: reproducible builds, a public bundle check,
    and a daily watchdog (docs/BUNDLE_VERIFICATION.md); a pinned verifier or
    signed client remains.
+8. **Protect saved history (next).** The larger exposure once a device is
+   taken: wrap `k_storage` with a device key unlocked by a passkey (WebAuthn
+   PRF), and add disappearing messages so history does not outlive its use.
 
 Product:
 
