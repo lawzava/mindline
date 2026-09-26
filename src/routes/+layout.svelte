@@ -5,10 +5,20 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { migrateLegacyPlaintext } from '$lib/storage/messages';
 	import { recentRooms } from '$lib/stores/recent-rooms';
+	import { reading, applyReading } from '$lib/stores/reading';
 	import { saveInviteKey } from '$lib/crypto/keystore';
 	import { parseKeyFragment } from '$lib/crypto/keys';
 
 	let { children } = $props();
+
+	// Reading settings (text size, contrast) live as attributes on <html>.
+	// Applied at hydration, before the app mounts, and on every change.
+	// Returning readers with a non-default setting see one brief frame of
+	// the defaults: the server cannot know a localStorage value, and an
+	// inline pre-paint script would need its own CSP hash.
+	$effect.pre(() => {
+		applyReading($reading, document.documentElement);
+	});
 
 	onMount(() => {
 		// Encrypt any pre-v3 plaintext history at rest (PROTOCOL.md §4).

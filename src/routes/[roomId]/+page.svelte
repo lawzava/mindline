@@ -68,6 +68,7 @@
 		DoorClosed
 	} from 'lucide-svelte';
 	import { copyInvite, rememberInvite, shareInvite } from '$lib/share';
+	import ReadingSettings from '$lib/components/ReadingSettings.svelte';
 	import { loadInviteKey } from '$lib/crypto/keystore';
 	import { parseKeyFragment, toKeyFragment } from '$lib/crypto/keys';
 	import { clearBurned, isBurned } from '$lib/storage/tombstone';
@@ -690,6 +691,7 @@
 					</button>
 					<ConnectionStatus />
 				</div>
+				<ReadingSettings compact class="shrink-0 text-muted-foreground" />
 				<Button
 					variant="ghost"
 					size="icon"
