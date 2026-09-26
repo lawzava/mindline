@@ -10,7 +10,8 @@
 		user,
 		drafts,
 		mediaConsent,
-		recentRooms
+		recentRooms,
+		peerNames
 	} from '$lib/stores';
 	import { senderHue } from '$lib/utils';
 	import { clearRoomMessages, loadRoomMessages, saveRoomMessages } from '$lib/storage/messages';
@@ -39,6 +40,10 @@
 		NoRoomKeyError,
 		RoomKeyMismatchError,
 		announceName,
+		admission,
+		admitPeer,
+		denyPeer,
+		setRoomApproval,
 		sendMediaMessage,
 		acceptMediaTransfer,
 		declineMediaTransfer
@@ -59,7 +64,8 @@
 		Link,
 		Bell,
 		BellOff,
-		Flame
+		Flame,
+		DoorClosed
 	} from 'lucide-svelte';
 	import { copyInvite, rememberInvite, shareInvite } from '$lib/share';
 	import { loadInviteKey } from '$lib/crypto/keystore';
@@ -449,6 +455,13 @@
 		}
 	}
 
+	/** Admission changes can be refused (not the host, conflicting record). */
+	function admissionAction(action: Promise<void>) {
+		action.catch((error) =>
+			toast.error(error instanceof Error ? error.message : 'That did not go through')
+		);
+	}
+
 	// First-join name: people talk to a name, not "Anonymous". Asked once,
 	// inline above the composer, never as a gate in front of the room.
 	const NAME_PROMPT_KEY = 'mindline_name_prompt_done';
@@ -607,6 +620,25 @@
 			</div>
 		</div>
 	</div>
+{:else if $admission.self === 'removed' || $admission.self === 'denied'}
+	<div
+		class="flex flex-1 items-center justify-center p-4"
+		data-testid={$admission.self === 'removed' ? 'admission-removed' : 'admission-denied'}
+	>
+		<div class="flex max-w-sm flex-col items-center gap-3 text-center">
+			<p class="text-lg font-medium">
+				{$admission.self === 'removed'
+					? 'You were removed from this room'
+					: 'You were not let in this time'}
+			</p>
+			<p class="text-sm text-muted-foreground">
+				{$admission.self === 'removed'
+					? 'Messages sent from now on do not reach this device. Someone in the room can let you back in if you open the link again.'
+					: 'Someone in the room chose not to let you in. You can open the link again later to ask again.'}
+			</p>
+			<Button variant="outline" onclick={() => goto('/')}>Back to start</Button>
+		</div>
+	</div>
 {:else if isKeyMismatch}
 	<div class="flex flex-1 items-center justify-center p-4" data-testid="key-mismatch-state">
 		<div class="flex max-w-sm flex-col items-center gap-3 text-center">
@@ -742,6 +774,20 @@
 										Dark theme
 									{/if}
 								</button>
+								{#if $admission.anchored && $admission.host}
+									<button
+										onclick={() => admissionAction(setRoomApproval(!$admission.approving))}
+										aria-pressed={$admission.approving}
+										class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+										data-testid="approval-toggle"
+									>
+										<DoorClosed class="h-4 w-4 text-muted-foreground" />
+										<span class="flex-1 text-left">Ask before letting people in</span>
+										<span class="text-xs text-muted-foreground"
+											>{$admission.approving ? 'On' : 'Off'}</span
+										>
+									</button>
+								{/if}
 								<button
 									onclick={() => (showBurnDialog = true)}
 									class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-destructive hover:bg-destructive/10"
@@ -812,15 +858,61 @@
 			</form>
 		{/if}
 
-		<!-- Message input -->
-		<MessageInput
-			onSend={handleSend}
-			onSendMedia={handleSendMedia}
-			onTyping={handleTyping}
-			{isSending}
-			replyTo={replyTarget}
-			onCancelReply={() => (replyTarget = null)}
-		/>
+		{#if $admission.forked}
+			<div
+				class="border-t border-border bg-destructive/10 px-4 py-2 text-sm text-destructive"
+				data-testid="admission-forked"
+			>
+				The host signed conflicting changes to who is in this room. Nobody new can be let in; start
+				a new room to be sure who is in.
+			</div>
+		{/if}
+
+		<!-- People waiting to be let in (§3.8): one tap, while they are here. -->
+		{#each [...$admission.pending] as [deviceId, waiting] (deviceId)}
+			<div
+				class="flex items-center gap-2 border-t border-border bg-muted/40 px-4 py-2 text-sm"
+				data-testid="admission-request"
+			>
+				<!-- Names are self-chosen: show a device fingerprint, and say so when
+				     the name matches someone already here. -->
+				<span class="min-w-0 flex-1 truncate">
+					<strong>{waiting.name}</strong>
+					<span class="text-xs tabular-nums text-muted-foreground"
+						>· {deviceId.slice(0, 4)} {deviceId.slice(4, 8)}</span
+					>
+					wants to join
+					{#if [...$peerNames.values()].some((n) => n.trim().toLowerCase() === waiting.name
+								.trim()
+								.toLowerCase())}
+						<span class="text-xs text-destructive">(same name as someone here)</span>
+					{/if}
+				</span>
+				<Button size="sm" onclick={() => admissionAction(admitPeer(deviceId))}>Let in</Button>
+				<Button size="sm" variant="ghost" onclick={() => admissionAction(denyPeer(deviceId))}
+					>Not now</Button
+				>
+			</div>
+		{/each}
+
+		{#if $admission.self === 'waiting'}
+			<div
+				class="border-t border-border px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-center text-sm text-muted-foreground"
+				data-testid="admission-waiting"
+			>
+				Waiting for the host to let you in.
+			</div>
+		{:else}
+			<!-- Message input -->
+			<MessageInput
+				onSend={handleSend}
+				onSendMedia={handleSendMedia}
+				onTyping={handleTyping}
+				{isSending}
+				replyTo={replyTarget}
+				onCancelReply={() => (replyTarget = null)}
+			/>
+		{/if}
 	</div>
 
 	<!-- Burn confirmation: the only destructive path, so it asks first. -->

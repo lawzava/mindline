@@ -112,6 +112,12 @@ export class P2PConnection {
 	private deviceToClient = new Map<string, string>();
 	private relayPeers = new Map<string, { deviceId: string; verified: boolean }>();
 	private disposed = false;
+	/**
+	 * Admission gate (§3.8): a device that is not let in gets nothing sealed
+	 * under room keys (no messages, drafts, sync, media, or key grants) and
+	 * nothing it sends is acted on. Open rooms admit everyone.
+	 */
+	private isAdmitted: (deviceId: string) => boolean = () => true;
 	private wsQueue: string[] = [];
 	private wsDrainTimer: ReturnType<typeof setTimeout> | null = null;
 	private reliableSendTail: Promise<void> = Promise.resolve();
@@ -283,6 +289,25 @@ export class P2PConnection {
 		this.onKnockingCallback = cb;
 	}
 
+	setAdmission(predicate: (deviceId: string) => boolean): void {
+		this.isAdmitted = predicate;
+	}
+
+	/**
+	 * Tell a device about its admission (pending, admitted, denied, removed).
+	 * Sealed on the handshake class under the link-static key, so it needs no
+	 * generation grant and reaches a device that is still waiting (direct only).
+	 */
+	async sendAdmission(peerDeviceId: string, body: Record<string, unknown>): Promise<void> {
+		await this.queueReliableSend(async () => {
+			const clientId = this.deviceToClient.get(peerDeviceId);
+			const peer = clientId ? this.peers.get(clientId) : undefined;
+			if (!peer?.verified || !this.isCurrentPeer(peer) || peer.chat.readyState !== 'open') return;
+			const wire = await this.session.sealAdmission(body);
+			if (this.isCurrentPeer(peer) && peer.chat.readyState === 'open') peer.chat.send(wire);
+		}).catch((error) => console.warn('[P2P] admission notice failed:', error));
+	}
+
 	/** A direct peer verified while at the link generation (§1.4 trigger a). */
 	onNewcomer(cb: (deviceId: string) => void): void {
 		this.onNewcomerCallback = cb;
@@ -300,6 +325,7 @@ export class P2PConnection {
 		const clientId = this.deviceToClient.get(peerDeviceId);
 		const peer = clientId ? this.peers.get(clientId) : undefined;
 		if (!peer || !peer.verified || peer.pc.connectionState !== 'connected') return null;
+		if (!this.isAdmitted(peerDeviceId)) return null;
 		try {
 			return peer.pc.createDataChannel(label, { ordered: true });
 		} catch (error) {
@@ -344,7 +370,7 @@ export class P2PConnection {
 		void (message.type === 'typing' ? send() : this.queueReliableSend(send)).catch((error) => {
 			console.warn('[P2P] broadcast failed:', error);
 		});
-		return this.getConnectedPeers().length;
+		return this.getConnectedPeers().filter((id) => this.isAdmitted(id)).length;
 	}
 
 	private queueReliableSend(send: () => Promise<void>): Promise<void> {
@@ -372,7 +398,7 @@ export class P2PConnection {
 
 	/** Called inside the reliable queue, or independently for lossy drafts. */
 	private async sendToPeerAsync(peerDeviceId: string, message: TypedP2PMessage): Promise<void> {
-		if (this.disposed) return;
+		if (this.disposed || !this.isAdmitted(peerDeviceId)) return;
 		const isDraft = message.type === 'typing';
 		const clientId = this.deviceToClient.get(peerDeviceId);
 		const peer = clientId ? this.peers.get(clientId) : undefined;
@@ -437,6 +463,7 @@ export class P2PConnection {
 	/** Must run inside queueReliableSend, so the grant's seq cannot be overtaken. */
 	private async sendCurrentGrant(peer: Peer, peerG = 0, peerGid?: string): Promise<void> {
 		if (!this.isCurrentPeer(peer) || !peer.deviceId || peer.chat.readyState !== 'open') return;
+		if (!this.isAdmitted(peer.deviceId)) return;
 		const generation = this.session.generation;
 		const wire = await this.session.grantWireFor(peer.deviceId, peerG, peerGid);
 		if (!this.isCurrentPeer(peer) || peer.chat.readyState !== 'open') return;
@@ -708,7 +735,12 @@ export class P2PConnection {
 		// In-band media channels (§5): created per transfer by the sender.
 		pc.ondatachannel = ({ channel }) => {
 			if (!channel.label.startsWith('media-')) return;
-			if (!this.isCurrentPeer(peer) || !peer.verified || !peer.deviceId) {
+			if (
+				!this.isCurrentPeer(peer) ||
+				!peer.verified ||
+				!peer.deviceId ||
+				!this.isAdmitted(peer.deviceId)
+			) {
 				channel.close();
 				return;
 			}
@@ -1001,6 +1033,8 @@ export class P2PConnection {
 				return;
 			}
 			if (type === 'rekey-grant' || type === 'rekey-request') {
+				// A waiting device could mint a generation and read what follows.
+				if (!peer.deviceId || !this.isAdmitted(peer.deviceId)) return;
 				await this.handleRekeyBody(peer, body as unknown as Record<string, unknown>);
 				return;
 			}
@@ -1026,6 +1060,8 @@ export class P2PConnection {
 		peerG: number,
 		peerGid: string
 	): Promise<void> {
+		// Generations are negotiated with members only (§3.8).
+		if (peer.deviceId && !this.isAdmitted(peer.deviceId)) return;
 		try {
 			const mine = this.session.generation;
 			if (peerG > mine.g) {
@@ -1094,7 +1130,9 @@ export class P2PConnection {
 			});
 			return;
 		}
-		const outcome = await this.session.handleRekeyGrant(body as never);
+		const outcome = await this.session.handleRekeyGrant(body as never, (minter) =>
+			this.isAdmitted(minter)
+		);
 		const grant = (body as { grant?: { g?: number; gid?: string } }).grant;
 		if (outcome === 'adopted') {
 			// Gossip: re-grant verbatim to our verified direct peers so

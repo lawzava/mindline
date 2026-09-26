@@ -140,7 +140,7 @@ export async function createRoom(page: Page): Promise<string> {
 	await page.locator('[data-testid="create-room-btn"]').click();
 
 	// Wait for navigation to room page (URL carries the key fragment)
-	await page.waitForURL(/\/[a-f0-9-]+(#k=.*)?$/);
+	await page.waitForURL(/\/[A-Za-z0-9_-]+(#k=.*)?$/);
 
 	// Extract room ID and register its key so other contexts can join
 	const url = page.url();

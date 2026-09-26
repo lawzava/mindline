@@ -326,7 +326,7 @@ test.describe('Encryption Key Persistence', () => {
 		await page.goto('/');
 		await expect(page.locator('[data-testid="create-room-btn"]')).toBeEnabled({ timeout: 10000 });
 		await page.locator('[data-testid="create-room-btn"]').click();
-		await page.waitForURL(/\/[a-f0-9-]+#k=/);
+		await page.waitForURL(/\/[A-Za-z0-9_-]+#k=/);
 
 		const keyB = keyOf(page.url());
 

@@ -110,9 +110,12 @@ Security (from the audit; see PROTOCOL.md §6 for accepted limits):
    from the key, and Back into a burned room asks first. Decided against
    stripping the fragment from the address bar: people copy invites from
    it, and a keyless URL locks the recipient out.
-5. **Admission and removal.** Let a link knock and an existing member
-   admit; removing a member rotates the link. Today a leaked link is
-   permanent membership.
+5. **Admission and removal.** Shipped: new rooms have ids that commit to
+   their founder's key; the host lets newcomers in (one tap while they
+   wait), turns people away, removes them, or hands the host role on. The
+   roster is a host-signed hash chain, and every removal rotates the room
+   key. Remaining: letting members other than the host admit people
+   (needs a conflict-free multi-writer roster).
 6. **Per-message forward secrecy** (sender-key chains) and a pinned,
    reproducible build with a service-worker update check.
 

@@ -159,6 +159,15 @@ describe('session generations (PROTOCOL.md §1.4 — ratchet wiring)', () => {
 		return { a, b };
 	}
 
+	test('a grant minted by a device that is not a member is refused (§3.8)', async () => {
+		const { a, b } = await verifiedPair('room-gate');
+		await a.mintGeneration();
+		const body = await b.openMessage(JSON.parse(await a.grantWireFor(b.deviceId, 0)));
+		await expect(b.handleRekeyGrant(body as never, () => false)).rejects.toThrow(/non-member/);
+		expect(b.generation.g).toBe(0);
+		expect(await b.handleRekeyGrant(body as never, (m) => m === a.deviceId)).toBe('adopted');
+	});
+
 	test('chat seals at the current generation; a wire grant converges peers', async () => {
 		const { a, b } = await verifiedPair();
 		expect(a.generation).toEqual({ g: 0, gid: '' });

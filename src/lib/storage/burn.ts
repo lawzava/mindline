@@ -13,6 +13,7 @@ import { burnRoom } from '$lib/crypto/keystore';
 import { burnRoomBlobs } from '$lib/media/blob-store';
 import { clearRoomMessages } from './messages';
 import { markBurned } from './tombstone';
+import { forgetRoster } from '$lib/p2p/admission';
 
 export async function burnRoomData(roomId: string): Promise<void> {
 	const failures: string[] = [];
@@ -21,7 +22,8 @@ export async function burnRoomData(roomId: string): Promise<void> {
 		['history', () => clearRoomMessages(roomId)],
 		['media', () => burnRoomBlobs(roomId)],
 		// Back into the old invite URL must not quietly re-create the room.
-		['tombstone', () => markBurned(roomId)]
+		['tombstone', () => markBurned(roomId)],
+		['roster', async () => forgetRoster(roomId)]
 	];
 	for (const [name, step] of steps) {
 		try {
