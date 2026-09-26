@@ -107,6 +107,29 @@ mic/send swap and reveals 150ms; theme switch instant (transitioning every
 painted token on a long list is a jank source). Stream-follow scrolling is
 instant, never smooth. `prefers-reduced-motion` disables all of it.
 
+## Reading mode (real-time text)
+
+Deaf and hard-of-hearing people already read conversations as real-time text
+(FCC RTT, Apple RTT, XEP-0301). The **Reading** button ("Aa", plain word, no
+icon) sits in the landing header and in the room header row; its popover holds
+four device-local settings (`mindline_reading`, `src/lib/stores/reading.ts`):
+- **Text size** Default / Large / Extra large: `html[data-reading]` scales the
+  root to 112.5% / 125%, so stream, draft, composer, and chrome grow together.
+  No per-component sizes.
+- **High contrast**: `html[data-contrast="high"]` darkens (light) or brightens
+  (dark) text tokens only; surfaces and the accent ledger stay. Worst-surface
+  body text 16.1:1 light / 14.5:1 dark, muted 7.4 / 8.1, draft 10.9 / 11.1.
+- **Show drafts steadily**: no breathe, no ink-in, no idle dimming; the forming
+  text is never less than full strength. Forced on under reduced motion.
+- **Read drafts aloud** (opt-in): a polite live region speaks the peer's new
+  words a phrase at a time (sentence or clause end, six whole words, or a 1s
+  pause, at most one phrase per second). Never per keystroke, never your own
+  typing.
+
+Returning readers with a non-default setting may see one frame of the defaults:
+the attributes are applied at hydration, because a pre-paint inline script would
+need its own CSP hash.
+
 ## Bans (project-specific, on top of the shared laws)
 
 - Backdrop blur on any chat surface.

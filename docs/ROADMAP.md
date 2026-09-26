@@ -133,7 +133,10 @@ Product:
    decided. Push "knock" is out of scope: it needs server-side
    push subscriptions, which the product does not store (decided 2026-09-26).
 6. An accessibility RTT mode (large text, high contrast, screen-reader
-   politeness settings), taken to deaf community organisations.
+   politeness settings), taken to deaf community organisations. The mode
+   shipped (Reading settings: text size, high contrast, steady drafts, read
+   drafts aloud; DESIGN.md "Reading mode"). Still open: taking it to deaf
+   community organisations, and a flash-free first paint for returning readers.
 
 Do not build: public rooms or discovery (Jitsi removed anonymous room
 creation after abuse), groups beyond about 8, a server mailbox, stickers
