@@ -126,9 +126,9 @@ four device-local settings (`mindline_reading`, `src/lib/stores/reading.ts`):
   pause, at most one phrase per second). Never per keystroke, never your own
   typing.
 
-Returning readers with a non-default setting may see one frame of the defaults:
-the attributes are applied at hydration, because a pre-paint inline script would
-need its own CSP hash.
+Returning readers get their settings before first paint: `static/js/reading-boot.js`
+(a static file, so the CSP needs no hash) sets the same attributes from
+`mindline_reading` before anything renders; the store keeps them in step after.
 
 ## Bans (project-specific, on top of the shared laws)
 
